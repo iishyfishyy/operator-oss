@@ -19,6 +19,23 @@ async function git(repoPath: string, args: string[]): Promise<string> {
   return stdout.trim();
 }
 
+// Run `fn` over `items` with at most `limit` in flight. Spawning a git
+// subprocess costs 10–40ms before it does any work, so anything per-file must
+// overlap those spawns — but unbounded Promise.all over a huge diff would fork
+// hundreds of processes at once.
+async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const out: R[] = new Array(items.length);
+  let next = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (next < items.length) {
+      const i = next++;
+      out[i] = await fn(items[i]);
+    }
+  });
+  await Promise.all(workers);
+  return out;
+}
+
 /** True if `dir` is inside a git work tree. */
 export async function isGitRepo(dir: string): Promise<boolean> {
   try {
@@ -290,14 +307,28 @@ export async function taskDiff(
   const files: DiffFile[] = [];
   const byPath = new Map<string, DiffFile>();
 
-  const nameStatus = await git(worktreePath, ["diff", "--name-status", base, "--"]).catch(() => "");
+  // All of these are read-only — one concurrent round instead of six sequential
+  // subprocess spawns (each spawn alone costs 10–40ms before git does anything).
+  const [nameStatus, numstat, untrackedOut, statusOut, aheadOut, mergedAncestor] = await Promise.all([
+    git(worktreePath, ["diff", "--name-status", base, "--"]).catch(() => ""),
+    git(worktreePath, ["diff", "--numstat", base, "--"]).catch(() => ""),
+    git(worktreePath, ["ls-files", "--others", "--exclude-standard"]).catch(() => ""),
+    git(worktreePath, ["status", "--porcelain"]).catch(() => ""),
+    git(worktreePath, ["rev-list", "--count", `${base}..HEAD`]).catch(() => ""),
+    // Already merged if every commit on this branch is reachable from the base
+    // branch. Catches merges done outside the app's merge button (CLI, etc).
+    // `--is-ancestor` exits 0 when HEAD is an ancestor of baseBranch, 1 otherwise.
+    baseBranch
+      ? git(worktreePath, ["merge-base", "--is-ancestor", "HEAD", baseBranch]).then(() => true).catch(() => false)
+      : Promise.resolve(false),
+  ]);
+
   for (const line of nameStatus.split("\n").filter(Boolean)) {
     const parts = line.split("\t");
     const f: DiffFile = { path: parts[parts.length - 1], status: parts[0][0], additions: 0, deletions: 0, binary: false, patch: "" };
     byPath.set(f.path, f);
     files.push(f);
   }
-  const numstat = await git(worktreePath, ["diff", "--numstat", base, "--"]).catch(() => "");
   for (const line of numstat.split("\n").filter(Boolean)) {
     const [add, del, ...rest] = line.split("\t");
     const f = byPath.get(rest.join("\t"));
@@ -310,53 +341,40 @@ export async function taskDiff(
   }
 
   // Per-file patch for tracked changes (one diff per path — robust to render).
-  for (const f of files) {
-    let p = await git(worktreePath, ["diff", base, "--", f.path]).catch(() => "");
-    if (p.length > MAX_FILE_PATCH) {
-      p = p.slice(0, MAX_FILE_PATCH);
-      f.truncated = true;
-    }
-    f.patch = p;
-  }
-
   // Untracked files aren't in `git diff <base>` — diff each via --no-index.
-  const untracked = (await git(worktreePath, ["ls-files", "--others", "--exclude-standard"]).catch(() => ""))
-    .split("\n")
-    .filter(Boolean);
-  for (const p of untracked) {
-    let body = "";
-    try {
-      body = await git(worktreePath, ["diff", "--no-index", "--", "/dev/null", p]);
-    } catch (e) {
-      body = stdoutOf(e); // --no-index exits 1 when files differ
-    }
-    const binary = /^Binary files /m.test(body);
-    const additions = binary ? 0 : body.split("\n").filter((l) => l.startsWith("+") && !l.startsWith("+++")).length;
-    let truncated = false;
-    if (body.length > MAX_FILE_PATCH) {
-      body = body.slice(0, MAX_FILE_PATCH);
-      truncated = true;
-    }
-    files.push({ path: p, status: "?", additions, deletions: 0, binary, patch: body, truncated });
-  }
+  const untracked = untrackedOut.split("\n").filter(Boolean);
+  const [, untrackedFiles] = await Promise.all([
+    mapLimit(files, 8, async (f) => {
+      let p = await git(worktreePath, ["diff", base, "--", f.path]).catch(() => "");
+      if (p.length > MAX_FILE_PATCH) {
+        p = p.slice(0, MAX_FILE_PATCH);
+        f.truncated = true;
+      }
+      f.patch = p;
+    }),
+    mapLimit(untracked, 8, async (p): Promise<DiffFile> => {
+      let body = "";
+      try {
+        body = await git(worktreePath, ["diff", "--no-index", "--", "/dev/null", p]);
+      } catch (e) {
+        body = stdoutOf(e); // --no-index exits 1 when files differ
+      }
+      const binary = /^Binary files /m.test(body);
+      const additions = binary ? 0 : body.split("\n").filter((l) => l.startsWith("+") && !l.startsWith("+++")).length;
+      let truncated = false;
+      if (body.length > MAX_FILE_PATCH) {
+        body = body.slice(0, MAX_FILE_PATCH);
+        truncated = true;
+      }
+      return { path: p, status: "?", additions, deletions: 0, binary, patch: body, truncated };
+    }),
+  ]);
+  files.push(...untrackedFiles);
 
-  const isDirty = (await git(worktreePath, ["status", "--porcelain"]).catch(() => "")).trim().length > 0;
-  let ahead = 0;
-  try {
-    ahead = parseInt(await git(worktreePath, ["rev-list", "--count", `${base}..HEAD`]), 10) || 0;
-  } catch {}
+  const isDirty = statusOut.trim().length > 0;
+  const ahead = parseInt(aheadOut, 10) || 0;
 
-  // Already merged if every commit on this branch is reachable from the base
-  // branch. Catches merges done outside the app's merge button (CLI, etc).
-  // `--is-ancestor` exits 0 when HEAD is an ancestor of baseBranch, 1 otherwise.
-  let alreadyMerged = false;
-  if (baseBranch) {
-    alreadyMerged = await git(worktreePath, ["merge-base", "--is-ancestor", "HEAD", baseBranch])
-      .then(() => true)
-      .catch(() => false);
-  }
-
-  return { base, baseLabel, files, isDirty, ahead, alreadyMerged };
+  return { base, baseLabel, files, isDirty, ahead, alreadyMerged: mergedAncestor };
 }
 
 // ---------- merge ----------
@@ -419,9 +437,9 @@ export interface MergeResult {
 // merge, before the throwaway worktree is torn down — worktrees don't survive
 // their task, so merge time is the only chance to persist these. Best-effort:
 // a failure just omits the stats. Binary files count 0 ("-" in numstat).
-async function mergeLineStats(dir: string): Promise<{ additions: number; deletions: number } | null> {
+async function mergeLineStats(dir: string, from = "ORIG_HEAD", to = "HEAD"): Promise<{ additions: number; deletions: number } | null> {
   try {
-    const out = await git(dir, ["diff", "--numstat", "ORIG_HEAD", "HEAD"]);
+    const out = await git(dir, ["diff", "--numstat", from, to]);
     let additions = 0, deletions = 0;
     for (const line of out.split("\n")) {
       const m = line.match(/^(\d+|-)\t(\d+|-)\t/);
@@ -447,6 +465,62 @@ async function removeMergeWorktree(repoPath: string, tmp: string): Promise<void>
   }
 }
 
+// Object-level merge of `workBranch` into `target` — see the fast-path note in
+// `mergeIntoTargetWorktree`. Returns null when this git can't do it (merge-tree
+// --write-tree needs git ≥ 2.38) or anything unexpected happens, in which case
+// the caller falls back to the throwaway-worktree merge; conflicts are a real
+// result (the worktree path would hit the same ones), not a fallback case.
+async function mergeViaTree(input: {
+  repoPath: string;
+  target: string;
+  workBranch: string;
+  message: string;
+  committed: boolean;
+  mergedSha?: string;
+}): Promise<MergeResult | null> {
+  const { repoPath, target, workBranch, message, committed, mergedSha } = input;
+
+  let tree: string;
+  try {
+    tree = (await git(repoPath, ["merge-tree", "--write-tree", target, workBranch])).split("\n")[0].trim();
+  } catch (e) {
+    const out = stdoutOf(e);
+    if (!out.trim()) return null; // merge-tree unsupported or errored — use the worktree path
+    const conflicts = parseMergeTreeConflicts(out);
+    if (!conflicts.length) return null; // unrecognized output — let the real merge decide
+    return {
+      ok: false,
+      targetBranch: target,
+      committed,
+      conflicts,
+      error: `merge conflicts in ${conflicts.length} file(s)`,
+    };
+  }
+  if (!/^[0-9a-f]{40,64}$/.test(tree)) return null;
+
+  try {
+    const [oldTip, workTip] = await Promise.all([
+      git(repoPath, ["rev-parse", `refs/heads/${target}`]),
+      git(repoPath, ["rev-parse", workBranch]),
+    ]);
+    const args = ["commit-tree", tree, "-p", oldTip, "-p", workTip, "-m", message];
+    let commit: string;
+    try {
+      commit = await git(repoPath, args);
+    } catch {
+      // No committer identity configured — same fallback as commitWorktree.
+      commit = await git(repoPath, ["-c", "user.name=Orchestrator", "-c", "user.email=orchestrator@local", ...args]);
+    }
+    // Passing the old tip makes the update atomic: if anything moved the branch
+    // since we read it, git refuses instead of silently discarding that move.
+    await git(repoPath, ["update-ref", `refs/heads/${target}`, commit, oldTip]);
+    const stats = await mergeLineStats(repoPath, oldTip, commit);
+    return { ok: true, targetBranch: target, committed, mergedSha, ...(stats ?? {}) };
+  } catch {
+    return null; // any hiccup (at worst a dangling commit object) → real merge is the source of truth
+  }
+}
+
 /**
  * Land `workBranch` into `target` WITHOUT touching the user's main working tree,
  * by doing the merge inside a throwaway linked worktree checked out on `target`.
@@ -464,6 +538,16 @@ async function mergeIntoTargetWorktree(input: {
   mergedSha?: string;
 }): Promise<MergeResult> {
   const { repoPath, target, workBranch, message, committed, mergedSha } = input;
+
+  // Fast path (git ≥ 2.38): merge at the object level — `merge-tree
+  // --write-tree` computes the merged tree, `commit-tree` wraps it in a merge
+  // commit, `update-ref` advances the target branch. No working tree is ever
+  // materialized. The fallback below checks out the ENTIRE repo into a
+  // throwaway worktree just to run one merge and delete it — on any non-trivial
+  // repo that checkout is the dominant cost of clicking Merge.
+  const fast = await mergeViaTree(input);
+  if (fast) return fast;
+
   const tmp = path.join(WORKTREES_DIR, `.merge-${target.replace(/[^A-Za-z0-9._-]/g, "_")}`);
   fs.mkdirSync(WORKTREES_DIR, { recursive: true });
   // Clear any stale merge worktree left behind by a prior crash before reusing the path.
@@ -791,13 +875,16 @@ export async function worktreeSyncStatus(input: {
   const { repoPath, worktreePath, workBranch, baseBranch } = input;
   const none: SyncStatus = { behind: 0, ahead: 0, isDirty: false, canFastForward: false, clean: true, conflicts: [], baseTip: "" };
   if (!worktreePath || !workBranch) return none;
-  if (!(await branchExists(repoPath, baseBranch)) || !(await branchExists(repoPath, workBranch))) return none;
+  const [baseOk, workOk] = await Promise.all([branchExists(repoPath, baseBranch), branchExists(repoPath, workBranch)]);
+  if (!baseOk || !workOk) return none;
 
-  const baseTip = await git(repoPath, ["rev-parse", baseBranch]).catch(() => "");
   const countOf = async (range: string) => parseInt(await git(repoPath, ["rev-list", "--count", range]).catch(() => "0"), 10) || 0;
-  const behind = await countOf(`${workBranch}..${baseBranch}`);
-  const ahead = await countOf(`${baseBranch}..${workBranch}`);
-  const isDirty = (await git(worktreePath, ["status", "--porcelain"]).catch(() => "")).trim().length > 0;
+  const [baseTip, behind, ahead, isDirty] = await Promise.all([
+    git(repoPath, ["rev-parse", baseBranch]).catch(() => ""),
+    countOf(`${workBranch}..${baseBranch}`),
+    countOf(`${baseBranch}..${workBranch}`),
+    git(worktreePath, ["status", "--porcelain"]).catch(() => "").then((s) => s.trim().length > 0),
+  ]);
 
   // Already up to date — nothing to sync; skip the (relatively costly) conflict probe.
   if (behind === 0) return { behind, ahead, isDirty, canFastForward: false, clean: true, conflicts: [], baseTip };
@@ -818,14 +905,20 @@ export async function worktreeSyncStatus(input: {
 // On an unsupported/failed merge-tree we fall back to "clean" — the real merge
 // (prepareWorktreeMerge) will still surface any conflicts when the user syncs.
 async function predictMergeConflicts(repoPath: string, baseBranch: string, workBranch: string): Promise<string[]> {
-  let out: string;
   try {
     await git(repoPath, ["merge-tree", "--write-tree", baseBranch, workBranch]);
     return []; // exit 0 → clean merge
   } catch (e) {
-    out = stdoutOf(e);
+    const out = stdoutOf(e);
     if (!out) return []; // merge-tree unsupported or errored — treat as clean
+    return parseMergeTreeConflicts(out);
   }
+}
+
+// Parse the conflicted paths out of `git merge-tree --write-tree` output: the
+// result-tree OID line, then `<mode> <object> <stage>\t<path>` per conflicted
+// entry, terminated by a blank line.
+function parseMergeTreeConflicts(out: string): string[] {
   const lines = out.split("\n");
   const conflicts = new Set<string>();
   for (let i = 1; i < lines.length; i++) {
