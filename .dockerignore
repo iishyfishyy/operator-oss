@@ -1,0 +1,13 @@
+# Keep the build context to source only — deps and build output are produced
+# inside the image (native modules must match the image's platform/ABI).
+node_modules
+.next
+.git
+.gitignore
+.env*
+*.md
+docs
+Dockerfile
+docker-compose.yml
+.dockerignore
+.claude

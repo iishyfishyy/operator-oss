@@ -1,0 +1,9 @@
+{"type":"thread.started","thread_id":"019f3ecf-fed2-7ba3-b46e-dc6097412033"}
+{"type":"turn.started"}
+{"type":"item.started","item":{"id":"item_0","type":"command_execution","command":"/bin/zsh -lc 'echo hi'","aggregated_output":"","exit_code":null,"status":"in_progress"}}
+{"type":"item.completed","item":{"id":"item_0","type":"command_execution","command":"/bin/zsh -lc 'echo hi'","aggregated_output":"hi\n","exit_code":0,"status":"completed"}}
+{"type":"item.completed","item":{"id":"item_1","type":"agent_message","text":"I ran `echo hi`. Now I’m creating `notes.txt` with the requested content."}}
+{"type":"item.started","item":{"id":"item_2","type":"file_change","changes":[{"path":"/work/notes.txt","kind":"add"}],"status":"in_progress"}}
+{"type":"item.completed","item":{"id":"item_2","type":"file_change","changes":[{"path":"/work/notes.txt","kind":"add"}],"status":"completed"}}
+{"type":"item.completed","item":{"id":"item_3","type":"agent_message","text":"DONE"}}
+{"type":"turn.completed","usage":{"input_tokens":39612,"cached_input_tokens":30848,"output_tokens":119,"reasoning_output_tokens":0}}

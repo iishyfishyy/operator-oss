@@ -1,0 +1,74 @@
+# One orchestrator instance = one user = one compose project (-p), one
+# container, one named home volume, one bridge network. NEVER share an
+# instance between users — the app is single-user and the integrated terminal
+# is a full shell.
+#
+#   ORCH_USER=alice ORCH_PORT=10001 PUBLIC_BASE_URL=https://alice.example.com \
+#     docker compose -p orch-alice up -d --build
+#
+# The app port is published on the HOST's loopback only; put your own
+# authenticated tunnel or reverse proxy in front before exposing it anywhere.
+services:
+  orchestrator:
+    build: .
+    image: agent-orchestrator:latest
+    container_name: orch-u-${ORCH_USER:?set ORCH_USER (e.g. alice)}
+    restart: unless-stopped
+    # gVisor: untrusted-user containers should run on a userspace kernel
+    # (runsc), so the full shell + bypassPermissions agent inside never talk to
+    # the host kernel directly. Local dev (Docker Desktop / colima have no
+    # runsc): ORCH_RUNTIME=runc docker compose ... — runc is NOT an acceptable
+    # runtime for untrusted users in production.
+    runtime: ${ORCH_RUNTIME:-runsc}
+    # Resource caps: enough to run a Next.js dev server + a build + an agent
+    # turn together without OOM, while one runaway container can't starve the
+    # host. swap is pinned equal to memory (no thrash onto host disk).
+    cpus: ${ORCH_CPUS:-2}
+    mem_limit: ${ORCH_MEM:-4g}
+    memswap_limit: ${ORCH_MEM:-4g}
+    pids_limit: 1024
+    # Attack-surface hardening. The image runs everything as uid 1000 and
+    # needs no capabilities; no-new-privileges blocks setuid re-escalation;
+    # the rootfs is immutable — all writes land on the home volume or this
+    # size-capped /tmp tmpfs (tmpfs pages count toward mem_limit).
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,size=512m
+    environment:
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-}
+      GIT_USER_NAME: ${GIT_USER_NAME:-}
+      GIT_USER_EMAIL: ${GIT_USER_EMAIL:-}
+      # Origin-side Cloudflare Access enforcement (lib/cf-access.mjs). Both
+      # must be set in production — without them the origin trusts everyone
+      # who reaches the published port.
+      CF_ACCESS_TEAM_DOMAIN: ${CF_ACCESS_TEAM_DOMAIN:-}
+      CF_ACCESS_AUD: ${CF_ACCESS_AUD:-}
+      # Shared secret for a health probe / monitor to read
+      # /api/instance/idle without an Access JWT (x-service-token header).
+      SERVICE_TOKEN: ${SERVICE_TOKEN:-}
+      # PostHog product analytics. All empty = analytics no-ops (the default).
+      # See lib/analytics.ts.
+      ORCH_ACCOUNT_ID: ${ORCH_ACCOUNT_ID:-}
+      POSTHOG_KEY: ${POSTHOG_KEY:-}
+      POSTHOG_HOST: ${POSTHOG_HOST:-}
+      # Feature flags (lib/features.ts). Managed Services + public service
+      # hostnames; empty = off (self-host/local default).
+      ORCH_FEATURE_SERVICES: ${ORCH_FEATURE_SERVICES:-}
+    ports:
+      - "127.0.0.1:${ORCH_PORT:?set ORCH_PORT (e.g. 10001)}:3000"
+    volumes:
+      - home:/home/orch
+
+networks:
+  # One bridge per user. Docker's inter-bridge isolation gives each container
+  # internet egress but no path to other instances on the same host.
+  default:
+    name: orch-u-${ORCH_USER}-net
+
+volumes:
+  home:
+    name: orch-u-${ORCH_USER}-home

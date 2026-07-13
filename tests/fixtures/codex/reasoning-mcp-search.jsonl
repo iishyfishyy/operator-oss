@@ -1,0 +1,12 @@
+{"type":"thread.started","thread_id":"synthetic-thread-1"}
+{"type":"turn.started"}
+{"type":"item.completed","item":{"id":"item_r0","type":"reasoning","text":"First I will check the schema.\nThen I will call the tool.\nFinally I will search the web."}}
+{"type":"item.started","item":{"id":"item_w0","type":"web_search","query":"codex sdk thread events"}}
+{"type":"item.completed","item":{"id":"item_w0","type":"web_search","query":"codex sdk thread events"}}
+{"type":"item.started","item":{"id":"item_m0","type":"mcp_tool_call","server":"docs","tool":"lookup","arguments":{"q":"threads"},"status":"in_progress"}}
+{"type":"item.completed","item":{"id":"item_m0","type":"mcp_tool_call","server":"docs","tool":"lookup","arguments":{"q":"threads"},"status":"completed","result":{"content":[{"type":"text","text":"A thread has many turns."}],"structured_content":null}}}
+{"type":"item.started","item":{"id":"item_m1","type":"mcp_tool_call","server":"docs","tool":"broken","arguments":{},"status":"in_progress"}}
+{"type":"item.completed","item":{"id":"item_m1","type":"mcp_tool_call","server":"docs","tool":"broken","arguments":{},"status":"failed","error":{"message":"tool exploded"}}}
+{"type":"item.completed","item":{"id":"item_e0","type":"error","message":"a non-fatal item error"}}
+{"type":"item.completed","item":{"id":"item_a0","type":"agent_message","text":"All done."}}
+{"type":"turn.failed","error":{"message":"the model turn failed"}}

@@ -1,0 +1,48 @@
+/**
+ * Instance-level feature flags.
+ *
+ * In-progress features default OFF and are turned on per-instance via env, the
+ * same env-driven philosophy as lib/config.ts. Flags are resolved server-side
+ * (`resolveFeatures`) and handed to the client by injecting `window.__FEATURES`
+ * in app/layout.tsx — mirroring how PUBLIC_BASE_URL crosses the boundary — so
+ * both sides gate identically without a per-flag NEXT_PUBLIC_ var.
+ *
+ * To add a flag: extend `Features` + `DEFAULT_FEATURES`, read its env var in
+ * `resolveFeatures`, document it in .env.example, and gate the UI on
+ * `clientFeatures().<flag>` (client) or `resolveFeatures().<flag>` (server).
+ */
+export interface Features {
+  /** PREVIEW tab (project live-URL view). WIP — depends on the remote-execution
+   *  backend landing first, so it stays off until the live URL is real. */
+  livePreview: boolean;
+  /** Command palette: the toolbar "Jump to project, session, or command…"
+   *  omni-search bar and its ⌘K/Ctrl-K shortcut (app/orchestrator/CommandPalette). */
+  omniSearch: boolean;
+  /** Managed Services — the toolbar "Services" button and the Services config
+   *  block in the project-context editor. Off until the feature is ready. */
+  services: boolean;
+}
+
+export const DEFAULT_FEATURES: Features = {
+  livePreview: false,
+  omniSearch: false,
+  services: false,
+};
+
+const truthy = (v: string | undefined) => v === "1" || v === "true" || v === "on";
+
+/** Server-side resolve from env. Never call this from client code (reads env). */
+export function resolveFeatures(): Features {
+  return {
+    livePreview: truthy(process.env.ORCH_FEATURE_LIVE_PREVIEW),
+    omniSearch: truthy(process.env.ORCH_FEATURE_OMNI_SEARCH),
+    services: truthy(process.env.ORCH_FEATURE_SERVICES),
+  };
+}
+
+/** Client-side read of the flags injected onto `window` by the root layout. */
+export function clientFeatures(): Features {
+  if (typeof window === "undefined") return DEFAULT_FEATURES;
+  const w = window as unknown as { __FEATURES?: Partial<Features> };
+  return { ...DEFAULT_FEATURES, ...(w.__FEATURES ?? {}) };
+}
