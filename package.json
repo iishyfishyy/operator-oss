@@ -1,6 +1,9 @@
 {
   "name": "agent-orchestrator",
   "version": "0.1.0",
+  "engines": {
+    "node": ">=18.18"
+  },
   "private": true,
   "scripts": {
     "dev": "concurrently -k -n app,pty -c blue,green \"node server.js\" \"node pty-server.js\"",

@@ -107,6 +107,11 @@ npm run dev      # starts the web app (:3000) AND the node-pty sidecar (127.0.0.
 # open http://localhost:3000
 ```
 
+App data lives **outside the repo**: first run creates `~/.zen-orchestrator`
+(SQLite) and `~/.agent-orchestrator/worktrees` (per-task git worktrees) —
+relocatable via `ORCH_DB_DIR` / `ORCH_WORKTREES_DIR`. Ports 3000/3001 taken?
+`PORT=3100 PTY_PORT=3101 npm run dev`.
+
 **First run — guided setup.** A brand-new instance opens a **setup wizard** trimmed to the
 two irreducible steps: connect Claude (sign in with your Pro/Max account right in the UI —
 the authorize link and paste-code field are surfaced for you, no terminal required — or
@@ -124,9 +129,12 @@ discover that flow too. The Welcome project is an ordinary project: dismiss or d
 time, and it never comes back once you have real projects.
 
 **Requirements**
-- The `claude` CLI installed (the wizard signs it in for you; or run `claude auth login`
-  yourself) with a **Pro/Max** plan. Works headless too (containers/servers): the CLI
-  prints the OAuth URL and accepts a pasted code.
+- **Node 18.18+** (Node 22 recommended — it's what the Docker image ships).
+- The `claude` CLI — install with `npm install -g @anthropic-ai/claude-code` — and a
+  **Pro/Max** plan (the wizard signs it in for you; or run `claude auth login` yourself).
+  Without it the app still boots, but the setup wizard's "Connect Claude" step will fail
+  until it's installed. Works headless too (containers/servers): the CLI prints the OAuth
+  URL and accepts a pasted code.
 - `ANTHROPIC_API_KEY` **unset** unless you deliberately chose the wizard's API-key path —
   otherwise it takes precedence and bills per-use instead of using your subscription.
 - macOS or Linux (the terminal uses `node-pty`).
