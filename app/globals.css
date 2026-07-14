@@ -521,6 +521,11 @@ button{font-family:inherit;color:inherit;cursor:pointer;border:none;background:n
 .sess-head .sh-title{font-size:17px;font-weight:700;letter-spacing:-.02em;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .sess-head .sh-tools{display:flex;align-items:center;gap:7px;flex:0 0 auto;}
 
+/* clickable link to the GitHub PR opened from this task's branch */
+.pr-chip{display:inline-flex;align-items:center;gap:5px;height:30px;padding:0 11px;border-radius:99px;border:1px solid var(--line);background:var(--surface-2);font-size:12px;font-weight:600;color:var(--ink-2);text-decoration:none;white-space:nowrap;flex:0 0 auto;}
+.pr-chip:hover{border-color:var(--line-strong);color:var(--ink);}
+.pr-chip svg{width:13px;height:13px;}
+
 /* cumulative token/cost spend for the task */
 .usage-chip{display:inline-flex;align-items:center;gap:5px;height:30px;padding:0 11px;border-radius:99px;border:1px solid var(--line);background:var(--surface-2);font-family:var(--mono);font-size:11px;font-weight:600;color:var(--ink-3);white-space:nowrap;flex:0 0 auto;cursor:default;}
 .usage-chip .usage-dot{color:var(--ink-4,var(--ink-3));opacity:.6;}
@@ -551,6 +556,8 @@ button{font-family:inherit;color:inherit;cursor:pointer;border:none;background:n
 .tc-btn:hover:not(:disabled){background:var(--surface-2);}
 .tc-btn:disabled{opacity:.5;cursor:default;}
 .tc-btn.primary{border-color:var(--accent);background:var(--accent);color:var(--on-accent);}
+/* the PR link rendered as an <a> in the same toolbar row */
+a.tc-btn{display:inline-flex;align-items:center;text-decoration:none;line-height:1.4;}
 .tc-merged{font-size:12px;font-weight:600;color:var(--green);}
 .tc-merged.faint{color:var(--ink-3);font-weight:500;}
 .tc-mergebar{margin:10px 16px 0;padding:8px 10px;border-radius:var(--r-sm);font-size:12px;}

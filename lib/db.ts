@@ -67,6 +67,7 @@ export function init(db: Database.Database) {
       work_branch   TEXT NOT NULL DEFAULT '',
       base_sha      TEXT NOT NULL DEFAULT '',
       merged_at     INTEGER NOT NULL DEFAULT 0,
+      pr_url        TEXT NOT NULL DEFAULT '',
       generation  INTEGER NOT NULL DEFAULT 1,
       started     INTEGER NOT NULL DEFAULT 0,
       running     INTEGER NOT NULL DEFAULT 0,
@@ -326,6 +327,8 @@ export function migrate(db: Database.Database) {
   // Agent-driver seam: which driver runs this task's sessions. Every pre-seam
   // task ran Claude, so the column default backfills existing rows correctly.
   if (!taskCols.includes("agent")) db.exec("ALTER TABLE tasks ADD COLUMN agent TEXT NOT NULL DEFAULT 'claude'");
+  // GitHub PR opened from this task's branch via "Create PR" ("" = none yet).
+  if (!taskCols.includes("pr_url")) db.exec("ALTER TABLE tasks ADD COLUMN pr_url TEXT NOT NULL DEFAULT ''");
 
   // Which driver produced each usage row, stamped at write time (Insights breaks
   // spend down by provider). Backfilled from the task's current agent — exact

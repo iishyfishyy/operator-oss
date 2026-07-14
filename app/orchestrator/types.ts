@@ -38,6 +38,7 @@ export interface TaskRow {
   reasoning: string | null; // thinking preset; null = inherit default
   permission_mode: string | null; // run permission; null = bypassPermissions (default)
   session_id: string | null;
+  pr_url: string; // GitHub PR opened from this task's branch ("" = none yet)
   generation: number;
   started: number;
   running: number;

@@ -346,6 +346,12 @@ export function useOrchestrator() {
     if (project?.seeded) setNudge(true);
   }, [selProj, loadTasks, project]);
 
+  // A PR was just opened (or updated) for a task. Refresh the task list so the
+  // header's PR chip picks up the stored URL without waiting for the next poll.
+  const onPrCreated = useCallback(() => {
+    if (selProj) void loadTasks(selProj, false);
+  }, [selProj, loadTasks]);
+
   // ---------- actions ----------
   const selectProject = (id: string) => { setSelProj(id); setSelTask(null); setView("workspace"); };
 
@@ -519,7 +525,7 @@ export function useOrchestrator() {
     modal, setModal, editId, setEditId, view, setView,
     tweaks, setTweak, tweaksOpen, setTweaksOpen,
     settings, setSetting, appDefaults, setAppDefault, agents,
-    onboarding, wizardOpen, finishWizard, rerunOnboarding, nudge, setNudge, onMerged,
+    onboarding, wizardOpen, finishWizard, rerunOnboarding, nudge, setNudge, onMerged, onPrCreated,
     layout, setLayout, accessEmail, recaps,
     termOpen, setTermOpen, termMounted, setTermMounted, termHeight, setTermHeight,
     servicesOpen, setServicesOpen, servicesMounted, setServicesMounted, servicesHeight, setServicesHeight,

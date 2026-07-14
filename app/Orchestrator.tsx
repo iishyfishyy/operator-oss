@@ -180,6 +180,7 @@ export default function Orchestrator() {
             onSetReasoning={o.setReasoning} onSetPermission={o.setPermission}
             onResolveWithAI={o.resolveConflictsWithAI}
             onMerged={o.onMerged}
+            onPrCreated={o.onPrCreated}
             onAnswer={(askId, questions, answers) => o.answerQuestion(task.id, askId, questions, answers)}
             onCancelQueued={(pendingId) => o.cancelQueued(task.id, pendingId)}
             railW={layout.railW}

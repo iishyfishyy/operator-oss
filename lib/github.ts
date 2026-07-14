@@ -295,7 +295,7 @@ export async function cloneRepo(spec: string): Promise<{ path: string; branch: s
     }
   } catch (e) {
     fs.rmSync(dest, { recursive: true, force: true }); // no half-clones
-    throw new Error(cloneErrorMessage(e));
+    throw new Error(cliErrorMessage(e, "clone failed"));
   }
 
   let branch = "main";
@@ -306,10 +306,100 @@ export async function cloneRepo(spec: string): Promise<{ path: string; branch: s
 }
 
 // Distill git/gh's stderr wall into the line that says what actually failed.
-function cloneErrorMessage(e: unknown): string {
+function cliErrorMessage(e: unknown, fallback: string): string {
   const stderr = e && typeof e === "object" && "stderr" in e ? String((e as { stderr: unknown }).stderr ?? "") : "";
   const lines = stderr.split("\n").map((l) => l.trim()).filter(Boolean);
-  const fatal = lines.find((l) => /^(fatal|error)[:\s]/i.test(l)) || lines.find((l) => /could not|denied|not found|terminal prompts disabled/i.test(l));
+  const fatal = lines.find((l) => /^(fatal|error)[:\s]/i.test(l)) || lines.find((l) => /could not|denied|not found|terminal prompts disabled|already exists|no commits between/i.test(l));
   if (fatal) return fatal.replace(/^(fatal|error):\s*/i, "");
-  return e instanceof Error ? e.message : "clone failed";
+  if (lines.length) return lines[lines.length - 1];
+  return e instanceof Error ? e.message : fallback;
+}
+
+// ---------- pull requests ----------
+
+export interface CreatePrResult {
+  ok: boolean;
+  url?: string;
+  existing?: boolean; // an open PR for this branch already existed — the push updated it
+  error?: string;
+}
+
+/**
+ * Compose the PR body from what the task knows about itself: the description,
+ * the latest session summary (the condensed "what happened" from /clear, when
+ * one exists), and an attribution footer. Pure — exported for tests.
+ */
+export function buildPrBody(input: { description?: string; summary?: string; taskId: string }): string {
+  const parts: string[] = [];
+  if (input.description?.trim()) parts.push(input.description.trim());
+  if (input.summary?.trim()) parts.push(`## Session summary\n\n${input.summary.trim()}`);
+  parts.push(`---\n_Opened by Agent Orchestrator (task ${input.taskId})._`);
+  return parts.join("\n\n");
+}
+
+/**
+ * Push a task's work branch to origin and open a GitHub PR against the base
+ * branch via `gh pr create`. Idempotent: if an open PR for the branch already
+ * exists, the push just updated it and its URL is returned (`existing: true`).
+ * Never throws — every failure mode (no gh, not logged in, no remote, push
+ * rejected, gh error) comes back as `{ ok: false, error }` with a message that
+ * says what to do about it.
+ */
+export async function createTaskPr(input: {
+  worktreePath: string;
+  workBranch: string;
+  baseBranch: string;
+  title: string;
+  body: string;
+}): Promise<CreatePrResult> {
+  const { worktreePath, workBranch, baseBranch, title, body } = input;
+
+  const st = await ghStatus();
+  if (!st.installed)
+    return { ok: false, error: "GitHub CLI (gh) is not installed — install it from https://cli.github.com, then try again" };
+  if (!st.authenticated)
+    return { ok: false, error: "gh is not logged in to GitHub — connect GitHub in Settings (or run `gh auth login`), then try again" };
+
+  const opts = {
+    cwd: worktreePath,
+    timeout: 120_000,
+    maxBuffer: 10 * 1024 * 1024,
+    // Never hang on a credential or confirmation prompt — fail with gh/git's message instead.
+    env: { ...process.env, GIT_TERMINAL_PROMPT: "0", GH_PROMPT_DISABLED: "1", GH_NO_UPDATE_NOTIFIER: "1" },
+  };
+
+  const remote = await run("git", ["-C", worktreePath, "remote", "get-url", "origin"], opts)
+    .then((r) => r.stdout.trim())
+    .catch(() => "");
+  if (!remote)
+    return { ok: false, error: "this repo has no origin remote — push it to GitHub first (e.g. `gh repo create`), then try again" };
+
+  try {
+    await run("git", ["-C", worktreePath, "push", "-u", "origin", workBranch], opts);
+  } catch (e) {
+    return { ok: false, error: `push failed: ${cliErrorMessage(e, "git push errored")}` };
+  }
+
+  // Already an open PR for this branch? The push above just updated it.
+  try {
+    const { stdout } = await run("gh", ["pr", "list", "--head", workBranch, "--state", "open", "--json", "url", "--limit", "1"], opts);
+    const found = JSON.parse(stdout || "[]") as { url?: string }[];
+    if (found[0]?.url) return { ok: true, url: found[0].url, existing: true };
+  } catch {
+    // listing failed — fall through and let `pr create` speak for itself
+  }
+
+  try {
+    // `--flag=value` form so a title/body that begins with "-" can't be read as a flag.
+    const { stdout } = await run(
+      "gh",
+      ["pr", "create", `--head=${workBranch}`, `--base=${baseBranch}`, `--title=${title}`, `--body=${body}`],
+      opts
+    );
+    const url = stdout.match(/https:\/\/\S+\/pull\/\d+/)?.[0];
+    if (!url) return { ok: false, error: "gh did not report a PR URL — check the repo on GitHub" };
+    return { ok: true, url };
+  } catch (e) {
+    return { ok: false, error: `could not create the PR: ${cliErrorMessage(e, "gh pr create errored")}` };
+  }
 }

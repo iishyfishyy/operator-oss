@@ -79,6 +79,7 @@ and the terminal.
 - 🧠 **Write-once project context.** Per-project "what we're building" is auto-prepended to every task. When the codebase outgrows it, **Refresh with AI** reads the repo and drafts fresh context for your review.
 - 🔗 **Session lineage.** `/clear` condenses the transcript to a summary and seeds a fresh context window with it — the task lives on across generations. Context overflow surfaces a one-click **Start fresh context** recovery.
 - 🌿 **Diff review → one-click merge.** Review the task branch's full diff vs base beside the transcript, then merge with one click. Conflicts? **Fix with AI** runs a reviewed-by-you resolution turn; stale branches get one-click **Sync**.
+- 📤 **Create a GitHub PR.** Prefer review on GitHub to a local merge? **Create PR** pushes the task branch to `origin` and opens a pull request via `gh pr create`, prefilled from the task (plus the latest session summary). The PR link sticks to the task as a chip in the chat header, and the button becomes **Update PR** for new commits. No `gh` or no remote? A clear message, never a hang.
 - 🔀 **Pick your agent per task.** Each task runs on **Claude Code** or **Codex** (ChatGPT-plan login, same no-API-key flow). Model / reasoning / permission controls, context gauge, and cost display all adapt to the selected agent's capabilities.
 - 🔌 **Reconnect-safe turns, queued follow-ups.** Turns run server-side, detached from the browser — reload, sleep the laptop, drop the tunnel; the transcript catches up. Type while a turn runs and it queues to execute next, in order.
 - 🖥 **Integrated terminal + dev servers.** A real shell (xterm + node-pty) in a bottom drawer, rooted in the project. Per-project `dev`/`setup`/`test` commands run as supervised processes that outlive the turn and the tab, with live logs and a stable `PORT`.
@@ -108,7 +109,7 @@ Chat on the right, watch tool calls stream in, drive the task to done.
 
 ### Review the diff, then merge
 
-The **DIFF** tab shows the task branch vs base, side by side with the transcript — review every line, then **Merge** with one click.
+The **DIFF** tab shows the task branch vs base, side by side with the transcript — review every line, then **Merge** with one click. Prefer to review on GitHub instead? **Create PR** pushes the branch and opens a pull request.
 
 ![Diff review and merge](docs/images/changes.png)
 
