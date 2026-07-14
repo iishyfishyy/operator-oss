@@ -111,13 +111,14 @@ function TaskHero({ task, project, onStart, onEdit, running, blockedBy }: { task
   );
 }
 
-export function SessionView({ project, task, agents, messages, running, blockedBy, transcriptLoading, onSend, onStart, onStop, onClear, onEdit, onSetStatus, onSetPriority, onSetModel, onSetReasoning, onSetPermission, onResolveWithAI, onMerged, onAnswer, onCancelQueued, onBack, mobile, railW, onRailWidth, onRailReset, railCollapsed, onRailCollapse, onRailExpand }: {
+export function SessionView({ project, task, agents, messages, running, blockedBy, transcriptLoading, onSend, onStart, onStop, onClear, onEdit, onSetStatus, onSetPriority, onSetModel, onSetReasoning, onSetPermission, onResolveWithAI, onMerged, onPrCreated, onAnswer, onCancelQueued, onBack, mobile, railW, onRailWidth, onRailReset, railCollapsed, onRailCollapse, onRailExpand }: {
   project: ProjectRow; task: TaskRow; agents: AgentsBundle; messages: Msg[]; running: boolean; blockedBy?: string[]; transcriptLoading?: boolean;
   onSend: (t: string) => void; onStart: () => void; onStop: () => void; onClear: () => void; onEdit: () => void;
   onSetStatus: (s: Status) => void; onSetPriority: (p: Priority) => void; onSetModel: (m: string | null) => void;
   onSetReasoning: (r: string | null) => void; onSetPermission: (p: string | null) => void;
   onResolveWithAI: (taskId: string) => Promise<ResolveResult>;
   onMerged?: () => void;
+  onPrCreated?: (url: string) => void;
   onAnswer: (askId: string, questions: AskQuestion[], answers: AskAnswers) => void;
   onCancelQueued: (pendingId: string) => void;
   onBack?: () => void; mobile?: boolean;
@@ -143,6 +144,8 @@ export function SessionView({ project, task, agents, messages, running, blockedB
   // counts. Unknown caps (bundle still loading) default to showing cost.
   const showCost = caps?.reportsCostUsd !== false;
   const multiAgent = agents.agents.length > 1;
+  // PR number for the header chip, parsed from the stored URL (…/pull/42).
+  const prNum = task.pr_url?.match(/\/pull\/(\d+)/)?.[1];
   // True while a question card is still unanswered — hides the "thinking" dots,
   // since Claude is parked on the user, not working.
   const awaitingAnswer = useMemo(() => messages.some((m) => {
@@ -281,6 +284,11 @@ export function SessionView({ project, task, agents, messages, running, blockedB
             <div className="sh-title">{task.title}</div>
           </div>
           <div className="sh-tools">
+            {task.pr_url && (
+              <a className="pr-chip" href={task.pr_url} target="_blank" rel="noreferrer" title={`Open this task's pull request — ${task.pr_url}`}>
+                {Icon.github()} PR{prNum ? ` #${prNum}` : ""} {Icon.external()}
+              </a>
+            )}
             <AgentBadge label={agentLabel(agents, task.agent)} multi={multiAgent} />
             {(task.cost_usd > 0 || task.total_tokens > 0) && (
               <span className="usage-chip" title={showCost ? `${task.total_tokens.toLocaleString()} tokens · ${fmtCost(task.cost_usd)} this task` : `${task.total_tokens.toLocaleString()} tokens this task`}>
@@ -402,12 +410,12 @@ export function SessionView({ project, task, agents, messages, running, blockedB
               />
               <SessionRail
                 project={project} task={task} sessions={sessions} running={running}
-                onResolveWithAI={onResolveWithAI} onMerged={onMerged} onClear={onClear} onCollapse={onRailCollapse} onSwitchToChat={() => { /* desktop transcript is always visible */ }}
+                onResolveWithAI={onResolveWithAI} onMerged={onMerged} onPrCreated={onPrCreated} onClear={onClear} onCollapse={onRailCollapse} onSwitchToChat={() => { /* desktop transcript is always visible */ }}
               />
             </div>
           )
         ) : view === "changes" ? (
-          <TaskChanges taskId={task.id} running={running} onMerged={onMerged} onResolveWithAI={async (id) => {
+          <TaskChanges taskId={task.id} running={running} prUrl={task.pr_url} onMerged={onMerged} onPrCreated={onPrCreated} onResolveWithAI={async (id) => {
             const res = await onResolveWithAI(id);
             // Resolution turn was kicked off (conflicts, not a clean merge) —
             // jump back to Chat so the user sees the message stream in.

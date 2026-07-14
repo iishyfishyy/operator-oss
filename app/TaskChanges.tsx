@@ -63,17 +63,23 @@ function lineClass(line: string): string {
 export default function TaskChanges({
   taskId,
   running,
+  prUrl,
   onMerged,
+  onPrCreated,
   onResolveWithAI,
 }: {
   taskId: string;
   running?: boolean;
+  prUrl?: string; // GitHub PR already opened from this branch ("" / undefined = none)
   onMerged?: () => void;
+  onPrCreated?: (url: string) => void;
   onResolveWithAI?: (taskId: string) => Promise<ResolveResult>;
 }) {
   const [data, setData] = useState<DiffResp | null>(null);
   const [loading, setLoading] = useState(true);
   const [merging, setMerging] = useState(false);
+  const [prBusy, setPrBusy] = useState(false);
+  const [prErr, setPrErr] = useState<string | null>(null);
   const [resolving, setResolving] = useState(false);
   const [manualOpen, setManualOpen] = useState(false);
   const [binaryConflicts, setBinaryConflicts] = useState<string[]>([]);
@@ -97,6 +103,7 @@ export default function TaskChanges({
 
   useEffect(() => {
     setMergeRes(null);
+    setPrErr(null);
     setCollapsed(new Set());
     setManualOpen(false);
     setBinaryConflicts([]);
@@ -167,6 +174,25 @@ export default function TaskChanges({
       setMergeRes({ ok: false, targetBranch: "", committed: false, error: e instanceof Error ? e.message : String(e) });
     } finally {
       setMerging(false);
+    }
+  };
+
+  // Review-on-GitHub path: push the branch + open (or update) a PR. The server
+  // commits any dirty work first and is idempotent, so a second click on an
+  // already-open PR just pushes the new commits to it.
+  const doCreatePr = async () => {
+    setPrBusy(true);
+    setPrErr(null);
+    try {
+      const r = await fetch(`/api/tasks/${taskId}/pr`, { method: "POST" });
+      const res: { ok?: boolean; url?: string; error?: string } = await r.json();
+      if (res.ok && res.url) onPrCreated?.(res.url);
+      else setPrErr(res.error || "could not create the PR");
+    } catch (e) {
+      setPrErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setPrBusy(false);
+      load(); // the push may have committed dirty work — refresh the diff state
     }
   };
 
@@ -289,8 +315,23 @@ export default function TaskChanges({
         ) : (
           <>
             {merged && !pending && <span className="tc-merged">✓ Merged · up to date</span>}
+            {prUrl && (
+              <a className="tc-btn tc-pr" href={prUrl} target="_blank" rel="noreferrer" title="Open this task's pull request on GitHub">
+                PR ↗
+              </a>
+            )}
+            {(data.ahead > 0 || data.isDirty) && (
+              <button
+                className="tc-btn"
+                onClick={doCreatePr}
+                disabled={prBusy || merging}
+                title={prUrl ? "Push the branch's new commits to the open PR" : "Push the branch to origin and open a GitHub PR"}
+              >
+                {prBusy ? (prUrl ? "Pushing…" : "Creating PR…") : prUrl ? "Update PR" : "Create PR"}
+              </button>
+            )}
             {pending && (
-              <button className="tc-btn primary" onClick={doMerge} disabled={merging}>
+              <button className="tc-btn primary" onClick={doMerge} disabled={merging || prBusy}>
                 {merging ? "Merging…" : merged ? "Merge new changes" : `Merge to ${data.baseLabel}`}
               </button>
             )}
@@ -314,6 +355,8 @@ export default function TaskChanges({
           )}
         </div>
       )}
+
+      {prErr && <div className="tc-mergebar bad">⚠ {prErr}</div>}
 
       {mergeRes && (
         <div className={`tc-mergebar ${mergeRes.ok ? "ok" : "bad"}`}>

@@ -50,6 +50,7 @@ export interface Task {
   work_branch: string; // the worktree's branch (e.g. "orch/<id>")
   base_sha: string; // commit the worktree branched from — the stable diff/merge base
   merged_at: number; // when this task's branch was merged back (0 = not merged)
+  pr_url: string; // GitHub PR opened from this task's branch via "Create PR" ("" = none)
   generation: number; // increments on each /clear
   started: number; // 1 once the initial prompt has been sent
   running: number; // 1 while a Claude turn is actively streaming
