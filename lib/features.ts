@@ -42,7 +42,12 @@ export function resolveFeatures(): Features {
 
 /** Client-side read of the flags injected onto `window` by the root layout. */
 export function clientFeatures(): Features {
-  if (typeof window === "undefined") return DEFAULT_FEATURES;
+  // SSR of a client component has no `window` yet. Resolve from env — the same
+  // values layout.tsx injects as window.__FEATURES — so the server HTML and the
+  // client's first render agree (returning DEFAULT_FEATURES here made every
+  // enabled flag a hydration mismatch, e.g. the ⌘K omni button). In the browser
+  // this branch never runs, so the process.env reads never execute client-side.
+  if (typeof window === "undefined") return resolveFeatures();
   const w = window as unknown as { __FEATURES?: Partial<Features> };
   return { ...DEFAULT_FEATURES, ...(w.__FEATURES ?? {}) };
 }
