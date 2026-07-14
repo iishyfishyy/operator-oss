@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for your interest in Orchestrator!
+Thanks for your interest in Operator!
 
 ## Getting started
 
