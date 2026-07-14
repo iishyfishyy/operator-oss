@@ -25,11 +25,14 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   }
 
   try {
-    const diff = await taskDiff(project.repo_path, task.worktree_path, task.base_sha, project.branch);
     // An in-progress trial merge (conflict resolution) means the branch isn't
     // really "already merged" yet — report its state so the UI can show the
-    // accept/discard review instead of a done badge.
-    const mergeState = await worktreeMergeStatus(task.worktree_path);
+    // accept/discard review instead of a done badge. Both are read-only, so
+    // they run concurrently.
+    const [diff, mergeState] = await Promise.all([
+      taskDiff(project.repo_path, task.worktree_path, task.base_sha, project.branch),
+      worktreeMergeStatus(task.worktree_path),
+    ]);
     // Self-heal: if the branch is already in the base branch but we never
     // recorded the merge (e.g. merged via CLI), backfill merged_at so the DB
     // stays the single source of truth. Status is left untouched — merely

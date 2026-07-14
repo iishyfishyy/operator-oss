@@ -46,6 +46,13 @@ export interface ResolveResult {
 
 const STATUS_LABEL: Record<string, string> = { A: "added", M: "modified", D: "deleted", R: "renamed", "?": "new" };
 
+// Last fetched diff per task, module-level so it survives unmounts. The rail
+// remounts this component on every collapse/expand, DIFF↔CONTEXT tab switch,
+// and chat/changes toggle — without a cache each of those pays a fresh
+// diff-endpoint round trip behind a skeleton. With it, reopening renders the
+// previous diff instantly and revalidates in the background.
+const diffCache = new Map<string, DiffResp>();
+
 // Strip the file-metadata preamble (diff --git / index / --- / +++) and return
 // just the hunk lines, the way GitHub shows them.
 function hunkLines(patch: string): string[] {
@@ -75,7 +82,7 @@ export default function TaskChanges({
   onPrCreated?: (url: string) => void;
   onResolveWithAI?: (taskId: string) => Promise<ResolveResult>;
 }) {
-  const [data, setData] = useState<DiffResp | null>(null);
+  const [data, setData] = useState<DiffResp | null>(() => diffCache.get(taskId) ?? null);
   const [loading, setLoading] = useState(true);
   const [merging, setMerging] = useState(false);
   const [prBusy, setPrBusy] = useState(false);
@@ -93,7 +100,9 @@ export default function TaskChanges({
     setLoading(true);
     try {
       const r = await fetch(`/api/tasks/${taskId}/diff`, { cache: "no-store" });
-      setData(await r.json());
+      const j: DiffResp = await r.json();
+      if (!j.error) diffCache.set(taskId, j); // errors are worth retrying, not replaying
+      setData(j);
     } catch (e) {
       setData({ isolated: false, files: [], isDirty: false, ahead: 0, error: e instanceof Error ? e.message : String(e) });
     } finally {
@@ -107,8 +116,11 @@ export default function TaskChanges({
     setCollapsed(new Set());
     setManualOpen(false);
     setBinaryConflicts([]);
+    // Task switched without a remount: show the new task's cached diff (or the
+    // skeleton), never the previous task's stale files, while we revalidate.
+    setData(diffCache.get(taskId) ?? null);
     load();
-  }, [load]);
+  }, [taskId, load]);
 
   // The diff moves while the agent works — refetch when a turn finishes so a
   // just-written change appears without a manual Refresh (same trigger the
