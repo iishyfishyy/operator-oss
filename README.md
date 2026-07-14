@@ -4,9 +4,9 @@
 
 ### Run many Claude Code sessions in parallel — across every project — from one screen.
 
-Stop juggling terminals. Each **project** carries reusable context; each **task** is its own Claude Code session in its own git worktree. Drive ten in parallel, see exactly which one needs you, and review every diff before it merges.
+Stop juggling terminals. Each **project** carries reusable context; each **task** is its own agent session — **Claude Code** or **Codex**, picked per task — in its own git worktree. Drive ten in parallel, see exactly which one needs you, and review every diff before it merges.
 
-Built on the **Claude Agent SDK**, driven by your **local Max/Pro login — no API key required, no per-token billing.**
+Built on the **Claude Agent SDK**, driven by your **local Max/Pro login — no API key required, no per-token billing.** Codex connects the same way, on your ChatGPT-plan login.
 
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Node ≥18.18](https://img.shields.io/badge/node-%E2%89%A518.18-brightgreen.svg)](package.json)
@@ -26,15 +26,15 @@ Built on the **Claude Agent SDK**, driven by your **local Max/Pro login — no A
 
 ## Why
 
-You're paying for a 100×/200× Claude plan. The bottleneck isn't the model — it's *you*, tabbing between terminals, re-explaining context, and losing track of what's running where.
+You're paying for a 100×/200× Claude plan — maybe a ChatGPT plan too. The bottleneck isn't the model — it's *you*, tabbing between terminals, re-explaining context, and losing track of what's running where.
 
 Operator removes that bottleneck:
 
-- **Finally hit your plan's limits.** Run many sessions at once and make product decisions in parallel instead of one terminal at a time.
+- **Finally hit your plans' limits.** Run many sessions at once — across both agents — and make product decisions in parallel instead of one terminal at a time.
 - **One screen for everything.** Every project and every task in a three-column workspace — no more "which terminal was that?"
 - **Never repeat yourself.** Project context is written once and injected into every task; `/clear` hands a summary forward to the next session automatically.
 - **Know exactly who needs you.** A live "needs your input" signal across *all* projects tells you which session is waiting — so parallel never means chaos.
-- **Ship safely.** Each task runs in an isolated git worktree; review the diff and merge with one click (Claude resolves conflicts if they appear).
+- **Ship safely.** Each task runs in an isolated git worktree; review the diff and merge with one click (the agent resolves conflicts if they appear).
 
 ## Quick start
 
