@@ -70,10 +70,12 @@ npm run dev
 # open http://localhost:3000
 ```
 
-You need **Node 18.18+**, **macOS or Linux**, and the **`claude` CLI**
-(`npm i -g @anthropic-ai/claude-code`) with a **Pro/Max plan**. First run opens a setup
-wizard that signs Claude in from the browser, then drops you into a 2-minute hands-on
-tutorial. Keep `ANTHROPIC_API_KEY` unset so it uses your subscription, not the API.
+You need **Node 18.18+**, **macOS or Linux**, and at least one agent CLI: **Claude Code**
+(`npm i -g @anthropic-ai/claude-code`, Pro/Max plan — recommended) or **Codex**
+(`npm i -g @openai/codex`, ChatGPT plan). First run opens a setup wizard that signs the
+agent in from the browser — connecting **either one** completes setup (it becomes the app
+default and the tutorial runs on it) — then drops you into a 2-minute hands-on tutorial.
+Keep `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` unset so it uses your subscription, not the API.
 
 Every setting is an env var with a sane default — see [`.env.example`](.env.example).
 

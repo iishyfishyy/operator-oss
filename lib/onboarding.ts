@@ -1,4 +1,6 @@
-import { getSetting, setSetting } from "./store";
+import { getSetting, setSetting, retargetSeededAgent } from "./store";
+import { isAgentConnected, firstConnectedAgent } from "./agents/connections";
+import { DEFAULT_AGENT } from "./agents/registry";
 import { track } from "@/lib/analytics";
 
 // First-run wizard state, persisted in the settings table so an abandoned setup
@@ -54,6 +56,17 @@ export function setOnboardingAccount(email: string | null, plan: string | null):
 
 export function completeOnboarding(): void {
   setSetting("onboarding_complete", "1");
+  // The wizard requires "an agent", not Claude specifically. If the effective
+  // default agent never got connected but another one did (a Codex-only first
+  // run), adopt the connected agent as the app default and retarget the seeded
+  // Welcome tutorial so its tasks run on an agent that actually works.
+  const current = getSetting("default_agent") || DEFAULT_AGENT;
+  if (isAgentConnected(current)) return;
+  const alt = firstConnectedAgent();
+  if (!alt) return;
+  setSetting("default_agent", alt);
+  retargetSeededAgent(alt);
+  track("onboarding_default_agent_adopted", { agent: alt });
 }
 
 /** Re-run setup from Settings: clear completion + progress, keep the connection. */

@@ -23,8 +23,13 @@ export function capsFor(bundle: AgentsBundle, id: string | null | undefined): Ag
 }
 
 // The agent a new task should default to: the project's default, else the app
-// default, clamped to an agent that actually exists in the bundle.
+// default — but only when that agent is actually connected. Otherwise fall to
+// the first connected agent (a Codex-only instance must not default new tasks
+// to an unconnected Claude), and only when NOTHING is connected fall back to
+// mere existence so the picker still renders (with its connect CTA).
 export function defaultAgentFor(bundle: AgentsBundle, projectDefault: string | null | undefined): string {
-  const want = projectDefault || bundle.default;
-  return findAgent(bundle, want)?.id ?? bundle.agents[0]?.id ?? bundle.default;
+  const want = findAgent(bundle, projectDefault || bundle.default);
+  if (want?.authenticated) return want.id;
+  const connected = bundle.agents.find((a) => a.authenticated);
+  return connected?.id ?? want?.id ?? bundle.agents[0]?.id ?? bundle.default;
 }

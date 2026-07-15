@@ -79,8 +79,10 @@ usage → tokens with `cost_usd 0`) into the `StreamEvent` contract.
 Run controls map our permission modes to codex's sandbox/approval policy
 (bypassPermissions → workspace-write + approvals-never; plan → read-only); reasoning
 presets map to `model_reasoning_effort`. Capabilities declare `supportsMcpTools: true` (the
-orchestrator's tools reach codex through the portable stdio MCP bridge below),
-`supportsAsks: false` (codex non-interactive mode has no interactive-ask hook yet) and
+orchestrator's tools reach codex through the portable stdio MCP bridge below, registered
+per turn with a ~1-day `tool_timeout_sec` so a parked ask survives),
+`supportsAsks: true` (codex has no native interactive-ask hook, but the bridge's
+`ask_user` tool surfaces the same question card and blocks until the user answers) and
 `reportsCostUsd: false` (ChatGPT-plan auth reports no dollar cost). Auth (`auth.ts`) drives
 `codex login --device-auth` + `codex login status`. The one-shot helpers run as
 `codex exec` one-shots in a **read-only sandbox** (no writes, no approvals, no network).
@@ -93,8 +95,12 @@ summaries, project recaps, and "Refresh with AI" context drafts. Two policies:
 **task-scoped** one-shots (`/clear` transcript summarization) follow the **task's own
 agent**, so a Codex task's handoff note is written by Codex and counted against the Codex
 login; **project-scoped** one-shots (recap, context draft) aren't tied to any one task, so
-they run on the configured **utility agent** (the `utility_agent` app setting, default
-`claude`). Either way, if the chosen driver doesn't implement a given helper, the utility
+they run on the **utility agent**, resolved **connected-first**: the `utility_agent` app
+setting when that agent is actually connected → the app default agent → the built-in
+default → any connected agent at all — so a Codex-only instance gets working recaps and
+context drafts with zero configuration, and when NO agent is connected the job fails fast
+with an actionable "connect an agent in Settings → Agents" error instead of driving a dead
+CLI. Either way, if the chosen driver doesn't implement a given helper, the utility
 agent backstops it — so a new driver can ship `runTurn()` alone and still get working
 summaries/recaps/drafts. AI conflict-resolution turns need no special routing:
 `buildConflictPrompt()` (`lib/agents/shared.ts`) produces the prompt and the client sends
@@ -103,17 +109,22 @@ turn.
 
 ### The agent-tool bridge (`scripts/orch-mcp.mjs` + `lib/agentTools.ts`)
 
-`suggest_task` / `expose_service` are the same two tools every driver exposes. The Claude
-driver mounts them as an in-process SDK MCP server (`createSdkMcpServer`), a construct that
-only exists inside the Claude Agent SDK; the portable equivalent is
-**`scripts/orch-mcp.mjs`**, a plain-Node stdio MCP server (`@modelcontextprotocol/sdk`) the
-non-Claude drivers spawn per turn. It's a thin proxy: it reads `ORCH_TASK_ID` /
-`ORCH_PROJECT_ID` / `ORCH_BASE_URL` / `SERVICE_TOKEN` from env (injected by the driver) and
-POSTs each tool call to the app's internal endpoints
-(`app/api/internal/agent-tools/{suggest-task,expose-service}`, gated by the strict
-per-instance `SERVICE_TOKEN` in `middleware.ts`). Both the in-process server and the
-endpoints call the SAME shared logic in **`lib/agentTools.ts`**, and both build their tool
-defs from the SAME constants in **`lib/agentToolDefs.mjs`**, so the two paths can't drift.
+`suggest_task` / `expose_service` / `ask_user` are the same orchestrator tools every driver
+exposes. The Claude driver mounts the first two as an in-process SDK MCP server
+(`createSdkMcpServer`) and gets asks natively via its AskUserQuestion hook; the portable
+equivalent is **`scripts/orch-mcp.mjs`**, a plain-Node stdio MCP server
+(`@modelcontextprotocol/sdk`) the non-Claude drivers spawn per turn. It's a thin proxy: it
+reads `ORCH_TASK_ID` / `ORCH_PROJECT_ID` / `ORCH_BASE_URL` / `SERVICE_TOKEN` from env
+(injected by the driver) and POSTs each tool call to the app's internal endpoints
+(`app/api/internal/agent-tools/{suggest-task,expose-service,ask-user}`, gated by the strict
+per-instance `SERVICE_TOKEN` in `middleware.ts`). `ask_user` is the asynchronous one: the
+endpoint persists + publishes the same interactive question card the Claude hook produces,
+parks a **detached** waiter on the user's answer (`lib/asks.ts`, tied to the turn's abort
+signal), and the bridge **polls** the sibling `ask-user/wait` endpoint for the settled
+outcome — no long-held HTTP request, and the ask survives page reloads because the card
+lives in the transcript. Both the in-process server and the endpoints call the SAME shared
+logic in **`lib/agentTools.ts`**, and both build their tool defs from the SAME constants in
+**`lib/agentToolDefs.mjs`**, so the two paths can't drift.
 
 ### Adding a third agent (e.g. Gemini, Cursor)
 

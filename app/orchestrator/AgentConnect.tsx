@@ -47,9 +47,9 @@ export function AgentNudge({ ready, onConnect }: { ready: boolean; onConnect: ()
       </>}
     >
       <p style={{ margin: 0, color: "var(--ink-2)", lineHeight: 1.55 }}>
-        Claude is connected and runs the app&apos;s own jobs. Connect {names} with your subscription
-        login (no API key needed) to also pick {pending.length > 1 ? "them" : "it"} for a task. You
-        can always do this later from <strong>Settings → Agents</strong>.
+        Connect {names} with your subscription login (no API key needed) to also pick{" "}
+        {pending.length > 1 ? "them" : "it"} for a task. You can always do this later from{" "}
+        <strong>Settings → Agents</strong>.
       </p>
     </Modal>
   );

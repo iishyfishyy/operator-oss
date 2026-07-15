@@ -63,6 +63,13 @@ export function unregisterTurn(taskId: string, controller: AbortController): voi
   if (reg.get(taskId) === controller) reg.delete(taskId);
 }
 
+// The abort signal of the task's live turn, if any. Lets out-of-band waiters
+// (the ask_user bridge parking in lib/asks.ts) tie their lifetime to the turn —
+// a Stop tears them down along with the turn itself.
+export function turnSignal(taskId: string): AbortSignal | undefined {
+  return registry().get(taskId)?.signal;
+}
+
 // Whether a turn is live for this task right now. The registry is the source
 // of truth for liveness — task.running in SQLite can be stale after a server
 // restart mid-turn, but this map dies (and clears) with the process.

@@ -16,7 +16,8 @@
 // back to the utility agent's implementation — a new driver can ship runTurn()
 // alone and still get working /clear summaries, recaps, and context drafts.
 
-import { getDriver, DEFAULT_AGENT } from "./registry";
+import { getDriver, listDrivers, DEFAULT_AGENT } from "./registry";
+import { resolveConnectedAgent } from "./connections";
 import { getSetting } from "../store";
 import type { AgentDriver } from "./types";
 import type { Project, Task } from "../types";
@@ -26,12 +27,20 @@ type OneShotKey = "summarizeTranscript" | "draftProjectContext" | "summarizeProj
 
 /**
  * The agent that runs project-scoped one-shots and backstops any task whose
- * driver doesn't implement a given helper. Configured via the `utility_agent`
- * setting; falls back to the built-in default agent (Claude), which implements
- * every helper, so the backstop is always resolvable.
+ * driver doesn't implement a given helper. Resolution is connected-first: the
+ * `utility_agent` setting wins when that agent is actually connected, then the
+ * app default agent, then the built-in default, then ANY connected agent — so a
+ * Codex-only instance gets working recaps/context drafts without ever touching
+ * the setting. When no agent is connected at all we throw an actionable error
+ * instead of driving a dead CLI into a cryptic failure.
  */
 export function utilityDriver(): AgentDriver {
-  return getDriver(getSetting("utility_agent") || DEFAULT_AGENT);
+  const id = resolveConnectedAgent([getSetting("utility_agent"), getSetting("default_agent"), DEFAULT_AGENT]);
+  if (id) return getDriver(id);
+  const labels = listDrivers().map((d) => d.label).join(" or ");
+  throw new Error(
+    `No coding agent is connected. Connect ${labels} in Settings → Agents to enable recaps, context refresh, and session summaries.`
+  );
 }
 
 // Resolve a helper off `preferred`, falling back to the utility agent's
@@ -44,17 +53,22 @@ function resolve<K extends OneShotKey>(preferred: AgentDriver, key: K): NonNulla
   return impl as NonNullable<AgentDriver[K]>;
 }
 
+// The wrappers are async so utilityDriver()'s no-agent-connected throw always
+// surfaces as a REJECTED PROMISE, never a synchronous throw — callers uniformly
+// handle failures with .catch()/try-await (the refresh job persists it to
+// refresh_error, the recap sweep skips the project).
+
 /** /clear handoff note — TASK-scoped (the task's agent, else the utility agent). */
-export function summarizeTranscript(task: Task, transcript: string, project: Project): Promise<string> {
+export async function summarizeTranscript(task: Task, transcript: string, project: Project): Promise<string> {
   return resolve(getDriver(task.agent), "summarizeTranscript")(transcript, project);
 }
 
 /** Project-context draft ("Refresh with AI") — PROJECT-scoped (utility agent). */
-export function draftProjectContext(project: Project, digest: string): Promise<string> {
+export async function draftProjectContext(project: Project, digest: string): Promise<string> {
   return resolve(utilityDriver(), "draftProjectContext")(project, digest);
 }
 
 /** "Where you left off" recap — PROJECT-scoped (utility agent). */
-export function summarizeProjectRecap(project: Project, digest: string): Promise<string> {
+export async function summarizeProjectRecap(project: Project, digest: string): Promise<string> {
   return resolve(utilityDriver(), "summarizeProjectRecap")(project, digest);
 }
