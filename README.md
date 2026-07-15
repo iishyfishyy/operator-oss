@@ -29,7 +29,7 @@ Each **project** carries reusable context. Each **task** is its own agent sessio
 
 - **Parallel sessions** — every task is an isolated git worktree with its own agent session.
 - **Diff review → one-click merge** — or AI conflict resolution, branch sync, and GitHub PR creation.
-- **Pick your agent per task** — Claude Code or Codex, both on subscription logins.
+- **Pick your agent per task** — Claude Code or Codex (beta), both on subscription logins.
 - **Write-once project context** — auto-injected into every task; **Refresh with AI** redrafts it from the repo.
 - **Session lineage** — `/clear` hands a summary to a fresh context window; the task lives on.
 - **Reconnect-safe turns** — turns run server-side; reload or sleep the laptop and the transcript catches up. Queue follow-ups mid-turn.
@@ -48,6 +48,15 @@ Each **project** carries reusable context. Each **task** is its own agent sessio
 **A real terminal, right in the workspace:**
 
 ![Integrated terminal](docs/images/terminal.png)
+
+## Supported coding agents
+
+| Agent | Status |
+|-|-|
+| **Claude Code** | Fully supported — the reference driver; every feature lands here first. |
+| **OpenAI Codex** | Beta — works end-to-end; we're still working out the kinks. [Issues welcome](https://github.com/iishyfishyy/operator-oss/issues). |
+
+Want another agent? The driver seam is small — see [adding a new agent](docs/ARCHITECTURE.md).
 
 ## Quick start
 
