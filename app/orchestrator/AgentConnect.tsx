@@ -122,6 +122,8 @@ function SubscriptionConnect({ agent, onConnected, compact }: { agent: AgentInfo
   const [busy, setBusy] = useState(false);
   const [code, setCode] = useState("");
   const [showLog, setShowLog] = useState(false);
+  const [verifying, setVerifying] = useState(false);
+  const [verifyErr, setVerifyErr] = useState<string | null>(null);
   const fired = useRef(false);
   const pasteStyle = agent.capabilities.loginStyle === "paste_code";
   const base = `/api/agents/${agent.id}/login`;
@@ -140,10 +142,32 @@ function SubscriptionConnect({ agent, onConnected, compact }: { agent: AgentInfo
     jsend<ClaudeVerifyT>(`/api/agents/${agent.id}/verify`, "POST").catch(() => {}).finally(() => onConnected?.());
   }, [agent.id, onConnected]);
 
+  // Escape hatch for a CLI that's already authenticated on this machine (login
+  // done outside the app, restored home dir): skip the OAuth dance and just run
+  // the verify test turn, which writes the connection record on success.
+  const verifyExisting = async () => {
+    setVerifying(true);
+    setVerifyErr(null);
+    try {
+      const r = await jsend<ClaudeVerifyT>(`/api/agents/${agent.id}/verify`, "POST");
+      if (r.connected) {
+        fired.current = true; // verify already ran — succeed() would run it again
+        onConnected?.();
+      } else {
+        setVerifyErr(r.error ?? `no working ${agent.label} sign-in found on this machine`);
+      }
+    } catch (e) {
+      setVerifyErr((e instanceof Error ? e.message : String(e)).replace(/^\d+\s*/, ""));
+    } finally {
+      setVerifying(false);
+    }
+  };
+
   const start = async () => {
     setBusy(true);
     setCode("");
     fired.current = false;
+    setVerifyErr(null);
     try {
       const l = await jsend<AgentLoginT>(base, "POST");
       setLogin(l);
@@ -249,9 +273,22 @@ function SubscriptionConnect({ agent, onConnected, compact }: { agent: AgentInfo
           You&apos;ll get a sign-in link to open in any browser. This stores your login in this workspace and survives restarts — you only do it once.
         </div>
       )}
-      <button className="btn btn-accent" disabled={busy} onClick={start} style={{ alignSelf: "flex-start" }}>
+      <button className="btn btn-accent" disabled={busy || verifying} onClick={start} style={{ alignSelf: "flex-start" }}>
         {Icon.bolt()} {busy ? "Starting…" : `Connect ${agent.label} account`}
       </button>
+      {verifying ? (
+        <div className="wiz-verify" style={{ marginTop: 10 }}>
+          <span className="wiz-spin" /> <span>Checking your existing sign-in — running a quick test turn…</span>
+        </div>
+      ) : (
+        <div className="hlp" style={{ marginTop: 10 }}>
+          Already signed in to {agent.label} on this machine?{" "}
+          <button className="linkbtn" onClick={verifyExisting}>Verify connection</button>
+        </div>
+      )}
+      {verifyErr && !verifying && (
+        <div className="hlp" style={{ color: "var(--red)", marginTop: 6 }}>⚠ {verifyErr}</div>
+      )}
     </div>
   );
 }
