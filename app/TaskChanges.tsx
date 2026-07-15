@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Skel, ErrNote } from "./orchestrator/shared";
 
 interface DiffFile {
@@ -73,6 +73,74 @@ function lineClass(line: string): string {
   return "";
 }
 
+// Files past this many hunk lines start collapsed: a diff with many files near
+// the per-file patch cap would otherwise mount tens of thousands of line divs
+// in one commit and jank the main thread when the rail opens.
+const COLLAPSE_LINES = 400;
+
+// One file section. Memoized so the scroll tracker's setActive (which fires on
+// every scroll frame) re-renders only the overview list, not every hunk line
+// of every file.
+const FileDiff = memo(function FileDiff({
+  file: f,
+  userToggled,
+  onToggle,
+  refs,
+}: {
+  file: DiffFile;
+  userToggled: boolean; // user flipped this file away from its default state
+  onToggle: (path: string) => void;
+  refs: { current: Record<string, HTMLDivElement | null> };
+}) {
+  const lines = useMemo(() => (f.binary ? [] : hunkLines(f.patch)), [f]);
+  const big = lines.length > COLLAPSE_LINES;
+  const isCollapsed = userToggled ? !big : big;
+  // Accurate placeholder height for content-visibility while the section is
+  // offscreen-unrendered (header ≈34px, hunk lines 12px × 1.55 line-height),
+  // so offsetTop-based jump/scroll-spy stay truthful. `auto` pins the real
+  // size once rendered.
+  const est = Math.round(34 + (isCollapsed ? 38 : Math.max(1, lines.length) * 18.6));
+  return (
+    <div
+      className="tc-file"
+      style={{ containIntrinsicSize: `auto ${est}px` }}
+      ref={(el) => { refs.current[f.path] = el; }}
+    >
+      <button className="tc-fhead" onClick={() => onToggle(f.path)}>
+        <span className={`tc-chev ${isCollapsed ? "" : "open"}`}>▸</span>
+        <span className={`tc-st s-${f.status === "?" ? "new" : f.status}`}>{f.status}</span>
+        <span className="tc-fpath">{f.path}</span>
+        <span className="tc-cnt">
+          <b className="add">+{f.additions}</b> <b className="del">−{f.deletions}</b>
+        </span>
+      </button>
+      {isCollapsed ? (
+        // A big file collapsed by default still needs to say why it's empty.
+        big && (
+          <button className="tc-bigdiff" onClick={() => onToggle(f.path)}>
+            Large diff ({lines.length.toLocaleString()} lines) — click to expand
+          </button>
+        )
+      ) : (
+        <div className="tc-hunks">
+          {f.binary ? (
+            <div className="tc-empty">Binary file — not shown</div>
+          ) : lines.length === 0 ? (
+            <div className="tc-empty">No textual changes (mode or rename).</div>
+          ) : (
+            lines.map((ln, i) => (
+              <div key={i} className={`dl ${lineClass(ln)}`}>
+                {ln || " "}
+              </div>
+            ))
+          )}
+          {f.truncated && <div className="tc-empty">… file diff truncated</div>}
+        </div>
+      )}
+    </div>
+  );
+});
+
 export default function TaskChanges({
   taskId,
   running,
@@ -98,7 +166,10 @@ export default function TaskChanges({
   const [binaryConflicts, setBinaryConflicts] = useState<string[]>([]);
   const [mergeRes, setMergeRes] = useState<MergeResp | null>(null);
   const [active, setActive] = useState<string | null>(null);
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  // Paths the user flipped away from their default state (expanded normally,
+  // collapsed for big files) — override semantics so a background revalidate
+  // doesn't reset the user's choices.
+  const [toggled, setToggled] = useState<Set<string>>(new Set());
   const scrollRef = useRef<HTMLDivElement>(null);
   const secRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
@@ -119,7 +190,7 @@ export default function TaskChanges({
   useEffect(() => {
     setMergeRes(null);
     setPrErr(null);
-    setCollapsed(new Set());
+    setToggled(new Set());
     setManualOpen(false);
     setBinaryConflicts([]);
     // Task switched without a remount: show the new task's cached diff (or the
@@ -165,17 +236,30 @@ export default function TaskChanges({
   const jump = (path: string) => {
     const el = secRefs.current[path];
     const sc = scrollRef.current;
-    if (el && sc) {
-      sc.scrollTo({ top: Math.max(0, el.offsetTop - 4), behavior: "smooth" });
-      setActive(path);
-    }
+    if (!el || !sc) return;
+    setActive(path);
+    // content-visibility placeholders make offsetTop an estimate until the
+    // sections near the target actually render, and that rendering lags the
+    // scroll by a frame or two — so instead of one smooth scroll to a
+    // coordinate that goes stale mid-flight, jump instantly and keep
+    // re-targeting for a few frames while the layout settles.
+    let frames = 0;
+    const settle = () => {
+      const top = Math.max(0, el.offsetTop - 4);
+      if (Math.abs(sc.scrollTop - top) > 1) sc.scrollTop = top;
+      if (++frames < 12) requestAnimationFrame(settle);
+    };
+    settle();
   };
-  const toggle = (path: string) =>
-    setCollapsed((s) => {
-      const n = new Set(s);
-      n.has(path) ? n.delete(path) : n.add(path);
-      return n;
-    });
+  const toggle = useCallback(
+    (path: string) =>
+      setToggled((s) => {
+        const n = new Set(s);
+        n.has(path) ? n.delete(path) : n.add(path);
+        return n;
+      }),
+    []
+  );
 
   const doMerge = async () => {
     setMerging(true);
@@ -436,38 +520,9 @@ export default function TaskChanges({
           </div>
 
           {/* per-file diffs with sticky headers */}
-          {data.files.map((f) => {
-            const lines = hunkLines(f.patch);
-            const isCollapsed = collapsed.has(f.path);
-            return (
-              <div key={f.path} className="tc-file" ref={(el) => { secRefs.current[f.path] = el; }}>
-                <button className="tc-fhead" onClick={() => toggle(f.path)}>
-                  <span className={`tc-chev ${isCollapsed ? "" : "open"}`}>▸</span>
-                  <span className={`tc-st s-${f.status === "?" ? "new" : f.status}`}>{f.status}</span>
-                  <span className="tc-fpath">{f.path}</span>
-                  <span className="tc-cnt">
-                    <b className="add">+{f.additions}</b> <b className="del">−{f.deletions}</b>
-                  </span>
-                </button>
-                {!isCollapsed && (
-                  <div className="tc-hunks">
-                    {f.binary ? (
-                      <div className="tc-empty">Binary file — not shown</div>
-                    ) : lines.length === 0 ? (
-                      <div className="tc-empty">No textual changes (mode or rename).</div>
-                    ) : (
-                      lines.map((ln, i) => (
-                        <div key={i} className={`dl ${lineClass(ln)}`}>
-                          {ln || " "}
-                        </div>
-                      ))
-                    )}
-                    {f.truncated && <div className="tc-empty">… file diff truncated</div>}
-                  </div>
-                )}
-              </div>
-            );
-          })}
+          {data.files.map((f) => (
+            <FileDiff key={f.path} file={f} userToggled={toggled.has(f.path)} onToggle={toggle} refs={secRefs} />
+          ))}
         </div>
       )}
     </div>
