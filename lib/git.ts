@@ -15,7 +15,9 @@ const run = promisify(execFile);
 // tsc/eslint and would thrash the dev watcher every time an agent writes a file.
 
 async function git(repoPath: string, args: string[]): Promise<string> {
-  const { stdout } = await run("git", ["-C", repoPath, ...args]);
+  // execFile's default maxBuffer is 1MB — a whole-tree `git diff` (taskDiff)
+  // or a busy log can exceed that. It's a cap, not an allocation, so raise it.
+  const { stdout } = await run("git", ["-C", repoPath, ...args], { maxBuffer: 64 * 1024 * 1024 });
   return stdout.trim();
 }
 
@@ -269,6 +271,66 @@ const stdoutOf = (e: unknown): string =>
   e && typeof e === "object" && "stdout" in e ? String((e as { stdout: unknown }).stdout ?? "") : "";
 const msgOf = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 
+// How much of an untracked file to read when synthesizing its patch. The
+// per-file patch is clipped to MAX_FILE_PATCH anyway; this just keeps a giant
+// stray artifact from being pulled into memory whole.
+const UNTRACKED_READ_CAP = 1 << 20;
+
+// Untracked files aren't in `git diff <base>` — synthesize each one's
+// "new file" patch straight from disk instead of spawning
+// `git diff --no-index /dev/null <path>` per file.
+async function untrackedFileDiff(worktreePath: string, p: string): Promise<DiffFile> {
+  const f: DiffFile = { path: p, status: "?", additions: 0, deletions: 0, binary: false, patch: "", truncated: false };
+  let buf: Buffer;
+  let mode = "100644";
+  try {
+    const abs = path.join(worktreePath, p);
+    const st = await fs.promises.lstat(abs);
+    if (st.isSymbolicLink()) {
+      buf = Buffer.from(await fs.promises.readlink(abs));
+      mode = "120000";
+    } else if (st.size <= UNTRACKED_READ_CAP) {
+      if (st.mode & 0o111) mode = "100755";
+      buf = await fs.promises.readFile(abs);
+    } else {
+      if (st.mode & 0o111) mode = "100755";
+      const fh = await fs.promises.open(abs, "r");
+      try {
+        buf = Buffer.alloc(UNTRACKED_READ_CAP);
+        const { bytesRead } = await fh.read(buf, 0, buf.length, 0);
+        buf = buf.subarray(0, bytesRead);
+      } finally {
+        await fh.close();
+      }
+      f.truncated = true;
+    }
+  } catch {
+    return f; // vanished or unreadable between ls-files and here
+  }
+  f.binary = buf.subarray(0, 8000).includes(0); // git's own heuristic: a NUL byte in the first 8k
+  const header = `diff --git a/${p} b/${p}\nnew file mode ${mode}`;
+  if (f.binary) {
+    f.patch = `${header}\nBinary files /dev/null and b/${p} differ`;
+  } else if (buf.length === 0) {
+    f.patch = header; // empty new file: header only, no hunk — matches git
+  } else {
+    const text = buf.toString("utf8");
+    const endsNl = text.endsWith("\n");
+    const lines = (endsNl ? text.slice(0, -1) : text).split("\n");
+    f.additions = lines.length;
+    f.patch =
+      `${header}\n--- /dev/null\n+++ b/${p}\n` +
+      `@@ -0,0 +1${lines.length === 1 ? "" : `,${lines.length}`} @@\n` +
+      lines.map((l) => `+${l}`).join("\n") +
+      (endsNl ? "" : "\n\\ No newline at end of file");
+  }
+  if (f.patch.length > MAX_FILE_PATCH) {
+    f.patch = f.patch.slice(0, MAX_FILE_PATCH);
+    f.truncated = true;
+  }
+  return f;
+}
+
 // Resolve a usable diff base inside the worktree: prefer the stored base sha,
 // fall back to the merge-base with the project's base branch, then the root commit.
 async function resolveBase(worktreePath: string, baseSha: string, baseBranch: string): Promise<string> {
@@ -307,12 +369,16 @@ export async function taskDiff(
   const files: DiffFile[] = [];
   const byPath = new Map<string, DiffFile>();
 
-  // All of these are read-only — one concurrent round instead of six sequential
-  // subprocess spawns (each spawn alone costs 10–40ms before git does anything).
-  const [nameStatus, numstat, untrackedOut, statusOut, aheadOut, mergedAncestor] = await Promise.all([
-    git(worktreePath, ["diff", "--name-status", base, "--"]).catch(() => ""),
-    git(worktreePath, ["diff", "--numstat", base, "--"]).catch(() => ""),
-    git(worktreePath, ["ls-files", "--others", "--exclude-standard"]).catch(() => ""),
+  // All of these are read-only — one concurrent round instead of sequential
+  // subprocess spawns (each spawn alone costs 10–40ms before git does
+  // anything). File lists use -z so unusual paths arrive raw (no c-quoting,
+  // no tab-splitting ambiguity); the patch is ONE whole-tree diff, split per
+  // file below, instead of one `git diff` per changed path.
+  const [nameStatus, numstat, treePatch, untrackedOut, statusOut, aheadOut, mergedAncestor] = await Promise.all([
+    git(worktreePath, ["diff", "--name-status", "-z", base, "--"]).catch(() => ""),
+    git(worktreePath, ["diff", "--numstat", "-z", base, "--"]).catch(() => ""),
+    git(worktreePath, ["diff", base, "--"]).catch(() => null),
+    git(worktreePath, ["ls-files", "--others", "--exclude-standard", "-z"]).catch(() => ""),
     git(worktreePath, ["status", "--porcelain"]).catch(() => ""),
     git(worktreePath, ["rev-list", "--count", `${base}..HEAD`]).catch(() => ""),
     // Already merged if every commit on this branch is reachable from the base
@@ -323,15 +389,32 @@ export async function taskDiff(
       : Promise.resolve(false),
   ]);
 
-  for (const line of nameStatus.split("\n").filter(Boolean)) {
-    const parts = line.split("\t");
-    const f: DiffFile = { path: parts[parts.length - 1], status: parts[0][0], additions: 0, deletions: 0, binary: false, patch: "" };
-    byPath.set(f.path, f);
+  // `--name-status -z`: STATUS NUL PATH NUL, with renames/copies carrying
+  // src NUL dst NUL. The dst path is the file's identity, as before.
+  const ns = nameStatus.split("\0");
+  for (let i = 0; i + 1 < ns.length; ) {
+    const status = ns[i][0];
+    const twoPaths = status === "R" || status === "C";
+    const p = twoPaths ? ns[i + 2] : ns[i + 1];
+    i += twoPaths ? 3 : 2;
+    if (!p) continue;
+    const f: DiffFile = { path: p, status, additions: 0, deletions: 0, binary: false, patch: "" };
+    byPath.set(p, f);
     files.push(f);
   }
-  for (const line of numstat.split("\n").filter(Boolean)) {
-    const [add, del, ...rest] = line.split("\t");
-    const f = byPath.get(rest.join("\t"));
+  // `--numstat -z`: ADD TAB DEL TAB PATH NUL — except renames/copies, where
+  // the inline path is empty and src NUL dst NUL follow.
+  const num = numstat.split("\0");
+  for (let i = 0; i < num.length; ) {
+    const entry = num[i++];
+    if (!entry) continue;
+    const [add, del, inlinePath] = entry.split("\t");
+    let p = inlinePath;
+    if (!p) {
+      p = num[i + 1];
+      i += 2;
+    }
+    const f = byPath.get(p);
     if (!f) continue;
     if (add === "-" || del === "-") f.binary = true;
     else {
@@ -340,36 +423,35 @@ export async function taskDiff(
     }
   }
 
-  // Per-file patch for tracked changes (one diff per path — robust to render).
-  // Untracked files aren't in `git diff <base>` — diff each via --no-index.
-  const untracked = untrackedOut.split("\n").filter(Boolean);
-  const [, untrackedFiles] = await Promise.all([
-    mapLimit(files, 8, async (f) => {
+  // Split the whole-tree patch on its per-file headers. Headers c-quote
+  // unusual paths, so never parse paths out of them — patch sections come out
+  // in the same path-sorted order as --name-status, so zip by position. Any
+  // surprise (unmerged entries emit no patch section, an overflowed exec
+  // buffer nulls treePatch) falls back to one `git diff` per file.
+  const chunks = treePatch === null ? null : treePatch === "" ? [] : treePatch.split(/\n(?=diff --git )/);
+  if (chunks && chunks.length === files.length && chunks.every((c) => c.startsWith("diff --git "))) {
+    files.forEach((f, i) => {
+      let p = chunks[i];
+      if (p.length > MAX_FILE_PATCH) {
+        p = p.slice(0, MAX_FILE_PATCH);
+        f.truncated = true;
+      }
+      f.patch = p;
+    });
+  } else if (files.length) {
+    await mapLimit(files, 8, async (f) => {
       let p = await git(worktreePath, ["diff", base, "--", f.path]).catch(() => "");
       if (p.length > MAX_FILE_PATCH) {
         p = p.slice(0, MAX_FILE_PATCH);
         f.truncated = true;
       }
       f.patch = p;
-    }),
-    mapLimit(untracked, 8, async (p): Promise<DiffFile> => {
-      let body = "";
-      try {
-        body = await git(worktreePath, ["diff", "--no-index", "--", "/dev/null", p]);
-      } catch (e) {
-        body = stdoutOf(e); // --no-index exits 1 when files differ
-      }
-      const binary = /^Binary files /m.test(body);
-      const additions = binary ? 0 : body.split("\n").filter((l) => l.startsWith("+") && !l.startsWith("+++")).length;
-      let truncated = false;
-      if (body.length > MAX_FILE_PATCH) {
-        body = body.slice(0, MAX_FILE_PATCH);
-        truncated = true;
-      }
-      return { path: p, status: "?", additions, deletions: 0, binary, patch: body, truncated };
-    }),
-  ]);
-  files.push(...untrackedFiles);
+    });
+  }
+
+  // Untracked files: synthesized from disk (bounded fan-out keeps fd use sane).
+  const untracked = untrackedOut.split("\0").filter(Boolean);
+  files.push(...(await mapLimit(untracked, 8, (p) => untrackedFileDiff(worktreePath, p))));
 
   const isDirty = statusOut.trim().length > 0;
   const ahead = parseInt(aheadOut, 10) || 0;

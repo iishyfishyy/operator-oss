@@ -105,6 +105,60 @@ describe("taskDiff", () => {
     expect(diff.alreadyMerged).toBe(false); // no base branch to compare against
   });
 
+  it("maps patches to files across renames and c-quoted/space-containing paths", async () => {
+    const { repo, wt } = await makeRepoWithWorktree(ensureWorktree);
+    await commitFile(wt.path, "dir with space/sp aced.txt", "hello\nworld\n", "spaced");
+    await commitFile(wt.path, "uni cödé.txt", "ünï\n", "unicode"); // git c-quotes this in diff headers
+    await commitFile(wt.path, "old-name.txt", "same content\n", "to rename");
+    const baseSha = await git(wt.path, "rev-parse", "HEAD");
+
+    writeFile(wt.path, "dir with space/sp aced.txt", "hello\nthere\nworld\n");
+    writeFile(wt.path, "uni cödé.txt", "ünï\nmore\n");
+    await git(wt.path, "mv", "old-name.txt", "new name ö.txt");
+    await git(wt.path, "add", "-A");
+    await git(wt.path, "commit", "-m", "edits", "--no-verify");
+
+    const diff = await taskDiff(repo, wt.path, baseSha, "main");
+    const byPath = new Map(diff.files.map((f) => [f.path, f]));
+
+    const spaced = byPath.get("dir with space/sp aced.txt")!;
+    expect(spaced.patch).toContain("+there");
+    expect(spaced.additions).toBe(1);
+
+    const unicode = byPath.get("uni cödé.txt")!; // raw path, not git's c-quoted form
+    expect(unicode.patch).toContain("+more");
+    expect(unicode.patch).toContain('"a/uni c\\303\\266d\\303\\251.txt"');
+
+    const renamed = byPath.get("new name ö.txt")!;
+    expect(renamed.status).toBe("R");
+    expect(renamed.patch).toContain("rename from old-name.txt");
+  });
+
+  it("synthesizes untracked patches like git (exec bit, empty file, no trailing newline)", async () => {
+    const { repo, wt } = await makeRepoWithWorktree(ensureWorktree);
+    writeFile(wt.path, "exec.sh", "#!/bin/sh\necho hi\n");
+    fs.chmodSync(path.join(wt.path, "exec.sh"), 0o755);
+    writeFile(wt.path, "no-nl.txt", "no newline at end");
+    writeFile(wt.path, "empty.txt", "");
+
+    const diff = await taskDiff(repo, wt.path, wt.baseSha, "main");
+    const byPath = new Map(diff.files.map((f) => [f.path, f]));
+
+    const exec = byPath.get("exec.sh")!;
+    expect(exec.patch).toContain("new file mode 100755");
+    expect(exec.patch).toContain("@@ -0,0 +1,2 @@");
+    expect(exec.additions).toBe(2);
+
+    const noNl = byPath.get("no-nl.txt")!;
+    expect(noNl.patch).toContain("@@ -0,0 +1 @@");
+    expect(noNl.patch).toContain("\\ No newline at end of file");
+    expect(noNl.additions).toBe(1);
+
+    const empty = byPath.get("empty.txt")!;
+    expect(empty.additions).toBe(0);
+    expect(empty.patch).toBe("diff --git a/empty.txt b/empty.txt\nnew file mode 100644");
+  });
+
   it("detects work merged outside the app as alreadyMerged", async () => {
     const { repo, wt } = await makeRepoWithWorktree(ensureWorktree);
     await commitFile(wt.path, "done.txt", "done\n", "task commit");
