@@ -583,7 +583,10 @@ a.tc-btn{display:inline-flex;align-items:center;text-decoration:none;line-height
 .tc-st.s-M{color:var(--amber);}
 .tc-st.s-D{color:var(--red);}
 .tc-st.s-R{color:var(--accent-ink);}
-.tc-file{margin:0 16px 12px;border:1px solid var(--line);border-radius:var(--r);}
+/* content-visibility lets the browser skip layout+paint for file sections
+   outside the viewport; contain-intrinsic-size `auto` keeps the last rendered
+   height as the placeholder so the scrollbar stays stable. */
+.tc-file{margin:0 16px 12px;border:1px solid var(--line);border-radius:var(--r);content-visibility:auto;contain-intrinsic-size:auto 480px;}
 .tc-fhead{position:sticky;top:0;z-index:2;display:flex;align-items:center;gap:9px;width:100%;padding:8px 12px;border:none;border-bottom:1px solid var(--line);border-radius:var(--r) var(--r) 0 0;background:var(--panel);cursor:pointer;font-family:var(--mono);font-size:12px;text-align:left;color:var(--ink);}
 .tc-fhead:hover{background:var(--surface-2);}
 .tc-chev{transition:transform .12s;color:var(--ink-3);display:inline-block;font-size:10px;}
@@ -595,6 +598,8 @@ a.tc-btn{display:inline-flex;align-items:center;text-decoration:none;line-height
 .dl.ctx{color:var(--ink-3);}
 .dl.hunk{background:var(--accent-soft);color:var(--accent-ink);}
 .tc-empty{padding:10px 12px;color:var(--ink-3);font-size:12px;font-family:var(--sans);}
+.tc-bigdiff{display:block;width:100%;padding:10px 12px;border:none;border-radius:0 0 var(--r) var(--r);background:var(--surface);color:var(--ink-3);font-size:12px;font-family:var(--sans);text-align:left;cursor:pointer;}
+.tc-bigdiff:hover{background:var(--surface-2);color:var(--ink);}
 .status-ctl .cv{font-family:var(--mono);font-size:11px;}
 .status-ctl svg{width:14px;height:14px;}
 /* Live "which model actually ran" badge inside the model picker control. */
