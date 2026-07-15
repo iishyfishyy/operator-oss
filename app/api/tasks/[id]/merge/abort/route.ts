@@ -3,6 +3,7 @@ import { getTask, getProject } from "@/lib/store";
 import { abortWorktreeMerge } from "@/lib/git";
 import { hasTurn } from "@/lib/abort";
 import { withTaskLock } from "@/lib/taskLock";
+import { jsonGuard } from "@/lib/apiGuard";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -13,7 +14,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   const { id } = await params;
   // Locked against the turn-launch path: merge --abort rewrites worktree files,
   // so no turn may start writing into them while it runs.
-  return withTaskLock(id, async () => {
+  return jsonGuard(`merge/abort ${id}`, () => withTaskLock(id, async () => {
     const task = getTask(id);
     if (!task) return NextResponse.json({ error: "not found" }, { status: 404 });
     if (task.running || hasTurn(id))
@@ -24,5 +25,5 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
 
     await abortWorktreeMerge(task.worktree_path);
     return NextResponse.json({ ok: true }, { status: 200 });
-  });
+  }));
 }

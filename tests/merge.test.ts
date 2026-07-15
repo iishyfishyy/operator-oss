@@ -247,6 +247,45 @@ describe("prepareWorktreeMerge", () => {
     const status = await worktreeMergeStatus(wt.path);
     expect(status.mergeInProgress).toBe(true);
     expect(status.unresolved.sort()).toEqual(["blob.bin", "file.txt"]);
+
+    // Editing the text conflict marker-free resolves it even without staging;
+    // the binary (which can never carry markers) stays unresolved.
+    writeFile(wt.path, "file.txt", "resolved version\n");
+    expect((await worktreeMergeStatus(wt.path)).unresolved).toEqual(["blob.bin"]);
+  });
+
+  it("stops reporting a file unresolved once its markers are edited out, even unstaged", async () => {
+    const { repo, wt } = await makeRepoWithWorktree(ensureWorktree);
+    await commitFile(wt.path, "file.txt", "task version\n", "task edit");
+    await commitFile(repo, "file.txt", "main version\n", "main edit");
+    const res = await prepareWorktreeMerge({ repoPath: repo, worktreePath: wt.path, baseBranch: "main", message: "sync" });
+    expect(res.conflicts).toEqual(["file.txt"]);
+
+    // An AI resolution turn rewrites the file marker-free but never `git add`s
+    // it — the index still flags it unmerged, but the content is resolved.
+    writeFile(wt.path, "file.txt", "resolved version\n");
+
+    const status = await worktreeMergeStatus(wt.path);
+    expect(status.mergeInProgress).toBe(true); // the merge still awaits accept…
+    expect(status.unresolved).toEqual([]); // …but nothing is left to resolve
+  });
+
+  it("no-ops when the work branch already contains the base tip", async () => {
+    const { repo, wt } = await makeRepoWithWorktree(ensureWorktree);
+    await commitFile(repo, "main.txt", "main\n", "main moved on");
+    const input = { repoPath: repo, worktreePath: wt.path, baseBranch: "main", message: "Sync main into task" };
+    const first = await prepareWorktreeMerge(input);
+    expect(first.clean).toBe(true);
+    const head = await git(wt.path, "rev-parse", "HEAD");
+
+    // Re-running prepare on the already-synced branch (e.g. after a
+    // half-completed accept) must not stack another sync commit — and must not
+    // sweep pending edits into a sync-titled commit either.
+    writeFile(wt.path, "pending.txt", "wip\n");
+    const second = await prepareWorktreeMerge(input);
+    expect(second).toEqual({ ok: true, clean: true, conflicts: [], binaryConflicts: [] });
+    expect(await git(wt.path, "rev-parse", "HEAD")).toBe(head);
+    expect(await git(wt.path, "status", "--porcelain")).toContain("pending.txt");
   });
 
   it("reports the existing conflicts when a merge is already in progress", async () => {

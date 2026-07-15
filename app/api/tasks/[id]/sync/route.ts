@@ -4,6 +4,7 @@ import { worktreeSyncStatus, fastForwardWorktree, prepareWorktreeMerge } from "@
 import { buildConflictPrompt } from "@/lib/agents/shared";
 import { hasTurn } from "@/lib/abort";
 import { withTaskLock } from "@/lib/taskLock";
+import { jsonGuard } from "@/lib/apiGuard";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -35,7 +36,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   // Runs under the per-task lock shared with the turn-launch path so the
   // running check stays true for the whole sync — a turn can't start writing
   // into the worktree while the fast-forward/merge below is rewriting it.
-  return withTaskLock(id, async () => {
+  return jsonGuard(`sync ${id}`, () => withTaskLock(id, async () => {
     const task = getTask(id);
     if (!task) return NextResponse.json({ error: "not found" }, { status: 404 });
     if (task.running || hasTurn(id))
@@ -93,5 +94,5 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
       { ok: true, conflicts: prep.conflicts, binaryConflicts: prep.binaryConflicts, prompt: buildConflictPrompt(project.branch, prep.conflicts) },
       { status: 200 }
     );
-  });
+  }));
 }

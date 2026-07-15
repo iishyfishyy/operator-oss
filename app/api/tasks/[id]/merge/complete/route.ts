@@ -3,6 +3,7 @@ import { getTask, getProject, updateTask, recordTaskMerge } from "@/lib/store";
 import { completeWorktreeMerge } from "@/lib/git";
 import { hasTurn } from "@/lib/abort";
 import { withTaskLock } from "@/lib/taskLock";
+import { jsonGuard } from "@/lib/apiGuard";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -13,7 +14,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   const { id } = await params;
   // Locked against the turn-launch path: committing the resolved merge stages
   // the whole worktree, so no turn may start writing into it mid-commit.
-  return withTaskLock(id, async () => {
+  return jsonGuard(`merge/complete ${id}`, () => withTaskLock(id, async () => {
     const task = getTask(id);
     if (!task) return NextResponse.json({ error: "not found" }, { status: 404 });
     if (task.running || hasTurn(id))
@@ -47,5 +48,5 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
         });
     }
     return NextResponse.json(result, { status: result.ok ? 200 : 409 });
-  });
+  }));
 }

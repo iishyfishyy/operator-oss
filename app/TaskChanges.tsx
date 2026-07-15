@@ -46,6 +46,12 @@ export interface ResolveResult {
 
 const STATUS_LABEL: Record<string, string> = { A: "added", M: "modified", D: "deleted", R: "renamed", "?": "new" };
 
+// The merge routes always answer JSON, but a layer above them can still hand
+// back HTML (a tunnel 502, a request killed at maxDuration) — parse defensively
+// so the banner shows the HTTP status, not JSON.parse's "Unexpected token '<'".
+const mergeJson = (r: Response): Promise<MergeResp> =>
+  r.json().catch(() => ({ ok: false, targetBranch: "", committed: false, error: `merge request failed (HTTP ${r.status})` }));
+
 // Last fetched diff per task, module-level so it survives unmounts. The rail
 // remounts this component on every collapse/expand, DIFF↔CONTEXT tab switch,
 // and chat/changes toggle — without a cache each of those pays a fresh
@@ -176,7 +182,7 @@ export default function TaskChanges({
     setMergeRes(null);
     try {
       const r = await fetch(`/api/tasks/${taskId}/merge`, { method: "POST" });
-      const res: MergeResp = await r.json();
+      const res = await mergeJson(r);
       setMergeRes(res);
       if (res.ok) {
         onMerged?.();
@@ -232,7 +238,7 @@ export default function TaskChanges({
     setMerging(true);
     try {
       const r = await fetch(`/api/tasks/${taskId}/merge/complete`, { method: "POST" });
-      const res: MergeResp = await r.json();
+      const res = await mergeJson(r);
       setMergeRes(res);
       if (res.ok) onMerged?.();
     } catch (e) {
