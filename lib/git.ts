@@ -709,10 +709,36 @@ export async function worktreeMergeStatus(worktreePath: string): Promise<Worktre
   const mergeInProgress = await git(worktreePath, ["rev-parse", "-q", "--verify", "MERGE_HEAD"])
     .then(() => true)
     .catch(() => false);
-  const unresolved = (await git(worktreePath, ["diff", "--name-only", "--diff-filter=U"]).catch(() => ""))
+  const indexUnresolved = (await git(worktreePath, ["diff", "--name-only", "--diff-filter=U"]).catch(() => ""))
     .split("\n")
     .filter(Boolean);
-  return { mergeInProgress, unresolved };
+  if (!indexUnresolved.length) return { mergeInProgress, unresolved: [] };
+  // The index flags a file unmerged until it's staged, but resolution turns (AI
+  // or an editor) rewrite the markers out WITHOUT `git add` — going by the index
+  // alone tells the user "still unresolved" about content that is fine. Trust
+  // content over index: a text file with no markers left is resolved (accept
+  // stages everything anyway). Binaries can never carry markers, so they stay
+  // unresolved until staged explicitly.
+  const [withMarkers, binaries] = await Promise.all([
+    conflictMarkerFiles(worktreePath, indexUnresolved),
+    binaryConflictFiles(worktreePath, indexUnresolved),
+  ]);
+  const binarySet = new Set(binaries);
+  return { mergeInProgress, unresolved: indexUnresolved.filter((f) => withMarkers.has(f) || binarySet.has(f)) };
+}
+
+// Of the given unmerged files, those whose WORKING-TREE content still contains
+// conflict markers. `git diff --check` prints "<path>:<line>: leftover conflict
+// marker" per marker (exiting non-zero) and goes silent for a file once it has
+// been edited marker-free — staged or not.
+async function conflictMarkerFiles(worktreePath: string, candidates: string[]): Promise<Set<string>> {
+  const out = await git(worktreePath, ["diff", "--check", "--", ...candidates]).catch((e) => stdoutOf(e));
+  const files = new Set<string>();
+  for (const line of out.split("\n")) {
+    const m = line.match(/^(.+?):\d+: leftover conflict marker/);
+    if (m) files.add(m[1]);
+  }
+  return files;
 }
 
 // Of the given unmerged files, those git treats as binary — these can't be
@@ -768,6 +794,15 @@ export async function prepareWorktreeMerge(input: {
     const binaryConflicts = await binaryConflictFiles(worktreePath, pre.unresolved);
     return { ok: true, clean: false, conflicts: pre.unresolved.filter((f) => !binaryConflicts.includes(f)), binaryConflicts };
   }
+
+  // Work branch already contains the base tip — nothing to merge, so skip the
+  // commit + merge machinery entirely. Re-running prepare after a half-completed
+  // accept (or a raced second sync) would otherwise stack a pointless
+  // sync-titled commit onto an already-synced branch.
+  const alreadySynced = await git(worktreePath, ["merge-base", "--is-ancestor", baseBranch, "HEAD"])
+    .then(() => true)
+    .catch(() => false);
+  if (alreadySynced) return { ok: true, clean: true, conflicts: [], binaryConflicts: [] };
 
   // Commit pending edits so the merge runs against a clean tree.
   try {

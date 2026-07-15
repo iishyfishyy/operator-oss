@@ -4,6 +4,7 @@ import { prepareWorktreeMerge, completeWorktreeMerge } from "@/lib/git";
 import { buildConflictPrompt } from "@/lib/agents/shared";
 import { hasTurn } from "@/lib/abort";
 import { withTaskLock } from "@/lib/taskLock";
+import { jsonGuard } from "@/lib/apiGuard";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -16,7 +17,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   // Locked against the turn-launch path: the trial merge (and the land step on
   // a clean result) commits the whole worktree, so the running check must stay
   // true for the duration — no turn may start writing mid-commit.
-  return withTaskLock(id, async () => {
+  return jsonGuard(`merge/prepare ${id}`, () => withTaskLock(id, async () => {
     const task = getTask(id);
     if (!task) return NextResponse.json({ error: "not found" }, { status: 404 });
     if (task.running || hasTurn(id))
@@ -63,5 +64,5 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
       { ...prep, prompt: buildConflictPrompt(project.branch, prep.conflicts) },
       { status: 200 }
     );
-  });
+  }));
 }

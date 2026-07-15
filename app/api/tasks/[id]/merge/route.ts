@@ -4,6 +4,7 @@ import { mergeTask } from "@/lib/git";
 import { track } from "@/lib/analytics";
 import { hasTurn } from "@/lib/abort";
 import { withTaskLock } from "@/lib/taskLock";
+import { jsonGuard } from "@/lib/apiGuard";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -14,7 +15,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   // with the turn-launch path (messages route + queue drain), making the
   // running check atomic with the git operation: a turn can't start writing
   // into the worktree while `git add -A` + commit are staging it.
-  return withTaskLock(id, async () => {
+  return jsonGuard(`merge ${id}`, () => withTaskLock(id, async () => {
     const task = getTask(id);
     if (!task) return NextResponse.json({ error: "not found" }, { status: 404 });
     if (task.running || hasTurn(id))
@@ -56,5 +57,5 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
         });
     }
     return NextResponse.json(result, { status: result.ok ? 200 : 409 });
-  });
+  }));
 }
