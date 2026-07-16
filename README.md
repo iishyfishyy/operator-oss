@@ -58,6 +58,10 @@ Each **project** carries reusable context. Each **task** is its own agent sessio
 
 Want another agent? The driver seam is small — see [adding a new agent](docs/ARCHITECTURE.md).
 
+## Insights
+
+Open **Insights** from the top bar for a local analytics dashboard of what your agents cost and ship: per-day spend and token usage (including cache reads/writes), tasks shipped, and lines merged to base — sliceable by project and agent across 7/30/90-day ranges, with deltas against the prior period. Everything is computed from the local SQLite database in a single fetch, filter changes recompute instantly in the browser, and nothing is sent anywhere.
+
 ## Quick start
 
 ```bash
