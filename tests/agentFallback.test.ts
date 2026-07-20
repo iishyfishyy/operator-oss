@@ -104,6 +104,7 @@ describe("defaultAgentFor (client, connected-first)", () => {
         supportsAsks: true,
         supportsMcpTools: true,
         reportsCostUsd: true,
+        costIsEstimated: false,
         supportsResume: true,
       },
       authenticated,

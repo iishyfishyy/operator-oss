@@ -29,7 +29,7 @@ Each **project** carries reusable context. Each **task** is its own agent sessio
 
 - **Parallel sessions** — every task is an isolated git worktree with its own agent session.
 - **Diff review → one-click merge** — or AI conflict resolution, branch sync, and GitHub PR creation.
-- **Pick your agent per task** — Claude Code or Codex (beta), both on subscription logins.
+- **Pick your agent per task** — Claude Code or Codex, both on subscription logins.
 - **Write-once project context** — auto-injected into every task; **Refresh with AI** redrafts it from the repo.
 - **Session lineage** — `/clear` hands a summary to a fresh context window; the task lives on.
 - **Reconnect-safe turns** — turns run server-side; reload or sleep the laptop and the transcript catches up. Queue follow-ups mid-turn.
@@ -54,13 +54,13 @@ Each **project** carries reusable context. Each **task** is its own agent sessio
 | Agent | Status |
 |-|-|
 | **Claude Code** | Fully supported — the reference driver; every feature lands here first. |
-| **OpenAI Codex** | Beta — works end-to-end; we're still working out the kinks. [Issues welcome](https://github.com/iishyfishyy/operator-oss/issues). |
+| **OpenAI Codex** | Fully supported — parallel tasks, diff review/merge, `/clear` lineage, interactive questions (via the orchestrator's `ask_user` bridge), and cost tracking. Two caveats from the upstream CLI being non-interactive: dollar figures are **estimated** from token counts × published API prices (ChatGPT-plan auth reports tokens only — shown with a `~`), and there are no mid-turn *command approval* prompts, so the permission modes offered are Auto-run and Plan. [Issues welcome](https://github.com/iishyfishyy/operator-oss/issues). |
 
 Want another agent? The driver seam is small — see [adding a new agent](docs/ARCHITECTURE.md).
 
 ## Insights
 
-Open **Insights** from the top bar for a local analytics dashboard of what your agents cost and ship: per-day spend and token usage (including cache reads/writes), tasks shipped, and lines merged to base — sliceable by project and agent across 7/30/90-day ranges, with deltas against the prior period. Everything is computed from the local SQLite database in a single fetch, filter changes recompute instantly in the browser, and nothing is sent anywhere.
+Open **Insights** from the top bar for a local analytics dashboard of what your agents cost and ship: per-day spend and token usage (including cache reads/writes), tasks shipped, and lines merged to base — sliceable by project and agent across 7/30/90-day ranges, with deltas against the prior period. Everything is computed from the local SQLite database in a single fetch, filter changes recompute instantly in the browser, and nothing is sent anywhere. Claude spend is the SDK-reported dollar figure; Codex spend is estimated from token counts at published API prices and marked with a `~`.
 
 ## Quick start
 

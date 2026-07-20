@@ -194,6 +194,7 @@ export interface AgentCapabilities {
   supportsAsks: boolean;      // can surface interactive ask cards mid-turn
   supportsMcpTools: boolean;  // can mount the orchestrator MCP tools
   reportsCostUsd: boolean;    // usage carries a real dollar cost (not just tokens)
+  costIsEstimated: boolean;   // cost is estimated from tokens × API prices — show with ~
   supportsResume: boolean;    // turns can resume a prior session/thread id
 }
 export interface AgentInfo { id: string; label: string; capabilities: AgentCapabilities; authenticated: boolean }

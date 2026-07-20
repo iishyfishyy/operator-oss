@@ -10,10 +10,13 @@
 // stream into the StreamEvent contract via lib/agents/codex/events.ts.
 //
 // Codex non-interactive mode can't ask the user natively, but the stdio MCP
-// bridge's ask_user tool restores interactive asks: the tool call parks
-// server-side until the user answers the card (see lib/agentTools.startAskUser),
-// so supportsAsks=true. ChatGPT-plan auth reports no dollar cost, so
-// reportsCostUsd=false (usage carries token counts only).
+// bridge (scripts/orch-mcp.mjs) mounts the orchestrator tools — so
+// supportsMcpTools=true, and its ask_user tool restores interactive asks: the
+// tool call parks server-side until the user answers the card (see
+// lib/agentTools.startAskUser), so supportsAsks=true. ChatGPT-plan auth
+// reports token counts only (no dollar figure), so reportsCostUsd=false —
+// instead usage carries an ESTIMATED cost (tokens × published API prices,
+// see ./pricing.ts) and costIsEstimated=true tells the UI to label it ~.
 
 import { Codex } from "@openai/codex-sdk";
 import type { SandboxMode, ApprovalMode, ModelReasoningEffort, ThreadOptions, CodexOptions } from "@openai/codex-sdk";
@@ -23,6 +26,7 @@ import { getSetting } from "../../store";
 import { CODEX_CLI_PATH, INTERNAL_BASE_URL, ORCH_MCP_SCRIPT } from "../../config";
 import { buildProjectContext } from "../shared";
 import { mapThreadEvent, newState } from "./events";
+import { resolveCodexModel } from "./pricing";
 import { codexStatus, verifyCodexTurn, startCodexLogin, getCodexLogin, submitCodexCode, cancelCodexLogin, codexApiKey } from "./auth";
 
 // What Codex can do, as data (rendered into the UI's pickers via GET /api/agents).
@@ -57,7 +61,12 @@ const CAPABILITIES: AgentCapabilities = {
   // the portable stdio MCP bridge (scripts/orch-mcp.mjs), registered per turn
   // below — the same tools the Claude driver mounts in-process.
   supportsMcpTools: true,
+  // ChatGPT-plan auth reports tokens only — no billed dollar figure — so the
+  // cost the driver emits is an estimate (tokens × published API prices for
+  // the resolved model). The descriptor stays honest: reportsCostUsd=false,
+  // and costIsEstimated=true has the UI show the figure with an ~.
   reportsCostUsd: false,
+  costIsEstimated: true,
   supportsResume: true,
   apiKeyHint: codexApiKey.hint,
   loginStyle: "device_code",
@@ -131,7 +140,15 @@ async function* runTurn(
   abortController?: AbortController
 ): AsyncGenerator<StreamEvent> {
   let sessionId: string | null = task.session_id;
-  const state = newState();
+  // The model the turn effectively runs: the task's choice, else the CLI's
+  // default (codex emits no model event of its own, so this resolved value is
+  // the best truth available). It prices the cost estimate and is reported as
+  // a `model` event so the badge + Insights provider panel populate. When the
+  // task didn't choose, we still OMIT the model override below — a user's
+  // ~/.codex/config.toml default keeps winning — so the resolved value is an
+  // assumption in that edge case, consistent with the estimated-cost framing.
+  const model = resolveCodexModel(task.model);
+  const state = newState(model);
 
   // Fallback (task choice → agent-scoped app default → legacy default → codex
   // built-in), matching the Claude driver.
@@ -162,6 +179,8 @@ async function* runTurn(
   // description, task framing, and carried summaries from prior generations).
   const prompt = task.session_id ? userText : `${buildProjectContext(project, task)}\n\n---\n\n${userText}`;
 
+  yield { type: "model", model };
+
   try {
     const { events } = await thread.runStreamed(prompt, { signal: abortController?.signal });
     for await (const ev of events) {
@@ -184,10 +203,23 @@ async function* runTurn(
 
 // ---------- one-shot helpers (no session, text in → text out) ----------
 
-// A minimal read-only agent loop, shared by the summarize/draft/recap helpers.
-// Codex has no maxTurns knob, so we keep these prompts self-contained and run
-// them read-only (no writes, no approvals) in the project's repo.
-async function oneShot(project: Project, prompt: string, mode: SandboxMode = "read-only"): Promise<string> {
+// Runaway bounds for the one-shot helpers, the codex analog of the Claude
+// driver's maxTurns (1 for the text-only summarize/recap, 40 for the
+// repo-exploring draft). Codex has no turn/iteration knob, so we bound the
+// number of thread ITEMS (commands, file reads, reasoning blocks, …) the
+// streamed run may start before we abort it. Text-only prompts need ~2 items
+// (reasoning + the reply); the explore bound is roomy because a draft run
+// legitimately reads dozens of files.
+const ONESHOT_MAX_ITEMS_TEXT = 20;
+const ONESHOT_MAX_ITEMS_EXPLORE = 120;
+
+// A minimal read-only agent loop, shared by the summarize/draft/recap helpers:
+// no writes, no approvals, no network, and at most `maxItems` items before the
+// run is cut off (returning whatever the agent had said by then). Any failure
+// degrades to empty text (callers add their own "(no … produced)" fallback) so
+// a failed helper turn never rejects into the recap/refresh jobs — mirrors the
+// Claude driver, whose collectors always return a string.
+async function oneShot(project: Project, prompt: string, maxItems: number, mode: SandboxMode = "read-only"): Promise<string> {
   const codex = new Codex({ codexPathOverride: CODEX_CLI_PATH || undefined });
   const thread = codex.startThread({
     workingDirectory: project.repo_path || process.cwd(),
@@ -196,16 +228,26 @@ async function oneShot(project: Project, prompt: string, mode: SandboxMode = "re
     approvalPolicy: "never",
     networkAccessEnabled: false,
   });
+  const abort = new AbortController();
+  let items = 0;
+  // The last agent_message wins — the same semantics as the SDK's finalResponse.
+  let finalResponse = "";
   try {
-    // thread.run() throws on turn.failed; degrade to empty text (callers add
-    // their own "(no … produced)" fallback) so a failed helper turn never
-    // rejects into the recap/refresh jobs — mirrors the Claude driver, whose
-    // collectors always return a string.
-    const result = await thread.run(prompt);
-    return result.finalResponse.trim();
+    const { events } = await thread.runStreamed(prompt, { signal: abort.signal });
+    for await (const ev of events) {
+      if (ev.type === "turn.failed" || ev.type === "error") return "";
+      if (ev.type === "item.started" && ++items > maxItems) {
+        abort.abort(); // kills the codex process; keep what we have
+        break;
+      }
+      if (ev.type === "item.completed" && ev.item.type === "agent_message") finalResponse = ev.item.text;
+    }
   } catch {
-    return "";
+    // Aborting above surfaces as a throw from the stream — that's the guard
+    // firing, not a failure. A throw without our abort is a real error: degrade.
+    if (!abort.signal.aborted) return "";
   }
+  return finalResponse.trim();
 }
 
 async function summarizeTranscript(transcript: string, project: Project): Promise<string> {
@@ -213,7 +255,8 @@ async function summarizeTranscript(transcript: string, project: Project): Promis
     project,
     `Summarize the following Codex session into a concise handoff note for a fresh session continuing the ` +
       `same task. Cover: what was done, the current state of the code, decisions made, and what remains. Be ` +
-      `specific about files and follow-ups. Output only the note.\n\n=== TRANSCRIPT ===\n${transcript}`
+      `specific about files and follow-ups. Output only the note.\n\n=== TRANSCRIPT ===\n${transcript}`,
+    ONESHOT_MAX_ITEMS_TEXT
   );
   return out || "(no summary produced)";
 }
@@ -236,7 +279,8 @@ async function draftProjectContext(project: Project, digest: string): Promise<st
       `Write the context as plain markdown (no code fences around the whole thing), tight and information-dense, ` +
       `~200–500 words. Wrap ONLY the final document between a line containing ${CTX_OPEN} and a line containing ` +
       `${CTX_CLOSE}.\n\n=== EXISTING SAVED CONTEXT (may be stale) ===\n${project.context || "(none)"}\n\n` +
-      `=== RECENT ACTIVITY ===\n${digest || "(none)"}`
+      `=== RECENT ACTIVITY ===\n${digest || "(none)"}`,
+    ONESHOT_MAX_ITEMS_EXPLORE
   );
   const open = out.indexOf(CTX_OPEN);
   const close = out.lastIndexOf(CTX_CLOSE);
@@ -251,7 +295,8 @@ async function summarizeProjectRecap(project: Project, digest: string): Promise<
     `Write a very short "where I left off" recap for the project "${project.name}", shown when the user returns after ` +
       `time away. Output ONLY 2–4 terse markdown bullet points ("- " each), one line each, ideally under ~12 words. ` +
       `Be concrete about features, files, and tasks. No headings, no intro/outro, no next steps — recap only what has ` +
-      `already happened.\n\n=== PROJECT CONTEXT ===\n${project.context || "(none)"}\n\n=== RECENT ACTIVITY ===\n${digest}`
+      `already happened.\n\n=== PROJECT CONTEXT ===\n${project.context || "(none)"}\n\n=== RECENT ACTIVITY ===\n${digest}`,
+    ONESHOT_MAX_ITEMS_TEXT
   );
   return out || "(no recap produced)";
 }

@@ -140,9 +140,12 @@ export function SessionView({ project, task, agents, messages, running, blockedB
   const models = modelOptions(caps);
   const reasoningOpts = reasoningOptions(caps);
   const permissionOpts = permissionOptions(caps);
-  // ChatGPT-plan Codex auth reports no dollar figure — hide $ but keep token
-  // counts. Unknown caps (bundle still loading) default to showing cost.
-  const showCost = caps?.reportsCostUsd !== false;
+  // Cost display: real billed figures show plainly; agents whose auth reports
+  // tokens only (Codex on a ChatGPT plan) show an ESTIMATED figure with an ~.
+  // Only an agent that reports neither hides the $ (token counts always show).
+  // Unknown caps (bundle still loading) default to showing cost.
+  const costEstimated = caps?.costIsEstimated === true;
+  const showCost = caps?.reportsCostUsd !== false || costEstimated;
   const multiAgent = agents.agents.length > 1;
   // PR number for the header chip, parsed from the stored URL (…/pull/42).
   const prNum = task.pr_url?.match(/\/pull\/(\d+)/)?.[1];
@@ -291,8 +294,8 @@ export function SessionView({ project, task, agents, messages, running, blockedB
             )}
             <AgentBadge label={agentLabel(agents, task.agent)} multi={multiAgent} />
             {(task.cost_usd > 0 || task.total_tokens > 0) && (
-              <span className="usage-chip" title={showCost ? `${task.total_tokens.toLocaleString()} tokens · ${fmtCost(task.cost_usd)} this task` : `${task.total_tokens.toLocaleString()} tokens this task`}>
-                {fmtTokens(task.total_tokens)} tok{showCost && <> <span className="usage-dot">·</span> {fmtCost(task.cost_usd)}</>}
+              <span className="usage-chip" title={showCost ? `${task.total_tokens.toLocaleString()} tokens · ${costEstimated ? `~${fmtCost(task.cost_usd)} (estimated from token counts × API prices)` : fmtCost(task.cost_usd)} this task` : `${task.total_tokens.toLocaleString()} tokens this task`}>
+                {fmtTokens(task.total_tokens)} tok{showCost && <> <span className="usage-dot">·</span> {costEstimated && "~"}{fmtCost(task.cost_usd)}</>}
               </span>
             )}
             {mobile && hasSession && (

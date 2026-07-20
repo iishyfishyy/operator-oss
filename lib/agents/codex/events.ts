@@ -21,15 +21,18 @@ import type {
   TodoListItem,
 } from "@openai/codex-sdk";
 import { clip, summarizeResult, resultText } from "../shared";
+import { DEFAULT_CODEX_MODEL, estimateCostUsd } from "./pricing";
 
 // Per-turn state threaded through every event: the item ids we've already
-// emitted a `tool` event for. A fresh object per turn (see newState()).
+// emitted a `tool` event for, plus the model the turn runs (drives cost
+// estimation on turn.completed). A fresh object per turn (see newState()).
 export interface CodexMapState {
   emittedTool: Set<string>;
+  model: string;
 }
 
-export function newState(): CodexMapState {
-  return { emittedTool: new Set<string>() };
+export function newState(model: string = DEFAULT_CODEX_MODEL): CodexMapState {
+  return { emittedTool: new Set<string>(), model };
 }
 
 const ITEM_PHASES = new Set(["item.started", "item.updated", "item.completed"]);
@@ -46,23 +49,23 @@ export function mapThreadEvent(ev: ThreadEvent, state: CodexMapState): StreamEve
       // and handed back verbatim on resume, exactly like a Claude session id.
       return [{ type: "session", sessionId: ev.thread_id }];
     case "turn.completed": {
-      // ChatGPT-plan auth reports no dollar cost, so cost_usd is always 0
-      // (capabilities.reportsCostUsd=false hides the $ in the UI). Reasoning
-      // output is folded into output_tokens so the context gauge reflects true
-      // spend; codex has no cache-creation counter (cache_creation_tokens=0).
+      // ChatGPT-plan auth reports token counts only, so cost_usd is an
+      // ESTIMATE: tokens × published API prices for the turn's model (see
+      // ./pricing.ts; capabilities.costIsEstimated makes the UI label it ~).
+      // Reasoning output is folded into output_tokens — the API bills
+      // reasoning as output, so both the context gauge and the estimate
+      // reflect true spend; codex has no cache-creation counter
+      // (cache_creation_tokens=0).
       const u = ev.usage;
-      return [
-        {
-          type: "usage",
-          usage: {
-            cost_usd: 0,
-            input_tokens: u.input_tokens,
-            output_tokens: u.output_tokens + u.reasoning_output_tokens,
-            cache_read_tokens: u.cached_input_tokens,
-            cache_creation_tokens: 0,
-          },
-        },
-      ];
+      const usage = {
+        cost_usd: 0,
+        input_tokens: u.input_tokens,
+        output_tokens: u.output_tokens + u.reasoning_output_tokens,
+        cache_read_tokens: u.cached_input_tokens,
+        cache_creation_tokens: 0,
+      };
+      usage.cost_usd = estimateCostUsd(state.model, usage);
+      return [{ type: "usage", usage }];
     }
     case "turn.failed":
       // A model/turn failure (distinct from a Stop, which kills the process and

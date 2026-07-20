@@ -379,9 +379,18 @@ describe("codex driver contract through the runner", () => {
     expect(sessions[0].claude_session_id).toBe("019f3ecf-fed2-7ba3-b46e-dc6097412033");
     expect(sessions[0].ended_at).not.toBeNull();
 
-    // Token usage persisted from turn.completed (no dollar cost on ChatGPT auth).
-    expect(getTaskUsage(task.id)).toMatchObject({ turns: 1 });
-    expect(getTaskUsage(task.id)!.total_tokens).toBeGreaterThan(0);
+    // Token usage persisted from turn.completed, with cost_usd ESTIMATED from
+    // the fixture's token counts at the default model's published API prices
+    // ((39612−30848)×$1.25 + 30848×$0.125 + 119×$10, per 1M) — this is what
+    // populates the task cost chip and Insights for Codex tasks.
+    const taskUsage = getTaskUsage(task.id)!;
+    expect(taskUsage).toMatchObject({ turns: 1 });
+    expect(taskUsage.total_tokens).toBeGreaterThan(0);
+    expect(taskUsage.cost_usd).toBeCloseTo(0.016001, 6);
+
+    // The driver reports the model it resolved (task.model null → the CLI
+    // default), persisted for the badge and the Insights provider panel.
+    expect(after.resolved_model).toBe("gpt-5.1-codex-max");
 
     // Transcript: user echo, the two agent messages, and the command tool call
     // merged with its result — all persisted rows, agent-agnostic.

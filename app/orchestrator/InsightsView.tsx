@@ -340,6 +340,10 @@ export function InsightsView({ agents, onClose }: { agents: AgentsBundle; onClos
     const presentAgents = agentIds.filter((a) => rows.some((r) => r.byAgent[a]));
     const chartAgents = presentAgents.length ? presentAgents : agent === "all" ? [] : [agent];
 
+    // Agents whose cost is estimated from token counts rather than billed
+    // (capabilities.costIsEstimated) — their figures render with an ~.
+    const estIds = new Set(chartAgents.filter((a) => capsFor(agents, a)?.costIsEstimated));
+
     // ---- provider panel ----
     const providers = chartAgents.map((a) => {
       let spend = 0, tokens = 0, tasks = 0;
@@ -390,7 +394,7 @@ export function InsightsView({ agents, onClose }: { agents: AgentsBundle; onClos
 
     const isEmpty = data.usage.length === 0 && data.shipped.length === 0 && data.merges.length === 0;
 
-    return { rows, cur, prev, activeDays, hues, chartAgents, providers, provSpendSum, projectRows, isEmpty };
+    return { rows, cur, prev, activeDays, hues, chartAgents, estIds, providers, provSpendSum, projectRows, isEmpty };
   }, [data, N, project, agent, agents]);
 
   const projName = (id: string) => data?.projects.find((p) => p.id === id)?.name ?? id;
@@ -403,7 +407,11 @@ export function InsightsView({ agents, onClose }: { agents: AgentsBundle; onClos
     );
   if (!data || !model) return <div className="col col-session insights" />;
 
-  const { rows, cur, prev, activeDays, hues, chartAgents, providers, provSpendSum, projectRows, isEmpty } = model;
+  const { rows, cur, prev, activeDays, hues, chartAgents, estIds, providers, provSpendSum, projectRows, isEmpty } = model;
+  // Spend framing when estimated-cost agents are in view: all-estimated vs a
+  // mix of billed + estimated figures.
+  const spendSub = estIds.size === 0 ? "API-equivalent cost"
+    : estIds.size === chartAgents.length ? "estimated from token counts" : "API-equivalent, partly estimated";
 
   const delta = (c: number, p: number): { text: string; arrow: string; color: string } => {
     if (!p || p <= 0) return { text: c > 0 ? "new" : "—", arrow: "", color: "var(--ink-4)" };
@@ -413,7 +421,7 @@ export function InsightsView({ agents, onClose }: { agents: AgentsBundle; onClos
   };
 
   const kpis: { label: string; value: ReactNode; sub: string; spark: ReactNode; d: { text: string; arrow: string; color: string } }[] = [
-    { label: "Spend", value: <span className="kpi-big">{fmtMoney(cur.spend)}</span>, sub: "API-equivalent cost", spark: <Sparkline vals={rows.map((r) => r.spend)} color="var(--blue)" />, d: delta(cur.spend, prev.spend) },
+    { label: "Spend", value: <span className="kpi-big">{estIds.size === chartAgents.length && estIds.size > 0 && "~"}{fmtMoney(cur.spend)}</span>, sub: spendSub, spark: <Sparkline vals={rows.map((r) => r.spend)} color="var(--blue)" />, d: delta(cur.spend, prev.spend) },
     { label: "Tokens used", value: <span className="kpi-big">{fmtCompact(cur.tokens)}</span>, sub: "across all categories", spark: <Sparkline vals={rows.map((r) => r.tokens)} color="var(--green)" />, d: delta(cur.tokens, prev.tokens) },
     { label: "Tasks shipped", value: <span className="kpi-big">{String(Math.round(cur.tasks))}</span>, sub: "merged to base branch", spark: <Sparkline vals={rows.map((r) => r.tasks)} color="var(--blue)" />, d: delta(cur.tasks, prev.tasks) },
     {
@@ -557,7 +565,7 @@ export function InsightsView({ agents, onClose }: { agents: AgentsBundle; onClos
                   tip={(r) => ({
                     title: fmtDateLong(r.date),
                     rows: [
-                      ...chartAgents.map((a) => ({ label: label(a), val: fmtMoney(r.byAgent[a]?.spend ?? 0), color: hues[a] })),
+                      ...chartAgents.map((a) => ({ label: label(a), val: `${estIds.has(a) ? "~" : ""}${fmtMoney(r.byAgent[a]?.spend ?? 0)}`, color: hues[a] })),
                       { label: "Total", val: fmtMoney(r.spend), strong: true },
                     ],
                   })}
@@ -658,7 +666,7 @@ export function InsightsView({ agents, onClose }: { agents: AgentsBundle; onClos
                         <span className="mono in-provmodels">{p.models.length ? p.models.join(" · ") : "—"}</span>
                       </span>
                     </span>
-                    <span className="mono">{fmtMoney(p.spend)}</span>
+                    <span className="mono" title={estIds.has(p.id) ? "Estimated from token counts × published API prices" : undefined}>{estIds.has(p.id) && "~"}{fmtMoney(p.spend)}</span>
                     <span className="mono dim">{fmtCompact(p.tokens)}</span>
                     <span className="mono dim">{String(Math.round(p.tasks))}</span>
                   </div>
