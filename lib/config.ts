@@ -49,6 +49,16 @@ export const SERVICE_PORT_BASE = process.env.ORCH_SERVICE_PORT_BASE
   : 4300;
 
 /**
+ * Per-service log ring-buffer cap (lines). Each managed service keeps at most
+ * this many captured stdout/stderr lines in memory — enough to scroll back
+ * through startup + recent output without growing unbounded for a dev server
+ * that's been up for days.
+ */
+export const SERVICE_LOG_LINES = process.env.ORCH_SERVICE_LOG_LINES
+  ? Number(process.env.ORCH_SERVICE_LOG_LINES)
+  : 1500;
+
+/**
  * The origin the app answers on over loopback, for in-container server-to-server
  * calls. The stdio MCP bridge (scripts/orch-mcp.mjs, spawned by the Codex CLI)
  * POSTs the suggest_task / expose_service tool calls back to the app's internal

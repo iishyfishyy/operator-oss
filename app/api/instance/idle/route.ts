@@ -18,8 +18,19 @@ export const dynamic = "force-dynamic";
  * truth; tasksMarkedRunning is the SQLite `running` flag, which can lag
  * briefly. tasksAwaitingInput is informational — those tasks are parked
  * waiting on the user, which is safe to stop.
+ *
+ * runningServices (managed dev servers, lib/services.ts) is also informational
+ * and deliberately NOT part of `idle`: stopping the container loses nothing,
+ * because each service's desired_state is persisted and boot restore relaunches
+ * it at the same public URL on wake. A control plane that prefers to keep a box
+ * warm while a user-visible service runs can apply its own policy on the count.
  */
 export async function GET() {
+  // Dynamic import: lib/services compiles as a Turbopack async module (its
+  // graph reaches the ESM agent-SDK externals), and a static namespace import
+  // from this route resolved before the async factory did in the production
+  // build — 500ing the health check. Same fix as the services-restore route.
+  const { runningServiceCount } = await import("@/lib/services");
   const a = activity();
   const flags = getDb()
     .prepare(
@@ -41,6 +52,7 @@ export async function GET() {
     openPty: a.openPty,
     openWork: a.openWork,
     runningTurns,
+    runningServices: runningServiceCount(),
     tasksMarkedRunning: flags.running,
     tasksAwaitingInput: flags.awaiting,
   });

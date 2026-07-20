@@ -27,9 +27,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (typeof name !== "string" || !name) return NextResponse.json({ error: "name required" }, { status: 400 });
   try {
     let info;
-    if (action === "start") info = startService(project, name);
+    if (action === "start") info = await startService(project, name);
     else if (action === "stop") info = stopService(project.id, name);
-    else if (action === "restart") info = restartService(project, name);
+    else if (action === "restart") info = await restartService(project, name);
     else if (action === "visibility") info = setServiceVisibility(project, name, value as ServiceVisibility);
     else if (action === "rotate_token") info = rotateShareToken(project, name);
     else return NextResponse.json({ error: "unknown action" }, { status: 400 });

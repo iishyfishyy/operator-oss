@@ -51,7 +51,7 @@ function ServiceRow({
     <button className={`svc-row${selected ? " on" : ""}`} onClick={onSelect}>
       <span className={`svc-dot ${dotClass(svc.status)}`} />
       <span className="svc-name">{svc.name}</span>
-      <span className="svc-status">{STATUS_LABEL[svc.status]}{svc.exitCode != null && svc.status !== "running" ? ` (${svc.exitCode})` : ""}</span>
+      <span className="svc-status" title={svc.error ?? undefined}>{STATUS_LABEL[svc.status]}{svc.exitCode != null && svc.status !== "running" ? ` (${svc.exitCode})` : ""}</span>
       <span style={{ flex: 1 }} />
       {showShare && (
         <select
@@ -197,6 +197,9 @@ export function ServicesDrawer({
   };
 
   const current = selected ? logs[selected] ?? [] : [];
+  // Supervisor-level failure (port conflict, spawn failure) for the selected
+  // service — shown as a banner over the logs, not buried in them.
+  const selectedError = selected ? services.find((s) => s.name === selected)?.error ?? null : null;
 
   return (
     <div className={`term-drawer svc-drawer${visible ? "" : " collapsed"}`} style={visible ? { height } : undefined}>
@@ -231,7 +234,10 @@ export function ServicesDrawer({
             ))
           )}
         </div>
-        <LogView lines={current} />
+        <div className="svc-log-pane">
+          {selectedError && <div className="svc-banner">⚠ {selectedError}</div>}
+          <LogView lines={current} />
+        </div>
       </div>
     </div>
   );

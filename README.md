@@ -33,7 +33,7 @@ Each **project** carries reusable context. Each **task** is its own agent sessio
 - **Write-once project context** — auto-injected into every task; **Refresh with AI** redrafts it from the repo.
 - **Session lineage** — `/clear` hands a summary to a fresh context window; the task lives on.
 - **Reconnect-safe turns** — turns run server-side; reload or sleep the laptop and the transcript catches up. Queue follow-ups mid-turn.
-- **Integrated terminal + dev servers** — a real shell per project, plus supervised dev processes with live logs.
+- **Integrated terminal + managed services** — a real shell per project, plus supervised dev/setup/test processes that survive restarts, with live logs and optional public URLs.
 - **Cost tracking + insights** — live per-task spend and a local analytics dashboard.
 - Plus: agent-suggested tasks, task dependencies, image attachments, clone from GitHub, recaps, a first-run tutorial.
 
@@ -61,6 +61,38 @@ Want another agent? The driver seam is small — see [adding a new agent](docs/A
 ## Insights
 
 Open **Insights** from the top bar for a local analytics dashboard of what your agents cost and ship: per-day spend and token usage (including cache reads/writes), tasks shipped, and lines merged to base — sliceable by project and agent across 7/30/90-day ranges, with deltas against the prior period. Everything is computed from the local SQLite database in a single fetch, filter changes recompute instantly in the browser, and nothing is sent anywhere.
+
+## Managed services
+
+Give a project `dev` / `setup` / `test` commands in its context editor (⚙) and the
+**Services** drawer runs them as supervised processes **owned by the server** — not by an
+agent turn or a browser tab — so `npm run dev` keeps serving after the turn ends and the
+tab closes, with live logs on reconnect. Agents can also register servers they started
+via the `expose_service` tool.
+
+- Each project gets a stable port (`ORCH_SERVICE_PORT_BASE` + slot), injected as `PORT`
+  into its services and PTY shell.
+- Services are **persisted**: a dev server that was running is auto-restarted when the
+  app boots. If the server died hard (`kill -9`, OOM), the next boot **reaps the orphaned
+  process group** before respawning, so restarts never fight zombies for ports; a clean
+  shutdown kills its service processes on the way out.
+- If the configured port is already taken by an unmanaged process, the service shows a
+  readable error in the drawer instead of crash-looping.
+- Log capture is bounded per service (`ORCH_SERVICE_LOG_LINES`, default 1500 lines).
+- A running service does **not** block idle-stop (`GET /api/instance/idle` reports
+  `runningServices` informationally): stopping the instance is safe because services
+  restart on boot at the same URL.
+
+**Public URLs are a separate opt-in.** Set `ORCH_SERVICE_HOSTS=1` (plus
+`PUBLIC_BASE_URL` and wildcard DNS/TLS) and each service gets a stable hostname
+`<slug>--<your-host>` with per-service visibility — **private** (your session only),
+**shared** (tokened link), or **public**. Enabling the services feature alone exposes
+nothing. Frameworks with host checks see the hostname as `ORCH_PUBLIC_HOST` in the
+service's env: Vite → `server.allowedHosts: [process.env.ORCH_PUBLIC_HOST]`, Next dev →
+`allowedDevOrigins: [process.env.ORCH_PUBLIC_HOST]`; CRA/webpack-dev-server is
+pre-cleared via env.
+
+Managed services are on by default; `ORCH_FEATURE_SERVICES=0` turns the whole feature off.
 
 ## Quick start
 

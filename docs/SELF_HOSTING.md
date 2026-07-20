@@ -49,6 +49,12 @@ the last-request timestamp. Polling it does not itself count as activity, and th
 uses it as its `HEALTHCHECK`. An external supervisor can consume it to stop/start idle
 containers.
 
+Running managed services are reported as `runningServices` but deliberately do **not**
+make the instance busy: each service's desired state is persisted, and boot restore
+relaunches it at the same URL when the container comes back, so stopping loses nothing.
+A supervisor that prefers to keep an instance warm while a user-visible service runs can
+apply its own policy on that count.
+
 ## Configuration
 
 Every per-instance value is an env var with a documented default — one env set fully
@@ -72,6 +78,9 @@ Export the variables in the environment that launches `npm run dev` / `npm start
 | `ORCH_WORKTREES_DIR` | `~/.agent-orchestrator/worktrees` | Where per-task git worktrees are created. Must live outside any project repo |
 | `ORCH_PROJECTS_DIR` | `~/projects` | Where **Clone from GitHub** puts cloned repos |
 | `ORCH_SERVICE_PORT_BASE` | `4300` | Base of the deterministic per-project port block. Each project is assigned `base + slot` at creation, injected as `PORT` into its supervised services and PTY |
+| `ORCH_SERVICE_LOG_LINES` | `1500` | Per-service in-memory log ring buffer (lines) kept for the Services drawer |
+| `ORCH_SERVICE_HOSTS` | *(off)* | Set `1` to serve each service on a public hostname `<slug>--<appHost>` with per-service visibility (private / shared link / public). Separate opt-in from the services feature itself; also needs `PUBLIC_BASE_URL` + wildcard DNS/TLS |
+| `ORCH_FEATURE_SERVICES` | `1` (on) | The managed-services feature (Services drawer, supervisor, persisted registry with boot auto-restart + orphan reaping). Set `0` to disable |
 | `CLAUDE_CLI_PATH` | `~/.local/bin/claude` | Path to the logged-in `claude` CLI (pinned because Next's server may run with a trimmed `PATH`) |
 | `POSTHOG_KEY` | *(empty)* | PostHog project API key. Set = product analytics on (browser snippet + server events). Empty = fully no-op, nothing is ever sent |
 | `POSTHOG_HOST` | `https://us.i.posthog.com` | PostHog ingest host |

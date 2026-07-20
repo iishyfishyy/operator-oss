@@ -189,6 +189,10 @@ export function init(db: Database.Database) {
       desired_state TEXT NOT NULL DEFAULT 'stopped',  -- 'running' | 'stopped'
       visibility    TEXT NOT NULL DEFAULT 'private',  -- 'private' | 'shared' | 'public'
       share_token   TEXT NOT NULL DEFAULT '',
+      -- pid of the spawned process group leader while a managed service runs
+      -- (0 = not running). Persisted so boot can detect and reap a process
+      -- group orphaned by a server crash before respawning on the same port.
+      pid           INTEGER NOT NULL DEFAULT 0,
       created_at    INTEGER NOT NULL,
       updated_at    INTEGER NOT NULL,
       UNIQUE(project_id, name)
@@ -329,6 +333,11 @@ export function migrate(db: Database.Database) {
   if (!taskCols.includes("agent")) db.exec("ALTER TABLE tasks ADD COLUMN agent TEXT NOT NULL DEFAULT 'claude'");
   // GitHub PR opened from this task's branch via "Create PR" ("" = none yet).
   if (!taskCols.includes("pr_url")) db.exec("ALTER TABLE tasks ADD COLUMN pr_url TEXT NOT NULL DEFAULT ''");
+
+  // Orphan-reaping pid tracking for managed services (added after the services
+  // table shipped; see lib/services.ts restoreServices).
+  const svcCols = (db.prepare("PRAGMA table_info(services)").all() as { name: string }[]).map((c) => c.name);
+  if (!svcCols.includes("pid")) db.exec("ALTER TABLE services ADD COLUMN pid INTEGER NOT NULL DEFAULT 0");
 
   // Which driver produced each usage row, stamped at write time (Insights breaks
   // spend down by provider). Backfilled from the task's current agent — exact

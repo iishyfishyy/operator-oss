@@ -43,9 +43,10 @@ process.on("uncaughtException", (err) => {
 const cfAccessImport = import("./lib/auth/origin.mjs");
 
 // Host-header router for public service hostnames (<slug>--<appHost>, e.g.
-// calc--myhost.example.com). Behind ORCH_FEATURE_SERVICES; no-ops entirely
-// (returns false, requests fall through to Next) when the flag or
-// PUBLIC_BASE_URL is unset. Service hostnames carry their OWN per-service auth
+// calc--myhost.example.com). Opt-in via ORCH_SERVICE_HOSTS (the services
+// feature flag alone exposes nothing); no-ops entirely (returns false,
+// requests fall through to Next) when that, the feature flag, or
+// PUBLIC_BASE_URL says no. Service hostnames carry their OWN per-service auth
 // (visibility: private/shared/public — see lib/service-router.mjs), so they
 // bypass the app-session origin gate below on purpose.
 const serviceRouterImport = import("./lib/service-router.mjs");
@@ -202,6 +203,19 @@ Promise.all([app.prepare(), cfAccessImport, serviceRouterImport]).then(([, cfAcc
         socket.destroy();
       });
   });
+
+  // Managed services are detached process-group children; they are cleaned up
+  // by lib/services.ts's process-'exit' hook, which only runs if the process
+  // exits via process.exit(). Next's dev server installs SIGINT/SIGTERM
+  // handlers that do; in production nothing does, so a docker stop / Ctrl-C
+  // would bypass 'exit' and orphan dev servers until the next boot's reaper.
+  // Register a fallback only when nothing else handles the signal, to avoid
+  // preempting Next's own shutdown in dev.
+  for (const sig of ["SIGTERM", "SIGINT"]) {
+    if (process.listenerCount(sig) === 0) {
+      process.on(sig, () => process.exit(0));
+    }
+  }
 
   server.listen(port, hostname, () => {
     restorePersistedServices();
