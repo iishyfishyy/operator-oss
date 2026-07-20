@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import type { ThreadEvent } from "@openai/codex-sdk";
 import { mapThreadEvent, newState } from "@/lib/agents/codex/events";
+import { estimateCostUsd, resolveCodexModel, DEFAULT_CODEX_MODEL } from "@/lib/agents/codex/pricing";
 import type { StreamEvent } from "@/lib/types";
 
 // The Codex event-mapping unit test. Feeds recorded codex `codex exec
@@ -58,17 +59,19 @@ describe("codex event mapping", () => {
     expect(fc.peek).toMatchObject({ kind: "lines", lines: ["A  /work/notes.txt"] });
     expect(results.find((r) => r.id === "item_2")).toBeUndefined();
 
-    // turn.completed → one usage event: no dollar cost, tokens from usage,
-    // reasoning folded into output, cache_read from cached_input_tokens.
+    // turn.completed → one usage event: tokens from usage, reasoning folded
+    // into output, cache_read from cached_input_tokens, and cost_usd ESTIMATED
+    // from the token counts at the default model's published API prices
+    // ((39612−30848)×$1.25 + 30848×$0.125 + 119×$10, per 1M).
     const usage = byType(evs, "usage") as Extract<StreamEvent, { type: "usage" }>[];
     expect(usage).toHaveLength(1);
-    expect(usage[0].usage).toEqual({
-      cost_usd: 0,
+    expect(usage[0].usage).toMatchObject({
       input_tokens: 39612,
       output_tokens: 119,
       cache_read_tokens: 30848,
       cache_creation_tokens: 0,
     });
+    expect(usage[0].usage.cost_usd).toBeCloseTo(0.016001, 6);
 
     // No EMPTY sentinel leaks through, and every tool id is emitted at most once.
     expect(evs.some((e) => e.type === "notice")).toBe(false);
@@ -143,5 +146,44 @@ describe("codex event mapping", () => {
 
     // The final agent message still comes through as an assistant event.
     expect((byType(evs, "assistant")[0] as Extract<StreamEvent, { type: "assistant" }>).content).toBe("All done.");
+  });
+});
+
+describe("codex cost estimation", () => {
+  const usage = { input_tokens: 1_000_000, output_tokens: 100_000, cache_read_tokens: 400_000 };
+
+  it("prices per resolved model: fresh + cached input and output at published rates", () => {
+    // Max: 600k×$1.25 + 400k×$0.125 + 100k×$10 per 1M = 0.75 + 0.05 + 1.00.
+    expect(estimateCostUsd("gpt-5.1-codex-max", usage)).toBeCloseTo(1.8, 10);
+    // Mini: 600k×$0.25 + 400k×$0.025 + 100k×$2 per 1M = 0.15 + 0.01 + 0.20.
+    expect(estimateCostUsd("gpt-5.1-codex-mini", usage)).toBeCloseTo(0.36, 10);
+  });
+
+  it("prefix-matches dated ids and falls back to the default family for unknown models", () => {
+    expect(estimateCostUsd("gpt-5.1-codex-mini-2026-01-15", usage)).toBeCloseTo(0.36, 10);
+    expect(estimateCostUsd("some-future-model", usage)).toBeCloseTo(estimateCostUsd(DEFAULT_CODEX_MODEL, usage), 10);
+  });
+
+  it("never bills cached reads above the full prompt (defensive clamp)", () => {
+    // cache_read > input would go negative on fresh tokens without the clamp.
+    const c = estimateCostUsd("gpt-5.1-codex-max", { input_tokens: 100, output_tokens: 0, cache_read_tokens: 200 });
+    expect(c).toBeCloseTo((100 * 0.125) / 1e6, 12);
+  });
+
+  it("resolves the task's model, else the CLI default", () => {
+    expect(resolveCodexModel("gpt-5.1-codex-mini")).toBe("gpt-5.1-codex-mini");
+    expect(resolveCodexModel(null)).toBe(DEFAULT_CODEX_MODEL);
+  });
+
+  it("threads the state's model into the turn.completed estimate", () => {
+    const ev = {
+      type: "turn.completed",
+      usage: { input_tokens: 1_000_000, cached_input_tokens: 400_000, output_tokens: 60_000, reasoning_output_tokens: 40_000 },
+    } as unknown as ThreadEvent;
+    const [out] = mapThreadEvent(ev, newState("gpt-5.1-codex-mini"));
+    if (out.type !== "usage") throw new Error("expected usage event");
+    // Reasoning folds into output before pricing: 100k output at mini rates.
+    expect(out.usage.output_tokens).toBe(100_000);
+    expect(out.usage.cost_usd).toBeCloseTo(0.36, 10);
   });
 });

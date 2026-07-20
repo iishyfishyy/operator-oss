@@ -60,6 +60,7 @@ const CAPABILITIES: AgentCapabilities = {
   supportsAsks: true,
   supportsMcpTools: true,
   reportsCostUsd: true,
+  costIsEstimated: false,
   supportsResume: true,
   apiKeyHint: "sk-ant-…",
   loginStyle: "paste_code",

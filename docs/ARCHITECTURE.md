@@ -74,7 +74,7 @@ driver): `startThread()` / `resumeThread(session_id)`, with the codex thread id 
 the `session` event so lineage/resume works unchanged. `events.ts` normalizes codex's
 `ThreadItem` stream (agent_message → assistant; command_execution / file_change /
 mcp_tool_call / web_search / todo_list / reasoning → tool + tool_result; `turn.completed`
-usage → tokens with `cost_usd 0`) into the `StreamEvent` contract.
+usage → tokens plus an **estimated** `cost_usd`) into the `StreamEvent` contract.
 
 Run controls map our permission modes to codex's sandbox/approval policy
 (bypassPermissions → workspace-write + approvals-never; plan → read-only); reasoning
@@ -83,9 +83,16 @@ orchestrator's tools reach codex through the portable stdio MCP bridge below, re
 per turn with a ~1-day `tool_timeout_sec` so a parked ask survives),
 `supportsAsks: true` (codex has no native interactive-ask hook, but the bridge's
 `ask_user` tool surfaces the same question card and blocks until the user answers) and
-`reportsCostUsd: false` (ChatGPT-plan auth reports no dollar cost). Auth (`auth.ts`) drives
+`reportsCostUsd: false` + `costIsEstimated: true` — ChatGPT-plan auth reports token counts
+only, so `pricing.ts` estimates the dollar cost per turn (tokens × published API prices
+for the resolved model) and the UI renders those figures with a `~`. The one upstream
+limitation not papered over: the non-interactive CLI cannot pause a turn for **command
+approval**, so on-request approval modes aren't offered — permission modes are Auto-run
+(workspace-write, approvals never) and Plan (read-only). Auth (`auth.ts`) drives
 `codex login --device-auth` + `codex login status`. The one-shot helpers run as
-`codex exec` one-shots in a **read-only sandbox** (no writes, no approvals, no network).
+`codex exec` one-shots in a **read-only sandbox** (no writes, no approvals, no network),
+bounded by an item cap — the codex analog of the Claude helpers' `maxTurns` — so a
+runaway helper turn is cut off rather than looping unbounded.
 Binary via `CODEX_CLI_PATH` (else the SDK auto-resolves its bundled binary / PATH).
 
 ### Internal one-shots (`lib/agents/oneshots.ts`)

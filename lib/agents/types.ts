@@ -44,6 +44,13 @@ export interface AgentCapabilities {
   supportsMcpTools: boolean;
   /** Usage events carry a real dollar cost (not just token counts). */
   reportsCostUsd: boolean;
+  /**
+   * The dollar cost in usage events is an ESTIMATE (token counts × published
+   * API prices) rather than a billed amount — set by drivers whose auth
+   * reports tokens only (Codex on a ChatGPT plan). The UI shows the figure
+   * with an ~ and labels it estimated. Mutually exclusive with reportsCostUsd.
+   */
+  costIsEstimated: boolean;
   /** Turns can resume a prior session/thread id (tasks.session_id). */
   supportsResume: boolean;
   /**
