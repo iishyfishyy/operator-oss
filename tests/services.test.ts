@@ -26,6 +26,7 @@ import {
   handleServiceRequest,
   serviceRoutingEnabled,
 } from "../lib/service-router.mjs";
+import { resolveFeatures } from "../lib/features";
 
 const APP_HOST = "ishan.getoperator.dev";
 
@@ -40,16 +41,19 @@ function wipeRegistry() {
 function withPublicHost() {
   process.env.PUBLIC_BASE_URL = `https://${APP_HOST}`;
   process.env.ORCH_FEATURE_SERVICES = "1";
+  process.env.ORCH_SERVICE_HOSTS = "1"; // public hostnames are their own opt-in
 }
 
 beforeEach(() => {
   wipeRegistry();
   delete process.env.PUBLIC_BASE_URL;
   delete process.env.ORCH_FEATURE_SERVICES;
+  delete process.env.ORCH_SERVICE_HOSTS;
 });
 afterEach(() => {
   delete process.env.PUBLIC_BASE_URL;
   delete process.env.ORCH_FEATURE_SERVICES;
+  delete process.env.ORCH_SERVICE_HOSTS;
 });
 
 // ---------- hostname parsing ----------
@@ -97,6 +101,19 @@ describe("service hostname parsing", () => {
   });
 });
 
+// ---------- feature flag default ----------
+
+describe("services feature flag", () => {
+  it("ships ON by default; an explicit 0 disables it", () => {
+    delete process.env.ORCH_FEATURE_SERVICES;
+    expect(resolveFeatures().services).toBe(true);
+    process.env.ORCH_FEATURE_SERVICES = "0";
+    expect(resolveFeatures().services).toBe(false);
+    process.env.ORCH_FEATURE_SERVICES = "1";
+    expect(resolveFeatures().services).toBe(true);
+  });
+});
+
 // ---------- gate tokens ----------
 
 describe("gate tokens", () => {
@@ -115,7 +132,7 @@ describe("gate tokens", () => {
 // ---------- registry persistence / restore ----------
 
 describe("service registry persistence", () => {
-  it("persists an exposed service and restores it stopped (stale) after a restart", () => {
+  it("persists an exposed service and restores it stopped (stale) after a restart", async () => {
     withPublicHost();
     const project = createProject({ name: "Calc" });
     const info = exposeService(project, "calc", 5173);
@@ -125,7 +142,7 @@ describe("service registry persistence", () => {
 
     // "Restart": the in-memory registry dies with the process; rows do not.
     wipeRegistry();
-    restoreServices();
+    await restoreServices();
     const after = listServices(project).find((s) => s.name === "calc");
     expect(after).toBeDefined();
     expect(after!.status).toBe("stopped"); // we don't own the process — never auto-started
@@ -142,13 +159,13 @@ describe("service registry persistence", () => {
       repo_path: repo,
       dev_command: "sleep 30",
     })!;
-    const started = startService(project, "dev");
+    const started = await startService(project, "dev");
     expect(started.status).toBe("running");
     expect(started.slug).toBe("web-app"); // "dev" takes the project's name publicly
     expect(started.url).toBe(`https://web-app--${APP_HOST}`);
 
     wipeRegistry();
-    restoreServices();
+    await restoreServices();
     const restored = listServices(project).find((s) => s.name === "dev");
     expect(restored!.status).toBe("running");
     expect(restored!.slug).toBe("web-app");
@@ -156,9 +173,54 @@ describe("service registry persistence", () => {
 
     // A user-stopped service stays stopped across the next restart.
     wipeRegistry();
-    restoreServices();
+    await restoreServices();
     const stopped = listServices(project).find((s) => s.name === "dev");
     expect(stopped!.status).toBe("stopped");
+    stopService(project.id, "dev");
+  });
+
+  it("reaps the orphaned process group a dead server left behind before respawning", async () => {
+    withPublicHost();
+    const repo = (await import("./helpers")).tmpDir("svc-orphan-");
+    const project = updateProject(createProject({ name: "Orphan App" }).id, {
+      repo_path: repo,
+      dev_command: "sleep 30",
+    })!;
+    const started = await startService(project, "dev");
+    const oldPid = started.pid!;
+    expect(oldPid).toBeGreaterThan(0);
+
+    // Simulated kill -9: the registry (and its ChildProcess handles) die with
+    // the server process, but the detached child lives on and the row keeps its
+    // pid. Boot restore must kill the old group, then start a fresh one.
+    wipeRegistry();
+    await restoreServices();
+
+    expect(() => process.kill(oldPid, 0)).toThrow(); // old orphan is gone
+    const restored = listServices(project).find((s) => s.name === "dev");
+    expect(restored!.status).toBe("running");
+    expect(restored!.pid).not.toBe(oldPid);
+    stopService(project.id, "dev");
+  });
+
+  it("surfaces a readable error when the configured port is already taken", async () => {
+    withPublicHost();
+    const repo = (await import("./helpers")).tmpDir("svc-port-");
+    const project = updateProject(createProject({ name: "Clash" }).id, {
+      repo_path: repo,
+      dev_command: "sleep 30",
+    })!;
+    // An unmanaged process squats on the project's port.
+    const squatter = http.createServer(() => {});
+    await new Promise<void>((r) => squatter.listen(project.port, "127.0.0.1", r));
+    try {
+      const info = await startService(project, "dev");
+      expect(info.status).toBe("errored");
+      expect(info.error).toContain(`Port ${project.port} is already in use`);
+      expect(info.pid).toBeNull(); // nothing was spawned into a crash loop
+    } finally {
+      await new Promise((r) => squatter.close(r));
+    }
   });
 
   it("keeps slugs globally unique across projects", () => {
@@ -173,7 +235,7 @@ describe("service registry persistence", () => {
     expect(second.slug!.includes("--")).toBe(false);
   });
 
-  it("mints and rotates share tokens with the shared visibility", () => {
+  it("mints and rotates share tokens with the shared visibility", async () => {
     withPublicHost();
     const project = createProject({ name: "Share Me" });
     exposeService(project, "demo", 4100);
@@ -185,7 +247,7 @@ describe("service registry persistence", () => {
 
     // Visibility survives a restart.
     wipeRegistry();
-    restoreServices();
+    await restoreServices();
     const after = listServices(project).find((s) => s.name === "demo");
     expect(after!.visibility).toBe("shared");
     expect(after!.shareUrl).toBe(rotated.shareUrl);
@@ -242,12 +304,23 @@ describe("host-header router", () => {
     });
   }
 
-  it("is inert without the feature flag / public host", () => {
+  it("hostname routing stays opt-in: needs ORCH_SERVICE_HOSTS, the flag not off, and a public host", () => {
+    // The services feature defaults ON, but that alone must expose nothing:
+    // without the explicit hosts opt-in the router never claims a hostname.
     delete process.env.ORCH_FEATURE_SERVICES;
+    delete process.env.ORCH_SERVICE_HOSTS;
     expect(serviceRoutingEnabled()).toBe(false);
-    process.env.ORCH_FEATURE_SERVICES = "1";
+    // Hosts opted in, but the feature explicitly disabled → still inert.
+    process.env.ORCH_SERVICE_HOSTS = "1";
+    process.env.ORCH_FEATURE_SERVICES = "0";
+    expect(serviceRoutingEnabled()).toBe(false);
+    // Default-on flag + hosts opt-in, but no public hostname to parse against.
+    delete process.env.ORCH_FEATURE_SERVICES;
     delete process.env.PUBLIC_BASE_URL;
     expect(serviceRoutingEnabled()).toBe(false);
+    // All three present (flag by default) → live.
+    process.env.PUBLIC_BASE_URL = `https://${APP_HOST}`;
+    expect(serviceRoutingEnabled()).toBe(true);
   });
 
   it("passes the app host and unknown hosts through to Next", async () => {
@@ -299,7 +372,7 @@ describe("host-header router", () => {
     exposeService(project, "down", upstreamPort);
     setServiceVisibility(project, "down", "public");
     wipeRegistry();
-    restoreServices(); // exposed entry comes back stale/stopped
+    await restoreServices(); // exposed entry comes back stale/stopped
     const stopped = await request(`down--${APP_HOST}`, "/");
     expect(stopped.status).toBe(503);
     expect(stopped.body).toContain("not running right now");

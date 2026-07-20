@@ -159,13 +159,21 @@ test (`tests/codexEvents.test.ts`) are the templates for pinning a new driver to
   per-service ring buffer, and publishes status/log events over SSE. State lives on
   `globalThis` (survives HMR), like `lib/events.ts`. Each project gets a stable `PORT`
   (`projects.port`, deterministic from `ORCH_SERVICE_PORT_BASE`) injected into every
-  service's env and the PTY shell. Behind `ORCH_FEATURE_SERVICES`, the registry is
-  **persisted** (`services` table) and every service gets a stable **public hostname**
-  `<slug>--<appHost>` with per-service visibility (private / shared-link / public):
-  `server.js` restores + auto-restarts managed services on boot and dispatches service
-  hostnames through the reverse-proxy router in **`lib/service-router.mjs`**
-  (WebSocket/HMR passthrough included), with the pure hostname/token helpers in
-  **`lib/service-host.mjs`**.
+  service's env and the PTY shell. On by default (`ORCH_FEATURE_SERVICES=0` disables):
+  the registry is **persisted** (`services` table) and `server.js` restores +
+  auto-restarts managed services on boot — first **reaping any process group a crashed
+  server left orphaned** (the spawn pid is persisted per row; the reaper verifies the
+  group still runs the service's command before `SIGKILL`ing it, so a recycled pid is
+  never killed by mistake), and probing the port first so a conflict with an unmanaged
+  process surfaces as a readable `error` on the service instead of an EADDRINUSE crash
+  loop. A clean process exit SIGKILLs every managed group on the way out. Running
+  services don't block idle-stop (`/api/instance/idle` reports `runningServices`
+  informationally — sleeping is safe because boot restore relaunches them). **Public
+  hostnames are a separate opt-in** (`ORCH_SERVICE_HOSTS`): each service then gets a
+  stable `<slug>--<appHost>` hostname with per-service visibility (private /
+  shared-link / public), dispatched through the reverse-proxy router in
+  **`lib/service-router.mjs`** (WebSocket/HMR passthrough included), with the pure
+  hostname/token helpers in **`lib/service-host.mjs`**.
 - **`lib/contextRefresh.ts`** — "Refresh with AI" as a **detached background job** (a
   multi-minute draft never holds an HTTP request open across a tunnel): `startRefreshJob()`
   seeds the utility agent with recent git activity, runs `draftProjectContext()` in the

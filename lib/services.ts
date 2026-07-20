@@ -7,9 +7,13 @@
 // the UI can show them on reconnect. Same lifetime model as the detached turn
 // runner (lib/runner.ts): processes are reset when the server itself restarts —
 // but the REGISTRY is not: every mutation writes through to the `services` table
-// (lib/db.ts), and restoreServices() (instrumentation.ts, boot) re-starts every
-// managed service whose desired_state is 'running', so a dev server survives a
-// container restart at the same public URL.
+// (lib/db.ts), and restoreServices() (server.js's boot ping to
+// /api/instance/services-restore) re-starts every managed service whose
+// desired_state is 'running', so a dev server survives a container restart at
+// the same public URL. Because the children are detached, a crashed server
+// (kill -9) leaves them orphaned; the persisted pid column lets the next boot
+// reap the old process group before respawning (see reapOrphan), and a clean
+// process exit SIGKILLs every managed group on the way out (installExitHook).
 //
 // State lives on globalThis so it survives Next's dev HMR module reloads (same
 // pattern as lib/events.ts / lib/abort.ts). Each project also gets a stable PORT
@@ -17,8 +21,9 @@
 // predictable address the host-header router (lib/service-router.mjs) proxies
 // public hostnames to: <slug>--<appHost>, e.g. calc--ishan.getoperator.dev.
 
-import { spawn, type ChildProcess } from "node:child_process";
+import { spawn, execFileSync, type ChildProcess } from "node:child_process";
 import crypto from "node:crypto";
+import net from "node:net";
 import { nanoid } from "nanoid";
 import type {
   Project, ServiceInfo, ServiceKind, ServiceStatus, ServiceLogLine, ServiceEvent, ServiceVisibility,
@@ -26,12 +31,11 @@ import type {
 import { getDb } from "./db";
 import { getProject, getSetting, setSetting } from "./store";
 import { resolveFeatures } from "./features";
-import { appHostFromEnv, slugifyServiceName } from "./service-host.mjs";
+import { SERVICE_LOG_LINES } from "./config";
+import { appHostFromEnv, serviceHostsEnabled, slugifyServiceName } from "./service-host.mjs";
 
-// Per-service ring buffer cap — enough to scroll back through a dev server's
-// startup + recent output without growing unbounded for a server that's been up
-// for days.
-const LOG_CAP = 1500;
+// Per-service log ring buffer cap (lines) — ORCH_SERVICE_LOG_LINES, default 1500.
+const LOG_CAP = SERVICE_LOG_LINES;
 
 type Listener = (ev: ServiceEvent) => void;
 
@@ -47,6 +51,7 @@ interface Managed {
   url: string | null;
   startedAt: number | null;
   managed: boolean; // false for an expose_service entry (we don't own the process)
+  error: string | null; // supervisor-level failure (port taken, spawn failed)
   logs: ServiceLogLine[];
   // Persisted identity/sharing state (services table). slug is the public
   // hostname label — assigned once at first persist and never changed, so the
@@ -64,6 +69,7 @@ interface Registry {
   // server.js outside the TS graph) can read it off globalThis.
   gateSecret?: string;
   restored?: boolean;
+  exitHook?: boolean; // process-exit cleanup registered (once per process)
 }
 
 declare global {
@@ -80,12 +86,14 @@ const keyOf = (projectId: string, name: string) => `${projectId}:${name}`;
 
 // ---------- public URLs ----------
 
-// Public routing is on only when the feature flag is set AND the instance knows
-// its own hostname; otherwise serviceUrl falls back to the honest local URL.
-// A nonstandard port in PUBLIC_BASE_URL (local testing) is carried into the
-// built URLs; hostname parsing ignores it (lib/service-host.mjs strips ports).
+// Public routing is on only when the feature flag is on, public hostnames are
+// explicitly opted into (ORCH_SERVICE_HOSTS — the flag alone must never expose
+// anything), AND the instance knows its own hostname; otherwise serviceUrl
+// falls back to the honest local URL. A nonstandard port in PUBLIC_BASE_URL
+// (local testing) is carried into the built URLs; hostname parsing ignores it
+// (lib/service-host.mjs strips ports).
 function publicBase(): { proto: string; host: string; portSuffix: string } | null {
-  if (!resolveFeatures().services) return null;
+  if (!resolveFeatures().services || !serviceHostsEnabled()) return null;
   const host = appHostFromEnv();
   if (!host) return null;
   try {
@@ -127,6 +135,7 @@ interface ServiceRow {
   desired_state: "running" | "stopped";
   visibility: ServiceVisibility;
   share_token: string;
+  pid: number; // process-group leader while running; 0 otherwise (orphan reaping)
 }
 
 function rowFor(projectId: string, name: string): ServiceRow | undefined {
@@ -212,6 +221,15 @@ function setDesired(projectId: string, name: string, desired: "running" | "stopp
     .run(desired, Date.now(), projectId, name);
 }
 
+// Record the live process-group leader (0 = none). Written at spawn and cleared
+// on exit, so a row with a nonzero pid after boot means the previous server
+// died without stopping the service — restoreServices() reaps that group.
+function setPid(projectId: string, name: string, pid: number): void {
+  getDb()
+    .prepare("UPDATE services SET pid = ? WHERE project_id = ? AND name = ?")
+    .run(pid, projectId, name);
+}
+
 // ---------- gate secret ----------
 
 // Instance-local secret signing the short-lived tokens that admit a browser to a
@@ -266,6 +284,7 @@ function toInfo(m: Managed): ServiceInfo {
     slug: m.slug,
     visibility: m.visibility,
     shareUrl: shareUrlOf(m),
+    error: m.error,
   };
 }
 
@@ -310,7 +329,7 @@ function addLog(m: Managed, stream: ServiceLogLine["stream"], chunk: string): vo
 function newManaged(projectId: string, name: string, kind: ServiceKind, command: string, port: number, managed: boolean): Managed {
   return hydrate({
     projectId, name, kind, command, port,
-    proc: null, status: "stopped", exitCode: null, url: null, startedAt: null, managed, logs: [],
+    proc: null, status: "stopped", exitCode: null, url: null, startedAt: null, managed, error: null, logs: [],
     slug: null, visibility: "private", shareToken: "",
   });
 }
@@ -320,7 +339,7 @@ function newManaged(projectId: string, name: string, kind: ServiceKind, command:
 // for requests arriving via the public hostname (the router preserves the
 // original Host header). Vite/Next need a config line instead — the public
 // host is handed over as ORCH_PUBLIC_HOST so configs can reference it; see
-// docs/SERVICES.md.
+// README "Managed services".
 function serviceEnv(m: Managed): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...process.env, PORT: String(m.port), FORCE_COLOR: "1" };
   const host = publicServiceHost(m.slug);
@@ -332,12 +351,74 @@ function serviceEnv(m: Managed): NodeJS.ProcessEnv {
   return env;
 }
 
+// ---------- port availability ----------
+
+// Can we bind the service's port right now? A dev server that can't bind just
+// crash-loops with EADDRINUSE buried in its logs; probing first lets the
+// supervisor surface a readable error instead. Loopback probe: catches anything
+// bound to 127.0.0.1 or the wildcard (the common cases).
+function probePort(port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const srv = net.createServer();
+    srv.unref();
+    srv.once("error", () => resolve(false));
+    srv.listen({ port, host: "127.0.0.1", exclusive: true }, () => {
+      srv.close(() => resolve(true));
+    });
+  });
+}
+
+// Poll until the port frees up (a just-stopped predecessor winding down, a
+// just-reaped orphan) or the deadline passes.
+async function portBecameFree(port: number, timeoutMs: number): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    if (await probePort(port)) return true;
+    if (Date.now() >= deadline) return false;
+    await new Promise((r) => setTimeout(r, 150));
+  }
+}
+
+// Resolves once the managed process has exited (or after timeoutMs — the
+// SIGKILL escalation in killProcGroup fires at 4s, so callers wait a bit past
+// that). Immediate when nothing is running.
+function procExited(m: Managed, timeoutMs: number): Promise<void> {
+  const proc = m.proc;
+  if (!proc) return Promise.resolve();
+  return new Promise((resolve) => {
+    const t = setTimeout(resolve, timeoutMs);
+    t.unref?.();
+    proc.once("exit", () => { clearTimeout(t); resolve(); });
+  });
+}
+
 // ---------- lifecycle ----------
+
+// Best-effort cleanup when THIS process exits cleanly (process.exit — e.g. Next
+// dev's SIGINT handler, or server.js's fallback signal handler): SIGKILL every
+// managed process group so an app restart never leaves zombie dev servers
+// holding ports. Sync-only by contract ('exit' handlers can't await); rows keep
+// desired_state='running', so boot restores the services. A kill -9 of the
+// server skips this entirely — that's what the boot reaper in restoreServices()
+// is for. Registered once per process (flag survives HMR with the registry).
+function installExitHook(): void {
+  const r = reg();
+  if (r.exitHook) return;
+  r.exitHook = true;
+  process.on("exit", () => {
+    for (const m of reg().services.values()) {
+      if (m.managed && m.proc?.pid != null) {
+        try { process.kill(-m.proc.pid, "SIGKILL"); } catch { /* already gone */ }
+      }
+    }
+  });
+}
 
 // Start (or no-op if already running) a configured service for a project. Spawns
 // the command in the project's working dir with PORT injected, as its own process
 // group (detached) so stop() can signal the whole tree (shell → npm → node).
-export function startService(project: Project, name: string): ServiceInfo {
+// Async because a dev server's port is probed first (see probePort).
+export async function startService(project: Project, name: string): Promise<ServiceInfo> {
   const cfg = configuredCommand(project, name);
   if (!cfg) throw new Error(`No "${name}" command configured for this project`);
   if (!project.repo_path) throw new Error("Set the project's working directory first");
@@ -353,6 +434,7 @@ export function startService(project: Project, name: string): ServiceInfo {
   // Re-read config + port in case they changed since a prior run.
   m.kind = cfg.kind; m.command = cfg.command; m.port = project.port; m.managed = true;
   m.exitCode = null;
+  m.error = null;
   m.status = "starting";
   m.startedAt = Date.now();
   // A long-running dev server gets a URL; one-shot setup/test commands don't.
@@ -362,6 +444,21 @@ export function startService(project: Project, name: string): ServiceInfo {
   // env we inject, and so a crash-before-exit still restores on next boot. Only
   // a dev server is meant to keep running; one-shots never auto-start.
   persist(m, project, cfg.kind === "dev" ? "running" : "stopped");
+  pushStatus(m); // show "starting" while the port probe runs
+
+  // Only the dev kind binds the port; one-shot setup/test commands don't.
+  // The grace window absorbs a just-stopped predecessor (restart) or a
+  // just-reaped orphan (boot) releasing the port.
+  if (cfg.kind === "dev" && !(await portBecameFree(m.port, 2000))) {
+    m.status = "errored";
+    m.url = null;
+    m.error =
+      `Port ${m.port} is already in use by another process, so "${cfg.command}" was not started. ` +
+      `Stop whatever is holding the port (lsof -i :${m.port}) or change the project's port, then start again.`;
+    addLog(m, "system", m.error);
+    pushStatus(m);
+    return toInfo(m);
+  }
 
   let proc: ChildProcess;
   try {
@@ -374,13 +471,16 @@ export function startService(project: Project, name: string): ServiceInfo {
   } catch (e) {
     m.status = "errored";
     m.proc = null;
-    addLog(m, "system", `Failed to start: ${(e as Error).message}`);
+    m.error = `Failed to start: ${(e as Error).message}`;
+    addLog(m, "system", m.error);
     pushStatus(m);
     return toInfo(m);
   }
 
   m.proc = proc;
   m.status = "running";
+  if (proc.pid != null) setPid(m.projectId, m.name, proc.pid); // for the boot orphan reaper
+  installExitHook();
   addLog(m, "system", `$ ${cfg.command}  (PORT=${project.port}, pid ${proc.pid})`);
   pushStatus(m);
 
@@ -388,7 +488,8 @@ export function startService(project: Project, name: string): ServiceInfo {
   proc.stderr?.on("data", (d: Buffer) => addLog(m, "stderr", d.toString()));
   proc.on("error", (err) => {
     m.status = "errored";
-    addLog(m, "system", `Process error: ${err.message}`);
+    m.error = `Process error: ${err.message}`;
+    addLog(m, "system", m.error);
     pushStatus(m);
   });
   proc.on("exit", (code, signal) => {
@@ -398,6 +499,7 @@ export function startService(project: Project, name: string): ServiceInfo {
     // a nonzero/crashed exit reads as "errored" so the status dot goes red.
     m.status = code === 0 || signal === "SIGTERM" || signal === "SIGKILL" ? "exited" : "errored";
     if (m.kind === "dev") m.url = null;
+    setPid(m.projectId, m.name, 0); // nothing left to reap
     addLog(m, "system", signal ? `Stopped (signal ${signal})` : `Exited (code ${code})`);
     pushStatus(m);
   });
@@ -452,8 +554,13 @@ export function removeProjectServices(projectId: string): void {
   }
 }
 
-export function restartService(project: Project, name: string): ServiceInfo {
+export async function restartService(project: Project, name: string): Promise<ServiceInfo> {
+  const m = reg().services.get(keyOf(project.id, name));
   stopService(project.id, name);
+  // Wait for the old process group to actually die (SIGKILL escalation fires at
+  // 4s) so the port is free — otherwise the new spawn would race its
+  // predecessor and report a bogus port conflict.
+  if (m) await procExited(m, 6000);
   return startService(project, name);
 }
 
@@ -525,20 +632,58 @@ export function rotateShareToken(project: Project, name: string): ServiceInfo {
   return toInfo(m);
 }
 
-// ---------- boot restore ----------
+// ---------- boot restore + orphan reaping ----------
+
+// Does pid still lead a live process group that looks like the service we
+// spawned? Guards the reaper against pid reuse: after a crash the pid could
+// have been recycled by an unrelated process, and killing that would be worse
+// than leaving an orphan. `ps` membership check: some process in the group must
+// still carry the service's command line (shell:true spawns `sh -c <command>`,
+// and every descendant shares the group).
+function groupLooksLikeService(pid: number, command: string): boolean {
+  try { process.kill(-pid, 0); } catch { return false; } // group gone
+  if (!command.trim()) return false;
+  try {
+    const out = execFileSync("ps", ["-A", "-o", "pgid=,command="], { encoding: "utf8" });
+    for (const line of out.split("\n")) {
+      const t = line.trim();
+      const sp = t.indexOf(" ");
+      if (sp < 1 || Number(t.slice(0, sp)) !== pid) continue;
+      if (t.slice(sp + 1).includes(command.trim())) return true;
+    }
+  } catch { /* no ps → refuse to kill on a guess */ }
+  return false;
+}
+
+// Kill a process group orphaned by a dead server (kill -9, OOM, power loss) so
+// the respawn doesn't fight its own predecessor for the port. SIGKILL, not
+// SIGTERM: the owning server is gone, there is no graceful state to save, and
+// the port must be free before startService probes it.
+async function reapOrphan(row: ServiceRow): Promise<void> {
+  if (!row.pid) return;
+  if (groupLooksLikeService(row.pid, row.command)) {
+    try { process.kill(-row.pid, "SIGKILL"); } catch { /* died in between */ }
+    const deadline = Date.now() + 2000;
+    while (Date.now() < deadline) {
+      try { process.kill(-row.pid, 0); } catch { break; }
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    console.log(`[services] reaped orphaned process group ${row.pid} (${row.name}) from a previous server`);
+  }
+  setPid(row.project_id, row.name, 0);
+}
 
 // Re-hydrate the registry from the services table — triggered at boot by
 // server.js's loopback ping to /api/instance/services-restore, idempotent per
-// process. Managed rows with desired_state='running' are
-// actually started; everything else (stopped services, expose_service entries
-// whose process died with the old server) is seeded stopped so its slug,
-// visibility and share token stay attached to the same public URL.
-export function restoreServices(): void {
+// process. First, any process group a dead server left behind is reaped (stale
+// pid column). Then managed rows with desired_state='running' are actually
+// started; everything else (stopped services, expose_service entries whose
+// process died with the old server) is seeded stopped so its slug, visibility
+// and share token stay attached to the same public URL.
+export async function restoreServices(): Promise<void> {
   const r = reg();
   if (r.restored) return;
   r.restored = true;
-  if (!resolveFeatures().services) return;
-  getGateSecret(); // stash for the router (globalThis)
 
   let rows: (ServiceRow & { desired_state: string })[];
   try {
@@ -546,6 +691,14 @@ export function restoreServices(): void {
   } catch {
     return; // fresh instance, nothing persisted yet
   }
+  // Reap orphans even when the feature flag is off — a stale process group from
+  // a crashed flag-on run must not survive the flag being flipped.
+  for (const row of rows) {
+    if (row.managed) await reapOrphan(row);
+  }
+  if (!resolveFeatures().services) return;
+  getGateSecret(); // stash for the router (globalThis)
+
   for (const row of rows) {
     const project = getProject(row.project_id);
     if (!project) continue;
@@ -553,7 +706,7 @@ export function restoreServices(): void {
     if (r.services.has(k)) continue;
     if (row.managed && row.desired_state === "running" && configuredCommand(project, row.name)) {
       try {
-        startService(project, row.name);
+        await startService(project, row.name);
       } catch (e) {
         console.warn(`[services] could not restore ${project.name}/${row.name}: ${(e as Error).message}`);
       }
@@ -601,6 +754,7 @@ export function listServices(project: Project): ServiceInfo[] {
         slug: row?.slug ?? null,
         visibility: row?.visibility ?? "private",
         shareUrl: row ? shareUrlOf({ slug: row.slug, visibility: row.visibility, shareToken: row.share_token }) : null,
+        error: null,
       });
     }
   }
@@ -613,6 +767,20 @@ export function listServices(project: Project): ServiceInfo[] {
   extras.sort((a, b) => (a.startedAt ?? 0) - (b.startedAt ?? 0));
   for (const m of extras) out.push(toInfo(m));
   return out;
+}
+
+// How many supervised processes are live right now — reported (informationally)
+// by GET /api/instance/idle. Running services deliberately do NOT mark the
+// instance busy: sleeping is safe because desired_state survives in the
+// services table and boot restore relaunches them at the same public URL when
+// the container wakes. A control plane that wants to keep a box warm while a
+// user-visible service runs can apply its own policy on this count.
+export function runningServiceCount(): number {
+  let n = 0;
+  for (const m of reg().services.values()) {
+    if (m.managed && (m.status === "running" || m.status === "starting")) n++;
+  }
+  return n;
 }
 
 // The captured logs for a project's services (snapshot), keyed by service name.

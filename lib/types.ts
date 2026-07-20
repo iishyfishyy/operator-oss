@@ -128,6 +128,9 @@ export interface ServiceInfo {
   slug: string | null; // public hostname label (<slug>--<host>); null until first persisted
   visibility: ServiceVisibility;
   shareUrl: string | null; // tokened link (url?t=…) when visibility is "shared"
+  // Human-readable supervisor-level failure (port already in use, spawn failed).
+  // Distinct from a nonzero exit, which the logs explain; cleared on next start.
+  error: string | null;
 }
 
 // One captured line of a service's combined stdout/stderr.

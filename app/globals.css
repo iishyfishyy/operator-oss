@@ -1031,6 +1031,8 @@ button.tpeek-more:hover{color:var(--accent-ink);}
 .svc-actions .icon-btn{width:24px;height:24px;display:grid;place-items:center;cursor:pointer;border-radius:5px;color:var(--ink-2);}
 .svc-actions .icon-btn:hover{background:var(--surface);color:var(--ink);}
 .svc-actions .icon-btn svg{width:13px;height:13px;}
+.svc-log-pane{flex:1;min-width:0;display:flex;flex-direction:column;}
+.svc-banner{padding:7px 10px;font-size:11.5px;line-height:1.5;color:var(--red);border-bottom:1px solid var(--line);background:var(--surface-2);}
 .svc-logs{flex:1;min-width:0;overflow-y:auto;padding:8px 10px;font-family:var(--mono);font-size:11.5px;line-height:1.45;background:var(--term-bg);}
 .svc-logs-empty{color:var(--ink-3);}
 .svc-log-line{white-space:pre-wrap;word-break:break-word;color:var(--ink-2);}
