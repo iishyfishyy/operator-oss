@@ -19,6 +19,12 @@ import {
   isRefreshing,
 } from "../lib/contextRefresh";
 import { activity, workStarted, workEnded } from "../lib/idle";
+import { setAgentConnection } from "../lib/agents/connections";
+
+// Utility-agent resolution is connected-first (lib/agents/oneshots.ts): with no
+// connection on record the draft job fails fast with a "connect an agent" error
+// instead of reaching the stubbed driver. Record one so the job runs.
+setAgentConnection("claude", { method: "subscription", email: null, plan: null });
 
 // Poll the persisted state until the background draft leaves "running".
 async function waitDone(projectId: string, tries = 50): Promise<void> {

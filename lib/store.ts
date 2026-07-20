@@ -380,6 +380,20 @@ export function setSetting(key: string, value: string | null) {
   }
 }
 
+/**
+ * Point the seeded Welcome tutorial at a different agent. The tutorial is
+ * created at first boot — before onboarding — so its project/tasks carry the
+ * 'claude' column defaults; when setup finishes with a different agent connected
+ * (a Codex-only first run), the not-yet-started tutorial tasks must follow the
+ * agent that actually works. Started tasks keep their agent: a session lineage
+ * can't switch CLIs mid-flight.
+ */
+export function retargetSeededAgent(agent: string): void {
+  const db = getDb();
+  db.prepare("UPDATE projects SET default_agent = ? WHERE seeded = 1").run(agent);
+  db.prepare("UPDATE tasks SET agent = ? WHERE started = 0 AND project_id IN (SELECT id FROM projects WHERE seeded = 1)").run(agent);
+}
+
 // ---------- messages ----------
 
 export function listMessages(taskId: string): Message[] {

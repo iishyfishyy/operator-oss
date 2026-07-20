@@ -9,9 +9,14 @@
 // plain-Node bridge (scripts/orch-mcp.mjs) can import the defs without pulling in
 // the TS/SQLite graph.
 
-import type { Project, Task, ServiceInfo, Priority } from "./types";
-import { createTask, setTaskDeps } from "./store";
+import { nanoid } from "nanoid";
+import type { Project, Task, ServiceInfo, Priority, AskQuestion, ToolData } from "./types";
+import { createTask, setTaskDeps, addMessage, updateMessage, updateTask } from "./store";
 import { exposeService } from "./services";
+import { publish } from "./events";
+import { waitForAnswer, settleAsk } from "./asks";
+import { turnSignal } from "./abort";
+import { formatAnswers } from "./agents/shared";
 
 /**
  * Resolve `blocked_by` refs against a per-session title→id map: an id passes
@@ -68,6 +73,44 @@ export function createSuggestedTask(project: Project, input: SuggestTaskInput): 
  * user, plus the confirmation text. We don't own the process — this entry is
  * informational (see lib/services.ts exposeService).
  */
+/**
+ * Surface an ask_user question card and wait for the answer — the bridge-served
+ * counterpart of the Claude driver's AskUserQuestion hook. Unlike suggest_task /
+ * expose_service this is asynchronous by nature: we persist + publish the ask
+ * card here (the same tool-row shape the runner writes, so the UI and the
+ * /answer route treat it identically), then park a DETACHED waiter on
+ * lib/asks.ts. The bridge polls takeAskOutcome() via the wait endpoint — no
+ * long-held HTTP request, per the house rule. The waiter is tied to the live
+ * turn's abort signal, so a Stop settles it as a dismissal.
+ */
+export function startAskUser(task: Task, questions: AskQuestion[]): { askId: string } {
+  const askId = `ask-${nanoid()}`;
+  const data: ToolData = { title: "Question for you", ask: { id: askId, questions } };
+  const m = addMessage(task.id, task.generation, "tool", JSON.stringify(data));
+  // The turn is live but parked on the user — same flag the runner sets for
+  // Claude asks, driving the "Needs your input" badges. Cleared on answer below;
+  // the runner's turn-end finally re-settles it either way.
+  updateTask(task.id, { awaiting_input: 1 });
+  publish(task.id, { type: "ask", id: askId, questions, msgId: m.id, generation: task.generation });
+
+  void waitForAnswer(task.id, askId, questions, turnSignal(task.id))
+    .then((answers) => {
+      data.ask = { id: askId, questions, answers };
+      updateMessage(m.id, JSON.stringify(data));
+      updateTask(task.id, { awaiting_input: 0 });
+      publish(task.id, { type: "ask_answered", id: askId, answers, msgId: m.id, generation: task.generation });
+      settleAsk(task.id, askId, formatAnswers(questions, answers));
+    })
+    .catch(() => {
+      // Turn torn down (Stop) before an answer arrived. The card stays in the
+      // transcript unanswered — answering it later falls back to the /answer
+      // route's resolved:false path (a normal reply into a fresh turn).
+      settleAsk(task.id, askId, "The user dismissed the question without answering.");
+    });
+
+  return { askId };
+}
+
 export function registerExposedService(project: Project, name: string, port: number): { info: ServiceInfo; url: string; text: string } {
   const info = exposeService(project, name.trim() || "dev", port);
   const url = info.url ?? `http://localhost:${port}`;

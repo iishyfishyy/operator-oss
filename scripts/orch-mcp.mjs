@@ -23,7 +23,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { SUGGEST_TASK, EXPOSE_SERVICE } from "../lib/agentToolDefs.mjs";
+import { SUGGEST_TASK, EXPOSE_SERVICE, ASK_USER } from "../lib/agentToolDefs.mjs";
 
 const TASK_ID = process.env.ORCH_TASK_ID || "";
 const PROJECT_ID = process.env.ORCH_PROJECT_ID || "";
@@ -92,6 +92,46 @@ server.registerTool(
     const data = await callInternal("suggest-task", { title, description, priority, blocked_by: deps });
     if (data.id) createdByTitle.set(title, data.id);
     return { content: [{ type: "text", text: data.text }] };
+  }
+);
+
+server.registerTool(
+  ASK_USER.name,
+  {
+    description: ASK_USER.description,
+    inputSchema: {
+      questions: z
+        .array(
+          z.object({
+            question: z.string().describe("The full question to ask the user."),
+            header: z.string().max(24).optional().describe("Short chip label for the question (≤12 chars ideal)."),
+            multiSelect: z.boolean().optional().describe("Allow choosing more than one option."),
+            options: z
+              .array(z.object({ label: z.string(), description: z.string().optional() }))
+              .min(1)
+              .max(8)
+              .describe("2–4 choices work best. The user can always type a free-text answer too."),
+          })
+        )
+        .min(1)
+        .max(4)
+        .describe(ASK_USER.params.questions),
+    },
+  },
+  async ({ questions }) => {
+    // Start the ask (persists + publishes the interactive card), then poll for
+    // the outcome. Polling instead of one held request: the user may take hours,
+    // far beyond any HTTP timeout, and the ask survives page reloads server-side.
+    const { askId } = await callInternal("ask-user", { questions });
+    const deadline = Date.now() + 24 * 60 * 60 * 1000; // mirror the Claude hook's ~1-day cap
+    for (;;) {
+      await new Promise((r) => setTimeout(r, 1500));
+      const r = await callInternal("ask-user/wait", { askId });
+      if (r.status === "done") return { content: [{ type: "text", text: r.text }] };
+      if (Date.now() > deadline) {
+        return { content: [{ type: "text", text: "The user did not answer the question. Proceed with your best judgment." }] };
+      }
+    }
   }
 );
 

@@ -9,10 +9,11 @@
 // opaque id in tasks.session_id. runTurn() normalizes codex's ThreadEvent
 // stream into the StreamEvent contract via lib/agents/codex/events.ts.
 //
-// Codex non-interactive mode can't ask the user mid-turn, and its in-process
-// MCP tools aren't wired to our orchestrator server, so capabilities declare
-// supportsAsks=false / supportsMcpTools=false. ChatGPT-plan auth reports no
-// dollar cost, so reportsCostUsd=false (usage carries token counts only).
+// Codex non-interactive mode can't ask the user natively, but the stdio MCP
+// bridge's ask_user tool restores interactive asks: the tool call parks
+// server-side until the user answers the card (see lib/agentTools.startAskUser),
+// so supportsAsks=true. ChatGPT-plan auth reports no dollar cost, so
+// reportsCostUsd=false (usage carries token counts only).
 
 import { Codex } from "@openai/codex-sdk";
 import type { SandboxMode, ApprovalMode, ModelReasoningEffort, ThreadOptions, CodexOptions } from "@openai/codex-sdk";
@@ -49,7 +50,9 @@ const CAPABILITIES: AgentCapabilities = {
     { value: "bypassPermissions", label: "Auto-run", sub: "workspace write, no approvals (default)" },
     { value: "plan", label: "Plan mode", sub: "read-only, propose without editing" },
   ],
-  supportsAsks: false,
+  // Interactive asks arrive via the MCP bridge's ask_user tool (the card UI and
+  // /answer route are shared with Claude's AskUserQuestion flow).
+  supportsAsks: true,
   // The orchestrator's suggest_task / expose_service tools reach Codex through
   // the portable stdio MCP bridge (scripts/orch-mcp.mjs), registered per turn
   // below — the same tools the Claude driver mounts in-process.
@@ -73,6 +76,10 @@ function orchestratorMcpConfig(project: Project, task: Task): CodexOptions["conf
       orchestrator: {
         command: process.execPath,
         args: [ORCH_MCP_SCRIPT],
+        // ask_user blocks until the user answers — hours, potentially. Codex's
+        // default per-tool-call timeout (60s) would kill the parked call, so
+        // raise it to ~1 day (mirrors the Claude driver's PreToolUse hook cap).
+        tool_timeout_sec: 86_400,
         env: {
           ORCH_TASK_ID: task.id,
           ORCH_PROJECT_ID: project.id,

@@ -87,3 +87,36 @@ export function submitAnswer(taskId: string, id: string, answers: AskAnswers): b
   pending.resolve(answers);
   return true;
 }
+
+// ---------- ask outcomes (the ask_user MCP bridge's poll target) ----------
+//
+// The Claude driver delivers an answered ask back to the model in-process (the
+// PreToolUse hook returns it as the tool result). The stdio MCP bridge can't
+// hold a promise across processes, so it POLLS instead: startAskUser
+// (lib/agentTools.ts) settles the outcome here when the user answers (or the
+// turn is torn down), and the bridge's wait endpoint takes it exactly once.
+// Same globalThis pattern as the pending-ask registry above.
+
+declare global {
+  // eslint-disable-next-line no-var
+  var __orchAskOutcomes: Map<string, string> | undefined;
+}
+
+function outcomes(): Map<string, string> {
+  if (!global.__orchAskOutcomes) global.__orchAskOutcomes = new Map();
+  return global.__orchAskOutcomes;
+}
+
+/** Record the final text of an ask (the formatted answers, or a dismissal note). */
+export function settleAsk(taskId: string, id: string, text: string): void {
+  outcomes().set(`${taskId}:${id}`, text);
+}
+
+/** Take (and clear) an ask's settled outcome; null while still unanswered. */
+export function takeAskOutcome(taskId: string, id: string): string | null {
+  const key = `${taskId}:${id}`;
+  const text = outcomes().get(key);
+  if (text === undefined) return null;
+  outcomes().delete(key);
+  return text;
+}

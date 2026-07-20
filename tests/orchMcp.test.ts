@@ -68,11 +68,11 @@ async function connectBridge() {
 }
 
 describe("orch-mcp stdio bridge", () => {
-  it("exposes suggest_task and expose_service over stdio", async () => {
+  it("exposes suggest_task, expose_service and ask_user over stdio", async () => {
     const { client, close } = await connectBridge();
     try {
       const { tools } = await client.listTools();
-      expect(tools.map((t) => t.name).sort()).toEqual(["expose_service", "suggest_task"]);
+      expect(tools.map((t) => t.name).sort()).toEqual(["ask_user", "expose_service", "suggest_task"]);
       // Descriptions come from the shared defs — sanity check they're populated.
       expect(tools.find((t) => t.name === "suggest_task")?.description).toContain("Suggested tray");
     } finally {
