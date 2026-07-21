@@ -9,7 +9,8 @@
 import { query, createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
 import type { Project, Task, StreamEvent, AskQuestion } from "../../types";
-import type { AgentDriver, AgentCapabilities } from "../types";
+import type { AgentDriver } from "../types";
+import { CLAUDE_CAPABILITIES } from "./capabilities";
 import { getSetting } from "../../store";
 import { createSuggestedTask, registerExposedService, resolveTitleRefs } from "../../agentTools";
 import { SUGGEST_TASK, EXPOSE_SERVICE } from "../../agentToolDefs.mjs";
@@ -34,37 +35,6 @@ import {
   cancelClaudeLogin,
   verifyTurn,
 } from "../../claude-auth";
-
-// What Claude Code can do, as data (rendered into the UI's pickers via
-// GET /api/agents). Model context windows mirror lib/store.ts
-// modelContextWindow; a task row's null model/reasoning/permission means
-// "inherit the driver default", so the lists carry only explicit choices.
-const CAPABILITIES: AgentCapabilities = {
-  models: [
-    { value: "fable", label: "Fable", sub: "most powerful", contextWindow: 1_000_000 },
-    { value: "opus", label: "Opus", sub: "most capable", contextWindow: 200_000 },
-    { value: "sonnet", label: "Sonnet", sub: "balanced", contextWindow: 200_000 },
-    { value: "haiku", label: "Haiku", sub: "fastest", contextWindow: 200_000 },
-  ],
-  reasoningOptions: [
-    { value: "off", label: "Off", sub: "no extended thinking" },
-    { value: "think", label: "Think", sub: "light reasoning" },
-    { value: "think_hard", label: "Think hard", sub: "deeper reasoning" },
-    { value: "ultrathink", label: "Ultrathink", sub: "maximum reasoning" },
-  ],
-  permissionModes: [
-    { value: "bypassPermissions", label: "Auto-run", sub: "bypass permissions (default)" },
-    { value: "acceptEdits", label: "Accept edits", sub: "auto-accept file edits" },
-    { value: "plan", label: "Plan mode", sub: "propose a plan, don't edit" },
-  ],
-  supportsAsks: true,
-  supportsMcpTools: true,
-  reportsCostUsd: true,
-  costIsEstimated: false,
-  supportsResume: true,
-  apiKeyHint: "sk-ant-…",
-  loginStyle: "paste_code",
-};
 
 function orchestratorServer(project: Project, onSuggest: (title: string) => void, onExpose: (info: { name: string; url: string }) => void) {
   // Titles created this session, so `blocked_by` can reference earlier suggestions
@@ -467,7 +437,7 @@ async function summarizeProjectRecap(project: Project, digest: string): Promise<
 export const claudeDriver: AgentDriver = {
   id: "claude",
   label: "Claude Code",
-  capabilities: CAPABILITIES,
+  capabilities: CLAUDE_CAPABILITIES,
   runTurn,
   summarizeTranscript,
   draftProjectContext,
