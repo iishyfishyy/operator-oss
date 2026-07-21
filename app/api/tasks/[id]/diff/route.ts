@@ -33,6 +33,15 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       taskDiff(project.repo_path, task.worktree_path, task.base_sha, project.branch),
       worktreeMergeStatus(task.worktree_path),
     ]);
+    // Self-heal: taskDiff advances the diff base past the recorded snapshot
+    // when the worktree was caught up to the base branch outside the app
+    // (out-of-band merge/ff in the terminal). Persist the advanced sha so the
+    // stored state agrees with what the panel shows and later reads don't
+    // re-derive it. resolveBase only moves forward when the recorded sha is an
+    // ancestor of the live merge-base, so this never rewrites a rebased base.
+    if (task.base_sha && diff.base !== task.base_sha && /^[0-9a-f]{40}$/.test(diff.base)) {
+      updateTask(id, { base_sha: diff.base });
+    }
     // Self-heal: if the branch is already in the base branch but we never
     // recorded the merge (e.g. merged via CLI), backfill merged_at so the DB
     // stays the single source of truth. Status is left untouched — merely

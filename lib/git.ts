@@ -337,6 +337,22 @@ async function resolveBase(worktreePath: string, baseSha: string, baseBranch: st
   if (baseSha) {
     try {
       await git(worktreePath, ["cat-file", "-e", `${baseSha}^{commit}`]);
+      // The stored snapshot goes stale when the worktree is caught up to the
+      // base branch outside the app (e.g. `git merge origin/main` in the
+      // terminal): diffing from it re-reports every already-merged commit as
+      // task changes. If the live merge-base has moved strictly forward from
+      // the snapshot, diff from it instead. When the snapshot is NOT an
+      // ancestor of the live merge-base (base branch rebased/rewritten), keep
+      // the snapshot — a rewritten base must not silently move the goalposts.
+      if (baseBranch) {
+        try {
+          const liveBase = await git(worktreePath, ["merge-base", baseBranch, "HEAD"]);
+          if (liveBase && liveBase !== baseSha) {
+            await git(worktreePath, ["merge-base", "--is-ancestor", baseSha, liveBase]);
+            return liveBase;
+          }
+        } catch {}
+      }
       return baseSha;
     } catch {}
   }

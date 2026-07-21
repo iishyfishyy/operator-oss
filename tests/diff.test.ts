@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { ensureWorktree, mergeTask, taskDiff } from "../lib/git";
-import { commitFile, git, makeRepoWithWorktree, writeFile } from "./helpers";
+import { commitFile, git, makeRepo, makeRepoWithWorktree, uid, writeFile } from "./helpers";
 
 describe("taskDiff", () => {
   it("reports a clean, up-to-date worktree as empty", async () => {
@@ -173,6 +173,57 @@ describe("taskDiff", () => {
 
     const diff = await taskDiff(repo, wt.path, wt.baseSha, "main");
     expect(diff.alreadyMerged).toBe(true);
-    expect(diff.ahead).toBeGreaterThan(0); // commits exist, but all reachable from main
+    // The live merge-base advanced to the merged tip, so landed work no longer
+    // reads as residual task changes — same as the app's managed merge, which
+    // moves base_sha forward.
+    expect(diff.ahead).toBe(0);
+    expect(diff.files).toEqual([]);
+  });
+
+  it("advances a stale base after an out-of-band catch-up, reporting only the branch's own work", async () => {
+    const { repo, wt } = await makeRepoWithWorktree(ensureWorktree);
+    // Other work lands on main after the task branched...
+    await commitFile(repo, "landed.txt", "landed elsewhere\n", "landed on main");
+    const mainTip = await commitFile(repo, "file.txt", "line one\nline two\nmain edit\n", "main edit");
+    // ...and the worktree is caught up outside the app (terminal ff-merge),
+    // then the task does its own work on top.
+    await git(wt.path, "merge", "--ff-only", "main");
+    await commitFile(wt.path, "feature.txt", "feature\n", "task commit");
+
+    const diff = await taskDiff(repo, wt.path, wt.baseSha, "main");
+    expect(diff.base).toBe(mainTip); // live merge-base, not the stale snapshot
+    expect(diff.files.map((f) => f.path)).toEqual(["feature.txt"]);
+    const ahead = parseInt(await git(wt.path, "rev-list", "--count", `${mainTip}..HEAD`), 10);
+    expect(ahead).toBe(1);
+    expect(diff.ahead).toBe(ahead);
+    expect(diff.alreadyMerged).toBe(false);
+  });
+
+  it("keeps the snapshot base while the worktree has not caught up to an advanced main", async () => {
+    const { repo, wt } = await makeRepoWithWorktree(ensureWorktree);
+    await commitFile(repo, "landed.txt", "landed elsewhere\n", "landed on main");
+    await commitFile(wt.path, "feature.txt", "feature\n", "task commit");
+
+    const diff = await taskDiff(repo, wt.path, wt.baseSha, "main");
+    expect(diff.base).toBe(wt.baseSha); // merge-base hasn't moved past the snapshot
+    expect(diff.files.map((f) => f.path)).toEqual(["feature.txt"]);
+    expect(diff.ahead).toBe(1);
+  });
+
+  it("keeps the snapshot base when the base branch was rebased/rewritten", async () => {
+    const repo = await makeRepo();
+    await commitFile(repo, "second.txt", "two\n", "second commit");
+    const wt = (await ensureWorktree(repo, uid()))!;
+    await commitFile(wt.path, "work.txt", "work\n", "task commit");
+    // Rewrite main: drop the commit the task branched from and land a
+    // different one, so the recorded snapshot is no longer an ancestor of the
+    // live merge-base.
+    const root = await git(repo, "rev-list", "--max-parents=0", "HEAD");
+    await git(repo, "reset", "--hard", root);
+    await commitFile(repo, "rewritten.txt", "new\n", "rewritten main");
+
+    const diff = await taskDiff(repo, wt.path, wt.baseSha, "main");
+    expect(diff.base).toBe(wt.baseSha); // goalposts stay put
+    expect(diff.files.map((f) => f.path)).toEqual(["work.txt"]);
   });
 });
