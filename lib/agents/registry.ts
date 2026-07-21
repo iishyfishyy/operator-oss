@@ -7,16 +7,21 @@
 // Unlike those seams the selector isn't an env var: the agent id is data,
 // persisted per task (tasks.agent) / per project (projects.default_agent).
 
+// NOTE: importing this registry pulls the agent SDKs (serverExternalPackages →
+// async externals under Turbopack) into your module graph. Low-level modules
+// that only need capability data (context windows, model lists) must import
+// lib/agents/capabilities.ts instead — see the poisoning note there.
+
 import type { AgentDriver } from "./types";
 import { claudeDriver } from "./claude/driver";
 import { codexDriver } from "./codex/driver";
 
-export const DEFAULT_AGENT = "claude";
+export { DEFAULT_AGENT } from "./capabilities";
+import { DEFAULT_AGENT } from "./capabilities";
 
 // Built lazily (on first resolve, not at module load) so importing this registry
-// can't dereference a driver mid-load — lib/store.ts imports getDriver for the
-// capability-driven context window, closing a store ↔ driver import cycle that a
-// top-level map literal would crash on.
+// can't dereference a driver mid-load (drivers import store and other app
+// modules; a top-level map literal would crash on an import cycle).
 let DRIVERS: Record<string, AgentDriver> | null = null;
 function drivers(): Record<string, AgentDriver> {
   if (!DRIVERS) DRIVERS = { [claudeDriver.id]: claudeDriver, [codexDriver.id]: codexDriver };

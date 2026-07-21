@@ -1,6 +1,10 @@
 import { nanoid } from "nanoid";
 import { getDb } from "./db";
-import { getDriver } from "./agents/registry";
+// Capability data comes from the SDK-free lib/agents/capabilities.ts, NOT the
+// driver registry — importing the registry here would drag the agent SDKs
+// (async Turbopack externals) into every module that touches the store and
+// break sync route entries at runtime (see the note in that file).
+import { modelContextWindow } from "./agents/capabilities";
 import { SERVICE_PORT_BASE } from "./config";
 import type { Project, Task, Message, PendingMessage, Summary, Session, Priority, Status, MsgRole, TurnUsage, UsageTotals } from "./types";
 
@@ -603,24 +607,8 @@ export function getTaskUsage(taskId: string): UsageTotals {
 
 // ---------- context-window occupancy ----------
 
-// Context window for a task's (agent, model) pair, from the driver's capability
-// descriptor (capabilities.models[].contextWindow) — so a Codex task's ~272k
-// window and a Fable task's 1M window are both correct, with no per-agent table
-// here. Unknown/inherited (null) model falls back to the widest window the agent
-// offers, then a conservative constant. Mirrored in app/orchestrator/format.ts
-// (contextWindowOf) so the live SSE update matches the server.
-const DEFAULT_CONTEXT_WINDOW = 200_000;
-export function modelContextWindow(agent: string | null | undefined, model: string | null | undefined): number {
-  const models = getDriver(agent).capabilities.models;
-  if (model) {
-    const hit = models.find((m) => m.value === model);
-    if (hit) return hit.contextWindow;
-  }
-  const widest = models.reduce((mx, m) => Math.max(mx, m.contextWindow), 0);
-  return widest || DEFAULT_CONTEXT_WINDOW;
-}
-
 // Percent (0–100, one decimal) of the model's window that `tokens` occupies.
+// The window itself comes from lib/agents/capabilities.ts (modelContextWindow).
 function contextPct(tokens: number, agent: string | null | undefined, model: string | null | undefined): number {
   const window = modelContextWindow(agent, model);
   return window > 0 ? Math.round((tokens / window) * 1000) / 10 : 0;
