@@ -1079,10 +1079,8 @@ button.tpeek-more:hover{color:var(--accent-ink);}
 .send svg{width:17px;height:17px;}
 .sug-btn svg,.btn-sm svg{width:13px;height:13px;}
 
-/* status label (tweak: dots + label) */
+/* status label (opt-in via .slabel consumers; hidden by default) */
 .slabel{display:none;font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-3);flex:0 0 auto;}
-body.status-labels .slabel{display:inline;}
-body.status-labels .task .ttitle{flex:0 1 auto;}
 
 /* project recap card (session pane, no task selected) */
 .recap-card{margin:18px 0;border:1px solid var(--line-2);border-radius:var(--r-lg);background:var(--surface);box-shadow:var(--sh-1);overflow:hidden;}
@@ -1116,7 +1114,7 @@ body.status-labels .task .ttitle{flex:0 1 auto;}
   .body.mobile > .col,
   .body.mobile > .settings-nav{flex:1 1 100% !important;width:100%;min-width:0;border-right:none;}
 
-  /* Titlebar: drop the identity chip and desktop actions (terminal/tweaks aren't
+  /* Titlebar: drop the identity chip and desktop actions (terminal/appearance aren't
      useful on a phone), keep the brand + the "needs you" pill reachable. Pad for
      the status bar / notch. */
   .app.mobile .titlebar{padding-top:env(safe-area-inset-top);height:calc(46px + env(safe-area-inset-top));padding-left:max(12px,env(safe-area-inset-left));padding-right:max(12px,env(safe-area-inset-right));}

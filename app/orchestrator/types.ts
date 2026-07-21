@@ -223,11 +223,12 @@ export const SEARCH_MIN = 6;
 // (?view=settings / ?view=insights) so it's deep-linkable + refresh-stable,
 // consistent with how project/task selection is persisted.
 export type View = "workspace" | "settings" | "insights";
-export interface Tweaks { theme: "light" | "dark"; accent: string; density: string; statusStyle: "dot" | "label"; }
-export const DEFAULT_TWEAKS: Tweaks = { theme: "dark", accent: "default", density: "1", statusStyle: "dot" };
+// Purely cosmetic, client-only look-and-feel prefs (the "Appearance" panel).
+export interface Appearance { theme: "light" | "dark"; density: string; }
+export const DEFAULT_APPEARANCE: Appearance = { theme: "dark", density: "1" };
 
-// App-level preferences (distinct from Tweaks, which are purely cosmetic). These
-// are personal/client-only so they live in the same localStorage store as Tweaks;
+// App-level preferences (distinct from Appearance, which is purely cosmetic). These
+// are personal/client-only so they live in the same localStorage store as Appearance;
 // if shared/server config is ever needed, a `settings` table in lib/db.ts keyed by
 // name would be the place. Keep this a flat object with sensible defaults so new
 // settings are a one-line addition here + a field in SettingsView.
