@@ -6,9 +6,9 @@ import { fmtCost, relTime } from "./format";
 import { SEARCH_MIN, type ProjectRow } from "./types";
 import { SearchBar } from "./shared";
 
-export function ProjectsColumn({ projects, deprecated, selId, running, width, onSelect, onNew, onOpenTweaks, onReorder, onRestore, onCollapse, settingsActive, onOpenSettings, mobile }: {
+export function ProjectsColumn({ projects, deprecated, selId, running, width, onSelect, onNew, onOpenAppearance, onReorder, onRestore, onCollapse, settingsActive, onOpenSettings, mobile }: {
   projects: ProjectRow[]; deprecated: ProjectRow[]; selId: string | null; running: Set<string>; width: number;
-  onSelect: (id: string) => void; onNew: () => void; onOpenTweaks: () => void;
+  onSelect: (id: string) => void; onNew: () => void; onOpenAppearance: () => void;
   onReorder: (ids: string[]) => void; onRestore: (id: string) => void; onCollapse: () => void;
   settingsActive: boolean; onOpenSettings: () => void; mobile?: boolean;
 }) {
@@ -38,7 +38,7 @@ export function ProjectsColumn({ projects, deprecated, selId, running, width, on
       <div className="col-head">
         <span className="ch-title">Projects</span>
         <span className="spacer" />
-        <button className="icon-btn" title="Tweaks" onClick={onOpenTweaks}>{Icon.sliders()}</button>
+        <button className="icon-btn" title="Appearance" onClick={onOpenAppearance}>{Icon.sliders()}</button>
         <button className="icon-btn" title="New project" onClick={onNew}>{Icon.plus()}</button>
         {!mobile && <button className="icon-btn" title="Hide projects panel" onClick={onCollapse}>{Icon.chevRight({ style: { transform: "rotate(180deg)" } })}</button>}
       </div>

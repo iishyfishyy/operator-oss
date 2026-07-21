@@ -35,7 +35,7 @@ export function useOrchestrator() {
   const [running, setRunning] = useState<Set<string>>(new Set());
   const [modal, setModal] = useState<Modal>(null);
   const [editId, setEditId] = useState<string | null>(null);
-  const [tweaksOpen, setTweaksOpen] = useState(false);
+  const [appearanceOpen, setAppearanceOpen] = useState(false);
   const [termOpen, setTermOpen] = useState(false);
   const [termMounted, setTermMounted] = useState(false); // mount once, then keep alive across collapses
   const [termHeight, setTermHeight] = useState(300);
@@ -146,8 +146,8 @@ export function useOrchestrator() {
   // The tasks in state still belong to the previously selected project.
   const tasksLoading = !!project && tasksFor !== project.id;
 
-  // ---------- prefs (tweaks/settings/layout/view) + persistence ----------
-  const { view, setView, tweaks, setTweak, settings, setSetting, setSettings, layout, setLayout, hydrated } =
+  // ---------- prefs (appearance/settings/layout/view) + persistence ----------
+  const { view, setView, appearance, setAppearance, settings, setSetting, setSettings, layout, setLayout, hydrated } =
     usePrefs({ selProj, selTask, urlSelRef, setSelProj, setSelTask });
 
   // ---------- project recaps + landing decision ----------
@@ -523,7 +523,7 @@ export function useOrchestrator() {
     tasks, realTasks, suggested, selTask, task, messages, running,
     blockedBy, liveAwaiting, needsYouTotal,
     modal, setModal, editId, setEditId, view, setView,
-    tweaks, setTweak, tweaksOpen, setTweaksOpen,
+    appearance, setAppearance, appearanceOpen, setAppearanceOpen,
     settings, setSetting, appDefaults, setAppDefault, agents,
     onboarding, wizardOpen, finishWizard, rerunOnboarding, nudge, setNudge, onMerged, onPrCreated,
     layout, setLayout, accessEmail, recaps,

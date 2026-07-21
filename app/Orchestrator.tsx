@@ -11,7 +11,7 @@ import { SessionView } from "./orchestrator/SessionView";
 import { ProjectLanding } from "./orchestrator/ProjectLanding";
 import { SettingsView } from "./orchestrator/SettingsView";
 import { InsightsView } from "./orchestrator/InsightsView";
-import { TweaksPanel } from "./orchestrator/TweaksPanel";
+import { AppearancePanel } from "./orchestrator/AppearancePanel";
 import { ColResize, ColRail, TerminalDrawer, BootSkeleton } from "./orchestrator/Layout";
 import { ServicesDrawer } from "./orchestrator/Services";
 import { clientFeatures } from "@/lib/features";
@@ -94,7 +94,7 @@ export default function Orchestrator() {
   const { project, task, selProj, selTask, layout } = o;
   const isMobile = useIsMobile();
   const features = clientFeatures();
-  const isDark = o.tweaks.theme !== "light";
+  const isDark = o.appearance.theme !== "light";
   const [needsYouOpen, setNeedsYouOpen] = useState(false);
   // Which Settings section to land on when opened programmatically (e.g. the
   // "connect another agent" nudge deep-links to Agents). undefined = default.
@@ -142,7 +142,7 @@ export default function Orchestrator() {
       mobile={isMobile}
       width={layout.projW} onCollapse={() => o.setLayout((l) => ({ ...l, projCollapsed: true }))}
       projects={o.activeProjects} deprecated={o.deprecatedProjects} selId={selProj} running={o.running}
-      onSelect={o.selectProject} onNew={() => o.setModal("project")} onOpenTweaks={() => o.setTweaksOpen((t) => !t)}
+      onSelect={o.selectProject} onNew={() => o.setModal("project")} onOpenAppearance={() => o.setAppearanceOpen((t) => !t)}
       onReorder={o.reorderProjects} onRestore={(id) => o.setDeprecated(id, false)}
       settingsActive={o.view === "settings"} onOpenSettings={() => openSettings()}
     />
@@ -324,7 +324,7 @@ export default function Orchestrator() {
             >
               {Icon.terminal()} Terminal
             </button>
-            <button className="tb-btn" onClick={() => o.setTweaksOpen((t) => !t)} title="Tweaks">{Icon.sliders()} Tweaks</button>
+            <button className="tb-btn" onClick={() => o.setAppearanceOpen((t) => !t)} title="Appearance">{Icon.sliders()} Appearance</button>
           </div>
 
           <button
@@ -334,7 +334,7 @@ export default function Orchestrator() {
           >
             {Icon.chart()}
           </button>
-          <button className="tb-icon" title={isDark ? "Switch to light theme" : "Switch to dark theme"} aria-label="Toggle theme" onClick={() => o.setTweak("theme", isDark ? "light" : "dark")}>
+          <button className="tb-icon" title={isDark ? "Switch to light theme" : "Switch to dark theme"} aria-label="Toggle theme" onClick={() => o.setAppearance("theme", isDark ? "light" : "dark")}>
             {isDark ? Icon.sun() : Icon.moon()}
           </button>
           <div className="tb-avatar" title={o.accessEmail ? `Signed in: ${o.accessEmail}` : "Your workspace"}>
@@ -441,11 +441,11 @@ export default function Orchestrator() {
           commands={([
             { id: "new-project", label: "New project", keywords: "create add repo", icon: Icon.plus(), run: () => o.setModal("project") },
             project && { id: "new-task", label: "New task", hint: `in ${project.name}`, keywords: "new session create start", icon: Icon.plus(), run: () => o.setModal("task") },
-            { id: "toggle-theme", label: "Toggle theme", hint: isDark ? "switch to light" : "switch to dark", keywords: "dark light mode appearance", icon: isDark ? Icon.sun() : Icon.moon(), run: () => o.setTweak("theme", isDark ? "light" : "dark") },
+            { id: "toggle-theme", label: "Toggle theme", hint: isDark ? "switch to light" : "switch to dark", keywords: "dark light mode appearance", icon: isDark ? Icon.sun() : Icon.moon(), run: () => o.setAppearance("theme", isDark ? "light" : "dark") },
             { id: "open-settings", label: "Open Settings", keywords: "preferences defaults setup", icon: Icon.gear(), run: () => openSettings() },
             { id: "open-insights", label: "Open Insights", keywords: "usage spend cost tokens analytics dashboard metrics stats", icon: Icon.chart(), run: () => o.setView("insights") },
             { id: "connect-agent", label: "Connect an agent", keywords: "codex claude agent connect login subscription", icon: Icon.bolt(), run: () => openSettings("agents") },
-            { id: "open-tweaks", label: "Open Tweaks", keywords: "appearance accent density theme", icon: Icon.sliders(), run: () => o.setTweaksOpen(true) },
+            { id: "open-appearance", label: "Open Appearance", keywords: "appearance density theme dark light mode", icon: Icon.sliders(), run: () => o.setAppearanceOpen(true) },
             project && features.services && { id: "toggle-services", label: "Toggle Services", hint: o.servicesOpen ? "hide" : "show", keywords: "dev server setup test drawer", icon: Icon.sliders(), run: () => { o.setServicesMounted(true); o.setServicesOpen((s) => !s); } },
             project && { id: "toggle-terminal", label: "Toggle Terminal", hint: o.termOpen ? "hide" : "show", keywords: "shell console pty", icon: Icon.terminal(), run: () => { o.setTermMounted(true); o.setTermOpen((t) => !t); } },
             task && task.started === 1 && !o.running.has(task.id) && { id: "clear-session", label: "/clear current session", hint: task.title, keywords: "new session restart fresh context compact", icon: Icon.clear(), run: () => { void o.clearSession(task.id); } },
@@ -456,7 +456,7 @@ export default function Orchestrator() {
         />
       )}
 
-      {o.tweaksOpen && <TweaksPanel tweaks={o.tweaks} setTweak={o.setTweak} onClose={() => o.setTweaksOpen(false)} />}
+      {o.appearanceOpen && <AppearancePanel appearance={o.appearance} setAppearance={o.setAppearance} onClose={() => o.setAppearanceOpen(false)} />}
 
       {/* Phone terminal lives as a full-screen sheet over everything. Kept mounted
           (hidden) while a project is selected so a dev server survives pane hops. */}

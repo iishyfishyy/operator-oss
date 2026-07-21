@@ -4,8 +4,8 @@ import { useEffect, useRef, useState, type MutableRefObject } from "react";
 import { LS, loadPersist } from "./persist";
 import { reconcileHistory, closeOneLevel, type NavSel } from "./navHistory";
 import {
-  DEFAULT_TWEAKS, DEFAULT_SETTINGS, DEFAULT_LAYOUT,
-  type Tweaks, type Settings, type Layout, type View,
+  DEFAULT_APPEARANCE, DEFAULT_SETTINGS, DEFAULT_LAYOUT,
+  type Appearance, type Settings, type Layout, type View,
 } from "./types";
 
 // Mirror of Orchestrator's mobile breakpoint — the Back-button trap only arms on
@@ -13,7 +13,7 @@ import {
 // not be hijacked to close a panel.
 const MOBILE_QUERY = "(max-width: 760px)";
 
-// Owns the cosmetic/client-only preferences (tweaks, settings, layout) and the
+// Owns the cosmetic/client-only preferences (appearance, settings, layout) and the
 // active work-area view, plus the hydrate-once + persist/URL-sync effects. The
 // open project/task are passed in so they get mirrored into localStorage + URL
 // alongside the prefs (URL keeps a refresh landing where you were). The setters
@@ -27,7 +27,7 @@ export function usePrefs({ selProj, selTask, urlSelRef, setSelProj, setSelTask }
   setSelTask: (id: string | null) => void;
 }) {
   const [view, setView] = useState<View>("workspace");
-  const [tweaks, setTweaks] = useState<Tweaks>(DEFAULT_TWEAKS);
+  const [appearance, setAppearance] = useState<Appearance>(DEFAULT_APPEARANCE);
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [layout, setLayout] = useState<Layout>(DEFAULT_LAYOUT);
   const [hydrated, setHydrated] = useState(false);
@@ -40,7 +40,7 @@ export function usePrefs({ selProj, selTask, urlSelRef, setSelProj, setSelTask }
   // hydrate persisted prefs once
   useEffect(() => {
     const p = loadPersist();
-    if (p.tweaks) setTweaks({ ...DEFAULT_TWEAKS, ...p.tweaks });
+    if (p.appearance) setAppearance({ ...DEFAULT_APPEARANCE, ...p.appearance });
     if (p.settings) setSettings({ ...DEFAULT_SETTINGS, ...p.settings });
     if (p.layout) setLayout({ ...DEFAULT_LAYOUT, ...p.layout });
     const urlView = urlSelRef.current?.view;
@@ -48,25 +48,19 @@ export function usePrefs({ selProj, selTask, urlSelRef, setSelProj, setSelTask }
     setHydrated(true);
   }, [urlSelRef]);
 
-  // persist + apply tweaks
+  // persist + apply appearance
   useEffect(() => {
     if (!hydrated) return;
-    document.documentElement.setAttribute("data-theme", tweaks.theme);
-    // "default" → let the theme's own accent (from CSS) stand; a custom swatch
-    // overrides it inline. Clearing the property when default avoids a stale
-    // inline accent surviving a theme switch.
-    if (tweaks.accent && tweaks.accent !== "default") document.documentElement.style.setProperty("--accent", tweaks.accent);
-    else document.documentElement.style.removeProperty("--accent");
-    document.documentElement.style.setProperty("--density", tweaks.density);
-    document.body.classList.toggle("status-labels", tweaks.statusStyle === "label");
-    localStorage.setItem(LS, JSON.stringify({ selProj, selTask, tweaks, settings, layout }));
+    document.documentElement.setAttribute("data-theme", appearance.theme);
+    document.documentElement.style.setProperty("--density", appearance.density);
+    localStorage.setItem(LS, JSON.stringify({ selProj, selTask, appearance, settings, layout }));
 
     // Mirror the open project/task + active view into the URL (refresh-restore)
     // and, on mobile, keep a single Back-trap entry on top while a pane is open
     // so the device Back button steps session → tasks → projects. (See navHistory.)
     const armTrap = window.matchMedia(MOBILE_QUERY).matches;
     reconcileHistory(window.history, window.location.pathname, { proj: selProj, task: selTask, view }, armTrap);
-  }, [tweaks, settings, layout, selProj, selTask, view, hydrated]);
+  }, [appearance, settings, layout, selProj, selTask, view, hydrated]);
 
   // Back button: consume the trap and close exactly one pane level. The setState
   // calls re-run the persist effect, which re-arms the trap if a pane is still
@@ -84,8 +78,8 @@ export function usePrefs({ selProj, selTask, urlSelRef, setSelProj, setSelTask }
     return () => window.removeEventListener("popstate", onPop);
   }, [setSelProj, setSelTask]);
 
-  const setTweak = (k: keyof Tweaks, v: string) => setTweaks((t) => ({ ...t, [k]: v }));
+  const setAppearanceKey = (k: keyof Appearance, v: string) => setAppearance((a) => ({ ...a, [k]: v }));
   const setSetting = <K extends keyof Settings>(k: K, v: Settings[K]) => setSettings((s) => ({ ...s, [k]: v }));
 
-  return { view, setView, tweaks, setTweak, settings, setSetting, setSettings, layout, setLayout, hydrated };
+  return { view, setView, appearance, setAppearance: setAppearanceKey, settings, setSetting, setSettings, layout, setLayout, hydrated };
 }
