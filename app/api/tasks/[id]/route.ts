@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getTask, getProject, updateTask, deleteTask, listMessages, getTaskUsage, getTaskContext, getTaskDeps, setTaskDeps, countAwaiting } from "@/lib/store";
+import { getTask, getProject, updateTask, deleteTask, listMessages, getTaskUsage, getTaskContext, getTaskDeps, setTaskDeps, countAwaiting, isTaskAwaiting } from "@/lib/store";
 import { removeWorktree } from "@/lib/git";
 import { removeTaskUploads } from "@/lib/uploads";
 import { abortTurn } from "@/lib/abort";
@@ -16,6 +16,10 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const ctx = getTaskContext(id);
   return NextResponse.json({
     ...task,
+    // Derived (NEEDS_YOU) so a settled + already-viewed task doesn't nag
+    // in the list after turn_end triggers this refetch. Raw column stays
+    // on the row for internal writers; only the wire value is derived.
+    awaiting_input: isTaskAwaiting(id) ? 1 : 0,
     cost_usd: usage.cost_usd,
     total_tokens: usage.total_tokens,
     // The cache buckets travel with the total so the usage chip can split

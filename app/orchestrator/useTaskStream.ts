@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type MutableRefObject } from "react";
 import type { TaskStreamEvent, ToolData, AskAnswers } from "@/lib/types";
-import { jget } from "./api";
+import { jget, jsend } from "./api";
 import { contextPct } from "./format";
 import { capsFor } from "./agents";
 import type { AgentsBundle, Msg, ProjectRow, TaskRow } from "./types";
@@ -20,6 +20,10 @@ export function useTaskStream({ selTask, selProjRef, agentsRef, setTaskRunning, 
   loadTasks: (projectId: string, selectFirst?: boolean) => Promise<void>;
 }) {
   const [msgsByTask, setMsgsByTask] = useState<Record<string, Msg[]>>({});
+  // The per-task-selection "viewed" scheduler installs this each effect run;
+  // handleStreamEvent below calls it whenever agent activity lands so the 2s
+  // visible-and-quiet timer restarts (see the useEffect that owns the timer).
+  const onViewTriggerRef = useRef<() => void>(() => {});
 
   // Asks still awaiting an answer, per task. One assistant message can park
   // several AskUserQuestion cards at once, and the "Needs your input" flag must
@@ -70,6 +74,13 @@ export function useTaskStream({ selTask, selProjRef, agentsRef, setTaskRunning, 
   // Apply one server event to local state. Used by the per-task EventSource
   // below; the turn itself runs server-side, detached from any connection.
   const handleStreamEvent = (taskId: string, ev: TaskStreamEvent) => {
+    // Snapshot arrival = the transcript is on screen; assistant/tool/turn_end =
+    // new agent activity while it's on screen. Both are "the user just saw
+    // something they might not have seen before" → arm the 2s-visible view
+    // stamp so the badge clears once they've had time to actually read it.
+    if (ev.type === "snapshot" || ev.type === "assistant" || ev.type === "tool" || ev.type === "turn_end") {
+      onViewTriggerRef.current();
+    }
     if (ev.type === "snapshot") {
       // Authoritative catch-up: the full persisted transcript, then any parked
       // follow-ups as "queued" bubbles (so a reload mid-run re-renders them),
@@ -171,11 +182,47 @@ export function useTaskStream({ selTask, selProjRef, agentsRef, setTaskRunning, 
   useEffect(() => {
     if (!selTask) return;
     const id = selTask;
+
+    // "Viewed" for the read-tracking badge — POST /api/tasks/[id]/view once
+    // the user has actually had the transcript on screen. The stamp is what
+    // the server-side derived awaiting predicate (lib/store.ts NEEDS_YOU)
+    // compares agent activity against. Definition per Brief 3:
+    //   snapshot delivered + tab visible + sustained ~2s.
+    // Cancels on visibility drop or stream close so a tabbed-away moment or a
+    // deep-link that never resolved doesn't count as reading. Rearmed by
+    // subsequent agent activity so a fresh turn ending on screen also clears.
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let pending = false; // an armed reason (snapshot / new activity) is waiting on a visible + quiet window
+    const clearTimer = () => { if (timer) { clearTimeout(timer); timer = null; } };
+    const fireView = () => {
+      pending = false;
+      void jsend(`/api/tasks/${id}/view`, "POST").catch(() => {});
+    };
+    const schedule = () => {
+      pending = true;
+      if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
+      clearTimer();
+      timer = setTimeout(fireView, 2000);
+    };
+    const onVisibility = () => {
+      if (typeof document === "undefined") return;
+      if (document.visibilityState === "visible") { if (pending) schedule(); }
+      else clearTimer(); // dropped visibility resets the sustained-2s window
+    };
+    onViewTriggerRef.current = schedule;
+
     const es = new EventSource(`/api/tasks/${id}/messages`);
     es.onmessage = (e) => {
       try { handleStreamEventRef.current(id, JSON.parse(e.data) as TaskStreamEvent); } catch {}
     };
-    return () => es.close();
+    if (typeof document !== "undefined") document.addEventListener("visibilitychange", onVisibility);
+
+    return () => {
+      es.close();
+      clearTimer();
+      onViewTriggerRef.current = () => {};
+      if (typeof document !== "undefined") document.removeEventListener("visibilitychange", onVisibility);
+    };
   }, [selTask]);
 
   return { msgsByTask, appendMsg, setAnswerOnMsg };

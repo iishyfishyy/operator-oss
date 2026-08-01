@@ -72,6 +72,13 @@ export function init(db: Database.Database) {
       started     INTEGER NOT NULL DEFAULT 0,
       running     INTEGER NOT NULL DEFAULT 0,
       awaiting_input INTEGER NOT NULL DEFAULT 0,
+      -- Last time the user's transcript stream delivered this task's snapshot
+      -- with the tab visible for ~2s (see app/orchestrator/useTaskStream.ts,
+      -- POST /api/tasks/[id]/view). Compared against MAX(messages.created_at)
+      -- for assistant/tool/system to derive "waiting on you": a settled turn
+      -- that's already been read no longer nags. 0 = never viewed, so seeded
+      -- rows still show as awaiting on first agent activity.
+      last_viewed_at INTEGER NOT NULL DEFAULT 0,
       position    INTEGER NOT NULL DEFAULT 0,
       created_at  INTEGER NOT NULL,
       updated_at  INTEGER NOT NULL
@@ -334,6 +341,10 @@ export function migrate(db: Database.Database) {
   if (!taskCols.includes("agent")) db.exec("ALTER TABLE tasks ADD COLUMN agent TEXT NOT NULL DEFAULT 'claude'");
   // GitHub PR opened from this task's branch via "Create PR" ("" = none yet).
   if (!taskCols.includes("pr_url")) db.exec("ALTER TABLE tasks ADD COLUMN pr_url TEXT NOT NULL DEFAULT ''");
+  // Read-tracking column for the "waiting on you" badge. Default 0 (never
+  // viewed) means every existing row shows as awaiting on the next agent
+  // activity, which is the correct behavior on upgrade.
+  if (!taskCols.includes("last_viewed_at")) db.exec("ALTER TABLE tasks ADD COLUMN last_viewed_at INTEGER NOT NULL DEFAULT 0");
   // Manual task ordering (list groups + board columns both render in position
   // order). Backfill matches the sort that was implicit before the column
   // existed — priority then created_at, per project — so an upgrade doesn't

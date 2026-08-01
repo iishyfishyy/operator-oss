@@ -1,4 +1,4 @@
-import { getTask, countAwaiting } from "@/lib/store";
+import { getTask, countAwaiting, isTaskAwaiting } from "@/lib/store";
 import { subscribeGlobal, type BusEvent, type GlobalTaskWireEvent, type GlobalWireEvent } from "@/lib/events";
 import { sseOpened, sseClosed } from "@/lib/idle";
 
@@ -93,7 +93,10 @@ export async function GET(req: Request) {
           taskId,
           projectId: t.project_id,
           running: !!t.running,
-          awaiting_input: !!t.awaiting_input,
+          // Derived (NEEDS_YOU) so the client's per-task badge tracks the
+          // project's awaiting_count — a settled turn on a read task clears
+          // both together, a parked ask stays lit on both.
+          awaiting_input: isTaskAwaiting(taskId),
           status: t.status,
           awaiting_count: countAwaiting(t.project_id),
         };
