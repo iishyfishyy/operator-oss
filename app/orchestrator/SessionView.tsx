@@ -121,9 +121,10 @@ function useStableHandler<A extends unknown[]>(fn?: (...args: A) => void): (...a
   return useCallback((...args: A) => { ref.current?.(...args); }, []);
 }
 
-export function SessionView({ project, task, agents, messages, running, blockedBy, transcriptLoading, onSend, onStart, onStop, onClear, onEdit, onReconnect, onSetStatus, onSetPriority, onSetModel, onSetReasoning, onSetPermission, onResolveWithAI, onMerged, onPrCreated, onAnswer, onCancelQueued, onBack, mobile, railW, onRailWidth, onRailReset, railCollapsed, onRailCollapse, onRailExpand }: {
+export function SessionView({ project, task, agents, messages, running, blockedBy, transcriptLoading, onSend, onStart, onStop, onClear, onEdit, onDelete, onReconnect, onSetStatus, onSetPriority, onSetModel, onSetReasoning, onSetPermission, onResolveWithAI, onMerged, onPrCreated, onAnswer, onCancelQueued, onBack, mobile, railW, onRailWidth, onRailReset, railCollapsed, onRailCollapse, onRailExpand }: {
   project: ProjectRow; task: TaskRow; agents: AgentsBundle; messages: Msg[]; running: boolean; blockedBy?: string[]; transcriptLoading?: boolean;
   onSend: (t: string) => void; onStart: () => void; onStop: () => void; onClear: () => void; onEdit: () => void;
+  onDelete: (id: string) => void;
   // Deep-link to Settings → Agents, for the transcript's "your login died" recovery button.
   onReconnect?: () => void;
   onSetStatus: (s: Status) => void; onSetPriority: (p: Priority) => void; onSetModel: (m: string | null) => void;
@@ -142,6 +143,7 @@ export function SessionView({ project, task, agents, messages, running, blockedB
   const [priOpen, setPriOpen] = useState(false);
   const [modelOpen, setModelOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
   const [view, setView] = useState<"chat" | "changes">("chat");
   const sessions = useMemo(() => buildSessions(messages), [messages]);
   const hasSession = task.started === 1 || messages.length > 0;
@@ -408,6 +410,23 @@ export function SessionView({ project, task, agents, messages, running, blockedB
             {hasSession && task.started === 1 && (
               <button className="btn btn-line btn-sm" title="Save summary & start a fresh context window" onClick={onClear} disabled={running}>{Icon.clear()} /clear</button>
             )}
+            <div style={{ position: "relative" }}>
+              <button
+                className="status-ctl"
+                title="More task actions"
+                aria-label="More task actions"
+                onClick={(e) => { e.stopPropagation(); setMoreOpen((o) => !o); setStatusOpen(false); setPriOpen(false); setModelOpen(false); setSettingsOpen(false); }}
+              >
+                {Icon.dots()}
+              </button>
+              {moreOpen && (
+                <Popover onClose={() => setMoreOpen(false)}>
+                  <div className="pop-item" onClick={() => { setMoreOpen(false); onDelete(task.id); }} style={{ color: "var(--red)" }}>
+                    {Icon.x()} Delete task…
+                  </div>
+                </Popover>
+              )}
+            </div>
           </div>
         </div>
 

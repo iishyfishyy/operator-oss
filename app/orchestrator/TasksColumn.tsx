@@ -5,11 +5,12 @@ import { Icon } from "../icons";
 import { isAwaiting, relTime } from "./format";
 import { SLABEL, AWAIT_LABEL, SEARCH_MIN, type ProjectRow, type TaskRow, type AgentsBundle, type TaskView } from "./types";
 import { agentLabel } from "./agents";
-import { StatusDot, PriPill, SearchBar, AgentBadge } from "./shared";
+import { StatusDot, PriPill, SearchBar, AgentBadge, Popover } from "./shared";
 import { TaskCardSkeleton } from "./Layout";
 import { TaskBoard } from "./TaskBoard";
 
-function TaskCard({ task, agents, selected, running, blockedBy, onSelect }: { task: TaskRow; agents: AgentsBundle; selected: boolean; running: boolean; blockedBy?: string[]; onSelect: () => void }) {
+function TaskCard({ task, agents, selected, running, blockedBy, onSelect, onDelete }: { task: TaskRow; agents: AgentsBundle; selected: boolean; running: boolean; blockedBy?: string[]; onSelect: () => void; onDelete: (id: string) => void }) {
+  const [menuOpen, setMenuOpen] = useState(false);
   const sessionCount = task.started ? task.generation : Math.max(0, task.generation - 1);
   const awaiting = isAwaiting(task);
   const blocked = !!blockedBy?.length && !task.started;
@@ -20,14 +21,39 @@ function TaskCard({ task, agents, selected, running, blockedBy, onSelect }: { ta
     : task.status === "done" ? `done · ${relTime(task.updated_at)}`
     : task.status === "cancelled" ? `cancelled · ${relTime(task.updated_at)}`
     : task.started ? relTime(task.updated_at) : "not started";
+  // The row is a keyboard-activatable div (not <button>) so the kebab can be a
+  // real nested <button> — nested <button>s are invalid HTML and produce
+  // hydration warnings under React.
   return (
-    <button className={`task ${selected ? "sel" : ""} ${awaiting ? "awaiting" : ""}`} onClick={onSelect}>
+    <div
+      role="button" tabIndex={0}
+      className={`task ${selected ? "sel" : ""} ${awaiting ? "awaiting" : ""}`}
+      onClick={onSelect}
+      onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); onSelect(); } }}
+    >
       <div className="task-top">
         <StatusDot status={task.status} running={running} awaiting={awaiting} />
         <span className="ttitle">{task.title}</span>
         <span className={`slabel ${awaiting ? "await" : ""}`}>{awaiting ? AWAIT_LABEL : SLABEL[task.status]}</span>
         <AgentBadge label={agentLabel(agents, task.agent)} multi={agents.agents.length > 1} />
         <PriPill p={task.priority} />
+        <div style={{ position: "relative" }} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+          <button
+            className="icon-btn task-kebab"
+            title="Task actions"
+            aria-label="Task actions"
+            onClick={(e) => { e.stopPropagation(); setMenuOpen((o) => !o); }}
+          >
+            {Icon.dots()}
+          </button>
+          {menuOpen && (
+            <Popover onClose={() => setMenuOpen(false)}>
+              <div className="pop-item" onClick={() => { setMenuOpen(false); onDelete(task.id); }} style={{ color: "var(--red)" }}>
+                {Icon.x()} Delete task…
+              </div>
+            </Popover>
+          )}
+        </div>
       </div>
       {blocked && (
         <div className="blocked-chip" title={`Blocked until done: ${blockedBy!.join(", ")}`}>
@@ -40,11 +66,11 @@ function TaskCard({ task, agents, selected, running, blockedBy, onSelect }: { ta
         <span className="spacer" />
         {sessionCount > 0 && <span className="activity">{sessionCount} session{sessionCount !== 1 ? "s" : ""}</span>}
       </div>
-    </button>
+    </div>
   );
 }
 
-function TaskGroup({ label, tasks, agents, selTaskId, running, blockedBy, onSelect, accent, collapsible, collapsed, onToggle }: { label: string; tasks: TaskRow[]; agents: AgentsBundle; selTaskId: string | null; running: Set<string>; blockedBy: Map<string, string[]>; onSelect: (id: string) => void; accent?: boolean; collapsible?: boolean; collapsed?: boolean; onToggle?: () => void }) {
+function TaskGroup({ label, tasks, agents, selTaskId, running, blockedBy, onSelect, onDelete, accent, collapsible, collapsed, onToggle }: { label: string; tasks: TaskRow[]; agents: AgentsBundle; selTaskId: string | null; running: Set<string>; blockedBy: Map<string, string[]>; onSelect: (id: string) => void; onDelete: (id: string) => void; accent?: boolean; collapsible?: boolean; collapsed?: boolean; onToggle?: () => void }) {
   if (tasks.length === 0) return null;
   if (collapsible) {
     return (
@@ -53,14 +79,14 @@ function TaskGroup({ label, tasks, agents, selTaskId, running, blockedBy, onSele
           {Icon.chevDown({ className: "tgh-chev" })}
           {label} <span className="gcount">{tasks.length}</span><span className="gline" />
         </button>
-        {!collapsed && tasks.map((t) => <TaskCard key={t.id} task={t} agents={agents} selected={t.id === selTaskId} running={running.has(t.id)} blockedBy={blockedBy.get(t.id)} onSelect={() => onSelect(t.id)} />)}
+        {!collapsed && tasks.map((t) => <TaskCard key={t.id} task={t} agents={agents} selected={t.id === selTaskId} running={running.has(t.id)} blockedBy={blockedBy.get(t.id)} onSelect={() => onSelect(t.id)} onDelete={onDelete} />)}
       </>
     );
   }
   return (
     <>
       <div className={`task-group-h ${accent ? "needs-you" : ""}`}>{label} <span className="gcount">{tasks.length}</span><span className="gline" /></div>
-      {tasks.map((t) => <TaskCard key={t.id} task={t} agents={agents} selected={t.id === selTaskId} running={running.has(t.id)} blockedBy={blockedBy.get(t.id)} onSelect={() => onSelect(t.id)} />)}
+      {tasks.map((t) => <TaskCard key={t.id} task={t} agents={agents} selected={t.id === selTaskId} running={running.has(t.id)} blockedBy={blockedBy.get(t.id)} onSelect={() => onSelect(t.id)} onDelete={onDelete} />)}
     </>
   );
 }
@@ -82,12 +108,12 @@ function useCollapsed(key: string, def: boolean) {
   return [collapsed, toggle] as const;
 }
 
-export function TasksColumn({ project, agents, tasks, suggested, selTaskId, running, blockedBy, width, loading, view, onSetView, onMoveTask, onSelectTask, onNewTask, onEditContext, onShowSessions, onShowRecap, onEditTask, onStartSuggestion, onAcceptSuggestion, onDismissSuggestion, onCollapse, mobile, onBack }: {
+export function TasksColumn({ project, agents, tasks, suggested, selTaskId, running, blockedBy, width, loading, view, onSetView, onMoveTask, onSelectTask, onNewTask, onEditContext, onShowSessions, onShowRecap, onEditTask, onDeleteTask, onStartSuggestion, onAcceptSuggestion, onDismissSuggestion, onCollapse, mobile, onBack }: {
   project: ProjectRow; agents: AgentsBundle; tasks: TaskRow[]; suggested: TaskRow[]; selTaskId: string | null; running: Set<string>; blockedBy: Map<string, string[]>; width: number; loading?: boolean;
   view: TaskView; onSetView: (v: TaskView) => void;
   onMoveTask: (id: string, patch: Partial<Pick<TaskRow, "status" | "suggested">>, orderedIds: string[]) => void;
   onSelectTask: (id: string) => void; onNewTask: () => void; onEditContext: () => void; onShowSessions: () => void; onShowRecap: () => void;
-  onEditTask: (id: string) => void; onCollapse: () => void;
+  onEditTask: (id: string) => void; onDeleteTask: (id: string) => void; onCollapse: () => void;
   onStartSuggestion: (id: string) => void; onAcceptSuggestion: (id: string) => void; onDismissSuggestion: (id: string) => void;
   mobile?: boolean; onBack?: () => void;
 }) {
@@ -160,12 +186,12 @@ export function TasksColumn({ project, agents, tasks, suggested, selTaskId, runn
         <div className="task-scroll">
           {tasks.length === 0 && <div className="empty" style={{ padding: "30px 16px" }}><div className="e-t">No tasks yet</div><div className="e-s">Create one to start an agent session.</div></div>}
           {noMatches && <div className="search-empty">No tasks match “{query.trim()}”.</div>}
-          <TaskGroup label="Needs your input" tasks={needsYou} agents={agents} selTaskId={selTaskId} running={running} blockedBy={blockedBy} onSelect={onSelectTask} accent />
-          <TaskGroup label="In progress" tasks={groups.a} agents={agents} selTaskId={selTaskId} running={running} blockedBy={blockedBy} onSelect={onSelectTask} />
-          <TaskGroup label="On hold" tasks={groups.h} agents={agents} selTaskId={selTaskId} running={running} blockedBy={blockedBy} onSelect={onSelectTask} />
-          <TaskGroup label="Not started" tasks={groups.r} agents={agents} selTaskId={selTaskId} running={running} blockedBy={blockedBy} onSelect={onSelectTask} />
-          <TaskGroup label="Done" tasks={groups.g} agents={agents} selTaskId={selTaskId} running={running} blockedBy={blockedBy} onSelect={onSelectTask} collapsible collapsed={doneCollapsed && !q} onToggle={toggleDone} />
-          <TaskGroup label="Cancelled" tasks={groups.x} agents={agents} selTaskId={selTaskId} running={running} blockedBy={blockedBy} onSelect={onSelectTask} collapsible collapsed={cancelledCollapsed && !q} onToggle={toggleCancelled} />
+          <TaskGroup label="Needs your input" tasks={needsYou} agents={agents} selTaskId={selTaskId} running={running} blockedBy={blockedBy} onSelect={onSelectTask} onDelete={onDeleteTask} accent />
+          <TaskGroup label="In progress" tasks={groups.a} agents={agents} selTaskId={selTaskId} running={running} blockedBy={blockedBy} onSelect={onSelectTask} onDelete={onDeleteTask} />
+          <TaskGroup label="On hold" tasks={groups.h} agents={agents} selTaskId={selTaskId} running={running} blockedBy={blockedBy} onSelect={onSelectTask} onDelete={onDeleteTask} />
+          <TaskGroup label="Not started" tasks={groups.r} agents={agents} selTaskId={selTaskId} running={running} blockedBy={blockedBy} onSelect={onSelectTask} onDelete={onDeleteTask} />
+          <TaskGroup label="Done" tasks={groups.g} agents={agents} selTaskId={selTaskId} running={running} blockedBy={blockedBy} onSelect={onSelectTask} onDelete={onDeleteTask} collapsible collapsed={doneCollapsed && !q} onToggle={toggleDone} />
+          <TaskGroup label="Cancelled" tasks={groups.x} agents={agents} selTaskId={selTaskId} running={running} blockedBy={blockedBy} onSelect={onSelectTask} onDelete={onDeleteTask} collapsible collapsed={cancelledCollapsed && !q} onToggle={toggleCancelled} />
         </div>
         {shownSuggested.length > 0 && (
           <div className="suggest">

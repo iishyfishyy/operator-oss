@@ -366,6 +366,11 @@ button{font-family:inherit;color:inherit;cursor:pointer;border:none;background:n
 .task-foot{display:flex;align-items:center;gap:8px;margin-top:9px;}
 .task-foot .activity{font-family:var(--mono);font-size:10px;color:var(--ink-3);display:flex;align-items:center;gap:5px;}
 .task-foot .spacer{flex:1;}
+/* Kebab (overflow) trigger inside a task-row: reveals on row hover/focus so
+   the row stays visually calm at rest, then presents a Delete affordance. */
+.task .task-kebab{width:22px;height:22px;color:var(--ink-4);opacity:0;transition:opacity .12s;}
+.task:hover .task-kebab,.task:focus-within .task-kebab,.task .task-kebab:focus,.task .task-kebab:focus-visible{opacity:1;}
+.task .task-kebab svg{width:14px;height:14px;}
 
 /* task dependencies (ordering) -------------------------------------- */
 /* "blocked by" chip on a task card */
