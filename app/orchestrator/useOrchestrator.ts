@@ -35,6 +35,7 @@ export function useOrchestrator() {
   const [running, setRunning] = useState<Set<string>>(new Set());
   const [modal, setModal] = useState<Modal>(null);
   const [editId, setEditId] = useState<string | null>(null);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
   const [appearanceOpen, setAppearanceOpen] = useState(false);
   const [termOpen, setTermOpen] = useState(false);
   const [termMounted, setTermMounted] = useState(false); // mount once, then keep alive across collapses
@@ -435,6 +436,26 @@ export function useOrchestrator() {
     // The server clears awaiting_input on a manual status change.
     if (wasAwaiting) decAwaiting(task);
   };
+  // Task-id-aware "mark done" for the card-level and row-menu affordances that
+  // can act on a task other than the currently selected one. Same PATCH body
+  // (and same server-side awaiting_input clear) as setStatus("done"); optimistic
+  // so the card leaves the working set without waiting for the round-trip.
+  const completeTask = async (id: string) => {
+    const t = tasks.find((x) => x.id === id);
+    if (!t || t.status === "done") return;
+    const wasAwaiting = isAwaiting(t);
+    setTasks((prev) => prev.map((x) => (x.id === id ? { ...x, status: "done", awaiting_input: 0 } : x)));
+    if (wasAwaiting) decAwaiting(t);
+    try {
+      const fresh = await jsend<TaskRow>(`/api/tasks/${id}`, "PATCH", { status: "done" });
+      setTasks((prev) => prev.map((x) => (x.id === id ? { ...x, ...fresh } : x)));
+    } catch {
+      // Roll the optimistic status back if the server rejected — leaves
+      // awaiting_input at 0 (server would have cleared it too on success), but
+      // that's a rare edge and the next lifecycle event resyncs the row.
+      setTasks((prev) => prev.map((x) => (x.id === id ? { ...x, status: t.status } : x)));
+    }
+  };
   const setPriority = async (p: Priority) => {
     if (!task) return;
     const fresh = await jsend<TaskRow>(`/api/tasks/${task.id}`, "PATCH", { priority: p });
@@ -500,8 +521,11 @@ export function useOrchestrator() {
     setEditId(null);
   };
 
-  // Hard-deletes the task (and its worktree/branch server-side), closes the edit
-  // modal, and drops it from the selection if it was the one being viewed.
+  // Hard-deletes the task (and its worktree/branch server-side), closes the
+  // edit + confirm modals, and drops it from the selection if it was the one
+  // being viewed. Project rail counts don't need a refetch here: the server's
+  // DELETE route publishes `task_deleted` with a recomputed awaiting count,
+  // which useGlobalEvents patches into `projects` on every open tab.
   const removeTask = async (id: string) => {
     const t = tasks.find((x) => x.id === id);
     await jsend(`/api/tasks/${id}`, "DELETE");
@@ -510,6 +534,7 @@ export function useOrchestrator() {
     // with the server-recomputed count moments later.
     if (t && isAwaiting(t)) decAwaiting(t);
     setEditId(null);
+    setDeleteId(null);
     setSelTask((cur) => (cur === id ? null : cur));
   };
 
@@ -595,7 +620,7 @@ export function useOrchestrator() {
     projects, activeProjects, deprecatedProjects, selProj, setSelProj, project,
     tasks, realTasks, suggested, selTask, task, messages, running,
     blockedBy, liveAwaiting, needsYouTotal,
-    modal, setModal, editId, setEditId, view, setView, taskView, setTaskView,
+    modal, setModal, editId, setEditId, deleteId, setDeleteId, view, setView, taskView, setTaskView,
     appearance, setAppearance, appearanceOpen, setAppearanceOpen,
     settings, setSetting, appDefaults, setAppDefault, agents, refreshAgents, brokenAgents,
     onboarding, wizardOpen, finishWizard, rerunOnboarding, nudge, setNudge, onMerged, onPrCreated,
@@ -604,7 +629,7 @@ export function useOrchestrator() {
     servicesOpen, setServicesOpen, servicesMounted, setServicesMounted, servicesHeight, setServicesHeight,
     // actions
     setSelTask, fetchRecap, runTurn, answerQuestion, stopTurn, cancelQueued, resolveConflictsWithAI,
-    selectProject, jumpToNeedsYou, goToTask, clearSession, setStatus, setPriority, setModel,
+    selectProject, jumpToNeedsYou, goToTask, clearSession, setStatus, completeTask, setPriority, setModel,
     setReasoning, setPermission, createTask, saveTask, removeTask, moveTask, startSuggestion, acceptSuggestion,
     dismissSuggestion, saveContext, createProject, reorderProjects, removeProject, setDeprecated,
     resetSettings, setProjectDefaultAgent,

@@ -16,7 +16,7 @@ import { AppearancePanel } from "./orchestrator/AppearancePanel";
 import { ColResize, ColRail, TerminalDrawer, BootSkeleton } from "./orchestrator/Layout";
 import { ServicesDrawer } from "./orchestrator/Services";
 import { clientFeatures } from "@/lib/features";
-import { NewTaskModal, EditTaskModal, ContextModal, NewProjectModal, SessionsModal } from "./orchestrator/modals";
+import { NewTaskModal, EditTaskModal, DeleteTaskModal, ContextModal, NewProjectModal, SessionsModal } from "./orchestrator/modals";
 import { OnboardingWizard } from "./orchestrator/OnboardingWizard";
 import { AgentNudge, AgentAuthBanner } from "./orchestrator/AgentConnect";
 import { WelcomeCoach, WelcomeNudge } from "./orchestrator/Welcome";
@@ -197,6 +197,8 @@ export default function Orchestrator() {
       view={o.taskView} onSetView={setTaskView} onMoveTask={o.moveTask}
       onSelectTask={o.setSelTask} onNewTask={() => o.setModal("task")} onEditContext={() => o.setModal("context")}
       onShowSessions={() => o.setModal("sessions")} onShowRecap={() => o.setSelTask(null)} onEditTask={o.setEditId}
+      onCompleteTask={o.completeTask}
+      onDeleteTask={o.setDeleteId}
       onStartSuggestion={o.startSuggestion} onAcceptSuggestion={o.acceptSuggestion} onDismissSuggestion={o.dismissSuggestion}
     />
   );
@@ -216,6 +218,7 @@ export default function Orchestrator() {
             onStart={() => o.runTurn(task.id, "", true)}
             onStop={() => o.stopTurn(task.id)}
             onClear={() => o.clearSession(task.id)} onEdit={() => o.setEditId(task.id)}
+            onDelete={o.setDeleteId}
             onReconnect={() => openSettings("agents")}
             onSetStatus={o.setStatus} onSetPriority={o.setPriority} onSetModel={o.setModel}
             onSetReasoning={o.setReasoning} onSetPermission={o.setPermission}
@@ -302,6 +305,7 @@ export default function Orchestrator() {
                 onStart={() => o.runTurn(task.id, "", true)}
                 onStop={() => o.stopTurn(task.id)}
                 onClear={() => o.clearSession(task.id)} onEdit={() => o.setEditId(task.id)}
+                onDelete={o.setDeleteId}
                 onReconnect={() => openSettings("agents")}
                 onSetStatus={o.setStatus} onSetPriority={o.setPriority} onSetModel={o.setModel}
                 onSetReasoning={o.setReasoning} onSetPermission={o.setPermission}
@@ -543,6 +547,9 @@ export default function Orchestrator() {
       {o.modal === "task" && project && <NewTaskModal project={project} agents={o.agents} tasks={o.realTasks} onClose={() => o.setModal(null)} onCreate={o.createTask} onOpenSetup={o.rerunOnboarding} />}
       {o.editId && o.tasks.find((t) => t.id === o.editId) && (
         <EditTaskModal task={o.tasks.find((t) => t.id === o.editId)!} tasks={o.realTasks} onClose={() => o.setEditId(null)} onSave={o.saveTask} onDelete={o.removeTask} />
+      )}
+      {o.deleteId && o.tasks.find((t) => t.id === o.deleteId) && (
+        <DeleteTaskModal task={o.tasks.find((t) => t.id === o.deleteId)!} onClose={() => o.setDeleteId(null)} onDelete={o.removeTask} />
       )}
       {o.modal === "context" && project && <ContextModal project={project} agents={o.agents} onSetDefaultAgent={o.setProjectDefaultAgent} onClose={() => o.setModal(null)} onSave={o.saveContext} onDelete={() => o.removeProject(project.id)} onDeprecate={() => o.setDeprecated(project.id, true)} />}
       {o.modal === "project" && <NewProjectModal onClose={() => o.setModal(null)} onCreate={o.createProject} />}

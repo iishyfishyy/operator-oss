@@ -121,9 +121,10 @@ function useStableHandler<A extends unknown[]>(fn?: (...args: A) => void): (...a
   return useCallback((...args: A) => { ref.current?.(...args); }, []);
 }
 
-export function SessionView({ project, task, agents, messages, running, blockedBy, transcriptLoading, onSend, onStart, onStop, onClear, onEdit, onReconnect, onSetStatus, onSetPriority, onSetModel, onSetReasoning, onSetPermission, onResolveWithAI, onMerged, onPrCreated, onAnswer, onCancelQueued, onBack, mobile, railW, onRailWidth, onRailReset, railCollapsed, onRailCollapse, onRailExpand }: {
+export function SessionView({ project, task, agents, messages, running, blockedBy, transcriptLoading, onSend, onStart, onStop, onClear, onEdit, onDelete, onReconnect, onSetStatus, onSetPriority, onSetModel, onSetReasoning, onSetPermission, onResolveWithAI, onMerged, onPrCreated, onAnswer, onCancelQueued, onBack, mobile, railW, onRailWidth, onRailReset, railCollapsed, onRailCollapse, onRailExpand }: {
   project: ProjectRow; task: TaskRow; agents: AgentsBundle; messages: Msg[]; running: boolean; blockedBy?: string[]; transcriptLoading?: boolean;
   onSend: (t: string) => void; onStart: () => void; onStop: () => void; onClear: () => void; onEdit: () => void;
+  onDelete: (id: string) => void;
   // Deep-link to Settings → Agents, for the transcript's "your login died" recovery button.
   onReconnect?: () => void;
   onSetStatus: (s: Status) => void; onSetPriority: (p: Priority) => void; onSetModel: (m: string | null) => void;
@@ -142,6 +143,7 @@ export function SessionView({ project, task, agents, messages, running, blockedB
   const [priOpen, setPriOpen] = useState(false);
   const [modelOpen, setModelOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
   const [view, setView] = useState<"chat" | "changes">("chat");
   const sessions = useMemo(() => buildSessions(messages), [messages]);
   const hasSession = task.started === 1 || messages.length > 0;
@@ -405,9 +407,39 @@ export function SessionView({ project, task, agents, messages, running, blockedB
                 </Popover>
               )}
             </div>
+            {/* One-click completion — mirrors the status dropdown's 'done' choice
+                but keeps the terminal state one visible tap away, so a
+                dependency chain isn't stuck waiting on a state nobody knew to
+                produce. Hidden once the task is already done. */}
+            {task.status !== "done" && (
+              <button
+                className="btn btn-line btn-sm"
+                title="Mark this task complete — releases any dependents waiting on it"
+                onClick={() => onSetStatus("done")}
+              >
+                {Icon.check()} Mark complete
+              </button>
+            )}
             {hasSession && task.started === 1 && (
               <button className="btn btn-line btn-sm" title="Save summary & start a fresh context window" onClick={onClear} disabled={running}>{Icon.clear()} /clear</button>
             )}
+            <div style={{ position: "relative" }}>
+              <button
+                className="status-ctl sh-more"
+                title="More task actions"
+                aria-label="More task actions"
+                onClick={(e) => { e.stopPropagation(); setMoreOpen((o) => !o); setStatusOpen(false); setPriOpen(false); setModelOpen(false); setSettingsOpen(false); }}
+              >
+                {Icon.dots()}
+              </button>
+              {moreOpen && (
+                <Popover onClose={() => setMoreOpen(false)}>
+                  <div className="pop-item" onClick={() => { setMoreOpen(false); onDelete(task.id); }} style={{ color: "var(--red)" }}>
+                    {Icon.x()} Delete task…
+                  </div>
+                </Popover>
+              )}
+            </div>
           </div>
         </div>
 
@@ -437,12 +469,14 @@ export function SessionView({ project, task, agents, messages, running, blockedB
               />
               <SessionRail
                 project={project} task={task} sessions={sessions} running={running}
-                onResolveWithAI={onResolveWithAI} onMerged={onMerged} onPrCreated={onPrCreated} onClear={onClear} onCollapse={onRailCollapse} onSwitchToChat={() => { /* desktop transcript is always visible */ }}
+                onResolveWithAI={onResolveWithAI} onMerged={onMerged} onPrCreated={onPrCreated}
+                onMarkComplete={() => onSetStatus("done")}
+                onClear={onClear} onCollapse={onRailCollapse} onSwitchToChat={() => { /* desktop transcript is always visible */ }}
               />
             </div>
           )
         ) : view === "changes" ? (
-          <TaskChanges taskId={task.id} running={running} prUrl={task.pr_url} onMerged={onMerged} onPrCreated={onPrCreated} onResolveWithAI={async (id) => {
+          <TaskChanges taskId={task.id} running={running} prUrl={task.pr_url} taskStatus={task.status} onMerged={onMerged} onPrCreated={onPrCreated} onMarkComplete={() => onSetStatus("done")} onResolveWithAI={async (id) => {
             const res = await onResolveWithAI(id);
             // Resolution turn was kicked off (conflicts, not a clean merge) —
             // jump back to Chat so the user sees the message stream in.

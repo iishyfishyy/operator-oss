@@ -2,6 +2,7 @@
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Skel, ErrNote } from "./orchestrator/shared";
+import type { Status } from "@/lib/types";
 
 interface DiffFile {
   path: string;
@@ -145,15 +146,19 @@ export default function TaskChanges({
   taskId,
   running,
   prUrl,
+  taskStatus,
   onMerged,
   onPrCreated,
+  onMarkComplete,
   onResolveWithAI,
 }: {
   taskId: string;
   running?: boolean;
   prUrl?: string; // GitHub PR already opened from this branch ("" / undefined = none)
+  taskStatus?: Status; // when provided, the post-merge / post-PR "mark complete?" offer is enabled
   onMerged?: () => void;
   onPrCreated?: (url: string) => void;
+  onMarkComplete?: () => void;
   onResolveWithAI?: (taskId: string) => Promise<ResolveResult>;
 }) {
   const [data, setData] = useState<DiffResp | null>(() => diffCache.get(taskId) ?? null);
@@ -166,6 +171,11 @@ export default function TaskChanges({
   const [binaryConflicts, setBinaryConflicts] = useState<string[]>([]);
   const [mergeRes, setMergeRes] = useState<MergeResp | null>(null);
   const [active, setActive] = useState<string | null>(null);
+  // Inline "Mark this task complete?" prompt shown after a successful Merge or
+  // PR create. Never modal, always dismissible; auto-hidden on task switch and
+  // once the task hits 'done' so it doesn't re-appear on the same win.
+  const [completeOffer, setCompleteOffer] = useState<"merged" | "pr" | null>(null);
+  const [completeDismissed, setCompleteDismissed] = useState(false);
   // Paths the user flipped away from their default state (expanded normally,
   // collapsed for big files) — override semantics so a background revalidate
   // doesn't reset the user's choices.
@@ -193,6 +203,8 @@ export default function TaskChanges({
     setToggled(new Set());
     setManualOpen(false);
     setBinaryConflicts([]);
+    setCompleteOffer(null);
+    setCompleteDismissed(false);
     // Task switched without a remount: show the new task's cached diff (or the
     // skeleton), never the previous task's stale files, while we revalidate.
     setData(diffCache.get(taskId) ?? null);
@@ -271,6 +283,8 @@ export default function TaskChanges({
       if (res.ok) {
         onMerged?.();
         load();
+        // Nudge, don't force: real merges frequently precede follow-up work.
+        if (!res.alreadyMerged) setCompleteOffer("merged");
       }
     } catch (e) {
       setMergeRes({ ok: false, targetBranch: "", committed: false, error: e instanceof Error ? e.message : String(e) });
@@ -288,8 +302,12 @@ export default function TaskChanges({
     try {
       const r = await fetch(`/api/tasks/${taskId}/pr`, { method: "POST" });
       const res: { ok?: boolean; url?: string; error?: string } = await r.json();
-      if (res.ok && res.url) onPrCreated?.(res.url);
-      else setPrErr(res.error || "could not create the PR");
+      if (res.ok && res.url) {
+        onPrCreated?.(res.url);
+        // Same rule as merge: offer, don't force — review feedback lands
+        // after the PR opens, and tasks legitimately continue then.
+        if (!prUrl) setCompleteOffer("pr");
+      } else setPrErr(res.error || "could not create the PR");
     } catch (e) {
       setPrErr(e instanceof Error ? e.message : String(e));
     } finally {
@@ -324,7 +342,10 @@ export default function TaskChanges({
       const r = await fetch(`/api/tasks/${taskId}/merge/complete`, { method: "POST" });
       const res = await mergeJson(r);
       setMergeRes(res);
-      if (res.ok) onMerged?.();
+      if (res.ok) {
+        onMerged?.();
+        if (!res.alreadyMerged) setCompleteOffer("merged");
+      }
     } catch (e) {
       setMergeRes({ ok: false, targetBranch: "", committed: false, error: e instanceof Error ? e.message : String(e) });
     } finally {
@@ -377,6 +398,11 @@ export default function TaskChanges({
   if (!data.isolated) return <div className="tc-note">{data.reason || "No isolated branch for this task."}</div>;
 
   const merged = !!data.merged_at || !!data.alreadyMerged;
+  // The offer is a soft nudge, never a modal: hidden if the parent hasn't
+  // opted in (no onMarkComplete / no taskStatus), hidden once the task is
+  // already done, and hidden once the user dismisses it.
+  const showCompleteOffer =
+    !!completeOffer && !completeDismissed && !!onMarkComplete && taskStatus && taskStatus !== "done";
   const totalAdd = data.files.reduce((n, f) => n + f.additions, 0);
   const totalDel = data.files.reduce((n, f) => n + f.deletions, 0);
   const nothing = data.files.length === 0;
@@ -459,6 +485,23 @@ export default function TaskChanges({
       )}
 
       {prErr && <div className="tc-mergebar bad">⚠ {prErr}</div>}
+
+      {showCompleteOffer && (
+        <div className="tc-mergebar tc-complete-offer">
+          <span>
+            {completeOffer === "merged" ? "Merged. " : "PR opened. "}
+            Mark this task complete? Anything blocked on it will unblock.
+          </span>
+          <span className="tc-spacer" />
+          <button className="tc-btn" onClick={() => setCompleteDismissed(true)}>Not yet</button>
+          <button
+            className="tc-btn primary"
+            onClick={() => { onMarkComplete?.(); setCompleteDismissed(true); }}
+          >
+            Mark complete
+          </button>
+        </div>
+      )}
 
       {mergeRes && (
         <div className={`tc-mergebar ${mergeRes.ok ? "ok" : "bad"}`}>

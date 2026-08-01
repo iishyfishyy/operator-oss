@@ -145,6 +145,36 @@ export function EditTaskModal({ task, tasks, onClose, onSave, onDelete }: { task
   );
 }
 
+// Two-step confirm to delete a task from the kebab / overflow menus (task list
+// row + session view header). Same danger button pattern and copy as the delete
+// affordance inside EditTaskModal — the modal exists because those menus are the
+// only entry point once a task has a live session and TaskHero/Edit unmounts.
+export function DeleteTaskModal({ task, onClose, onDelete }: { task: TaskRow; onClose: () => void; onDelete: (id: string) => void }) {
+  const [confirmDel, setConfirmDel] = useState(false);
+  return (
+    <Modal title="Delete task" sub={task.title} onClose={onClose}
+      footer={<>
+        {confirmDel ? (
+          <button className="btn-danger on" onClick={() => onDelete(task.id)} title="Permanently remove this task, its session and worktree">{Icon.x()} Delete task permanently</button>
+        ) : (
+          <button className="btn-danger" onClick={() => setConfirmDel(true)}>{Icon.x()} Delete task</button>
+        )}
+        <span className="spacer" />
+        <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+      </>}>
+      {confirmDel ? (
+        <div className="hlp" style={{ color: "var(--red)" }}>
+          This permanently removes “{task.title}”, its agent session and git worktree from the orchestrator. Any unmerged work in the worktree is discarded.
+        </div>
+      ) : (
+        <div className="hlp">
+          Delete “{task.title}” from this project? Its agent session and git worktree will be torn down.
+        </div>
+      )}
+    </Modal>
+  );
+}
+
 // Mirror of the server's RefreshState (lib/contextRefresh.ts) — the detached
 // "Refresh with AI" job state the modal polls.
 type RefreshState = { status: "idle" | "running" | "done" | "error"; draft: string; error: string; started_at: number };
