@@ -16,6 +16,7 @@
  */
 const http = require("node:http");
 const nextImport = require("next");
+const { resolveHostname } = require("./lib/resolveHostname.js");
 
 // Last-resort process guards. Turns run detached (lib/runner.ts), owned by this
 // process and not awaited by any request — so a stray rejection or throw from a
@@ -56,7 +57,10 @@ const serviceRouterImport = import("./lib/service-router.mjs");
 // is reached exclusively through this proxy.
 const dev = process.env.NODE_ENV !== "production";
 const port = process.env.PORT ? Number(process.env.PORT) : 3000;
-const hostname = process.env.HOSTNAME || "0.0.0.0";
+// ORCH_HOSTNAME first, then HOSTNAME (kept for backward compat, incl. the
+// Dockerfile shim), then 0.0.0.0. See lib/resolveHostname.js for the why —
+// bare `HOSTNAME` collides with a login-shell export on Fedora-family shells.
+const hostname = resolveHostname(process.env);
 const ptyHost = process.env.PTY_HOST || "127.0.0.1";
 const ptyPort = process.env.PTY_PORT ? Number(process.env.PTY_PORT) : 3001;
 

@@ -88,7 +88,7 @@ COPY --from=build --chown=root:root /app/server.js /app/pty-server.js /app/next.
 # hostname router at runtime (un-bundled, unlike the middleware copy compiled
 # into .next). Import graphs: lib/auth/origin.mjs -> lib/cf-access.mjs;
 # lib/service-router.mjs -> lib/service-host.mjs.
-COPY --from=build --chown=root:root /app/lib/cf-access.mjs /app/lib/service-router.mjs /app/lib/service-host.mjs ./lib/
+COPY --from=build --chown=root:root /app/lib/cf-access.mjs /app/lib/service-router.mjs /app/lib/service-host.mjs /app/lib/resolveHostname.js ./lib/
 COPY --from=build --chown=root:root /app/lib/auth ./lib/auth
 # The stdio MCP bridge the non-Claude drivers spawn per turn (node scripts/orch-mcp.mjs)
 # and its shared tool defs — plain-Node .mjs the build output doesn't bundle, so

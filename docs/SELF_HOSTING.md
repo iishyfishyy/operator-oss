@@ -62,12 +62,12 @@ relocates an instance (fresh container, different user, different ports) with **
 code edits**. [`.env.example`](../.env.example) is the same list in copyable form.
 Export the variables in the environment that launches `npm run dev` / `npm start` —
 `server.js` and `pty-server.js` are plain Node and read them before Next boots, so a
-`.env` file alone doesn't cover `PORT`/`HOSTNAME`/`PTY_*`.
+`.env` file alone doesn't cover `PORT`/`ORCH_HOSTNAME`/`PTY_*`.
 
 | Variable | Default | What it does |
 |-|-|-|
 | `PORT` | `3000` | Port of the single public origin (Next.js + `/pty` proxy) |
-| `HOSTNAME` | `0.0.0.0` | Bind address of the app server |
+| `ORCH_HOSTNAME` | `0.0.0.0` | Bind address of the app server. Prefixed because plain `HOSTNAME` collides with a login-shell export on Fedora-family shells (Bazzite, Silverblue) and would otherwise become the bind address. Bare `HOSTNAME` is still honored as a fallback for existing configs (including the Dockerfile's shim) |
 | `PTY_PORT` | `3001` | Port of the node-pty terminal sidecar |
 | `PTY_HOST` | `127.0.0.1` | Bind address of the sidecar **and** the proxy's upstream. Keep it on loopback — the browser never connects directly; `server.js` proxies `/pty` to it |
 | `PUBLIC_BASE_URL` | *(empty)* | The origin users reach the app on (e.g. `https://orch.example.com` behind a tunnel). The client builds its `ws(s)://` terminal URL from it; empty = the browser's own origin, correct for any single-hostname deployment |
