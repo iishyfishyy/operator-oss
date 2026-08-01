@@ -9,12 +9,14 @@
 // and GET /api/events relays a deletion even though the row is gone.
 import { describe, it, expect } from "vitest";
 import {
-  createProject, createTask, updateTask, getTask, deleteTask,
-  listProjects, listNeedsYou, countAwaiting,
+  createProject, createTask, updateTask, getTask, deleteTask, addMessage,
+  listProjects, listNeedsYou, countAwaiting, isTaskAwaiting, markTaskViewed,
 } from "@/lib/store";
+import { getDb, migrate } from "@/lib/db";
 import { subscribeGlobal, publishGlobal, type BusEvent } from "@/lib/events";
 import { PATCH as patchTask, DELETE as deleteTaskRoute } from "@/app/api/tasks/[id]/route";
 import { POST as clearRoute } from "@/app/api/tasks/[id]/clear/route";
+import { POST as viewRoute } from "@/app/api/tasks/[id]/view/route";
 import { GET as eventsRoute } from "@/app/api/events/route";
 import type { Status } from "@/lib/types";
 
@@ -32,37 +34,165 @@ async function busEventsFor(taskId: string, fn: () => Promise<unknown>): Promise
 
 const params = (id: string) => ({ params: Promise.resolve({ id }) });
 
+// Directly stamp a row's last_viewed_at so tests can order it around a message
+// timestamp precisely (Date.now() ties are otherwise possible on fast machines).
+function stampViewed(taskId: string, at: number) {
+  getDb().prepare("UPDATE tasks SET last_viewed_at = ? WHERE id = ?").run(at, taskId);
+}
+function stampMessageAt(msgId: string, at: number) {
+  getDb().prepare("UPDATE messages SET created_at = ? WHERE id = ?").run(at, msgId);
+}
+
 describe("the shared needs-you predicate", () => {
-  it("countAwaiting, listNeedsYou and listProjects agree across the full state matrix", () => {
+  it("countAwaiting, listNeedsYou and listProjects agree across the full state × viewed matrix", () => {
     const project = createProject({ name: "NeedsMatrix" });
     const statuses: Status[] = ["not_started", "in_progress", "on_hold", "done", "cancelled"];
-    const askParked: string[] = []; // the running=1 + awaiting=1 rows (turn parked on an ask)
+    // Every 'awaiting' row gets one assistant message so last_agent_activity > 0
+    // — the read-tracking clause has something to compare last_viewed_at
+    // against. Without it every derived value would be 0 > 0 = false, so the
+    // matrix would collapse to just the running-parked cases.
+    const AGENT_AT = 1_000_000; // any fixed timestamp; well below Date.now()
+    const parkedViewed: string[] = []; // the running=1 + awaiting=1 rows that ARE viewed — must still count
+    const settledUnviewed: string[] = []; // running=0 + awaiting=1 rows unviewed — must count
+    const settledViewed: string[] = []; // running=0 + awaiting=1 rows viewed AFTER activity — must NOT count
     for (const status of statuses)
       for (const running of [0, 1])
         for (const awaiting of [0, 1])
-          for (const suggested of [0, 1]) {
-            const t = createTask({
-              project_id: project.id,
-              title: `${status}/r${running}/a${awaiting}/s${suggested}`,
-              suggested: !!suggested,
-            });
-            updateTask(t.id, { status, running, awaiting_input: awaiting });
-            if (status === "in_progress" && running === 1 && awaiting === 1 && suggested === 0) askParked.push(t.id);
-          }
+          for (const suggested of [0, 1])
+            for (const viewed of [0, 1]) {
+              const t = createTask({
+                project_id: project.id,
+                title: `${status}/r${running}/a${awaiting}/s${suggested}/v${viewed}`,
+                suggested: !!suggested,
+              });
+              updateTask(t.id, { status, running, awaiting_input: awaiting });
+              if (awaiting === 1) {
+                const m = addMessage(t.id, 1, "assistant", "agent said something");
+                stampMessageAt(m.id, AGENT_AT);
+              }
+              if (viewed === 1) stampViewed(t.id, AGENT_AT + 1); // read AFTER the message
+              if (status === "in_progress" && awaiting === 1 && suggested === 0) {
+                if (running === 1 && viewed === 1) parkedViewed.push(t.id);
+                if (running === 0 && viewed === 0) settledUnviewed.push(t.id);
+                if (running === 0 && viewed === 1) settledViewed.push(t.id);
+              }
+            }
 
-    // Real in_progress tasks with awaiting_input set count — running is
-    // irrelevant (2 of the 40 rows: running 0 and 1).
+    // 4 rows count out of the 80: (running∈{0,1}) × (viewed∈{0,1}), except the
+    // settled+viewed row clears — so 3. running-parked (both viewed values) plus
+    // the unviewed settled row.
     const n = countAwaiting(project.id);
-    expect(n).toBe(2);
+    expect(n).toBe(3);
 
-    // Dropdown rows and pill count are the same set…
+    // Dropdown rows and pill count agree, and include the parked-ask-viewed row
+    // (an unanswered ask needs the user regardless of viewing).
     const dropdown = listNeedsYou().filter((r) => r.project_id === project.id);
     expect(dropdown).toHaveLength(n);
-    // …including the mid-turn ask park the old `running = 0` filter dropped.
-    expect(dropdown.map((r) => r.id)).toContain(askParked[0]);
+    expect(dropdown.map((r) => r.id)).toContain(parkedViewed[0]);
+    expect(dropdown.map((r) => r.id)).toContain(settledUnviewed[0]);
+    // …and the settled+viewed row is gone.
+    expect(dropdown.map((r) => r.id)).not.toContain(settledViewed[0]);
 
-    // The project badge subquery agrees too.
+    // Project badge subquery agrees, and the per-row derived helper agrees too.
     expect(listProjects().find((p) => p.id === project.id)!.awaiting_count).toBe(n);
+    expect(isTaskAwaiting(parkedViewed[0])).toBe(true);
+    expect(isTaskAwaiting(settledUnviewed[0])).toBe(true);
+    expect(isTaskAwaiting(settledViewed[0])).toBe(false);
+  });
+
+  it("new agent activity after a view re-arms the badge", () => {
+    const project = createProject({ name: "Rearm" });
+    const t = createTask({ project_id: project.id, title: "T" });
+    updateTask(t.id, { status: "in_progress", awaiting_input: 1 });
+    const first = addMessage(t.id, 1, "assistant", "first message");
+    stampMessageAt(first.id, 1_000_000);
+    // Read.
+    stampViewed(t.id, 1_000_050);
+    expect(isTaskAwaiting(t.id)).toBe(false);
+    // Fresh agent activity postdates the view → back to awaiting.
+    const second = addMessage(t.id, 1, "assistant", "another turn ended");
+    stampMessageAt(second.id, 2_000_000);
+    expect(isTaskAwaiting(t.id)).toBe(true);
+  });
+
+  it("user messages don't re-arm the badge (only assistant/tool/system count)", () => {
+    const project = createProject({ name: "UserMsgs" });
+    const t = createTask({ project_id: project.id, title: "T" });
+    updateTask(t.id, { status: "in_progress", awaiting_input: 1 });
+    const agent = addMessage(t.id, 1, "assistant", "agent");
+    stampMessageAt(agent.id, 1_000_000);
+    stampViewed(t.id, 1_000_050);
+    // The user answering / typing shouldn't reopen "waiting on you".
+    const user = addMessage(t.id, 1, "user", "reply");
+    stampMessageAt(user.id, 2_000_000);
+    expect(isTaskAwaiting(t.id)).toBe(false);
+  });
+});
+
+describe("POST /api/tasks/[id]/view", () => {
+  it("stamps last_viewed_at, clears the derived badge, and publishes task_updated", async () => {
+    const project = createProject({ name: "ViewRoute" });
+    const t = createTask({ project_id: project.id, title: "T" });
+    updateTask(t.id, { status: "in_progress", awaiting_input: 1 });
+    const m = addMessage(t.id, 1, "assistant", "hi");
+    stampMessageAt(m.id, 1_000_000);
+    expect(isTaskAwaiting(t.id)).toBe(true);
+
+    const seen = await busEventsFor(t.id, async () => {
+      const res = await viewRoute(new Request("http://test/view", { method: "POST" }), params(t.id));
+      expect(res.status).toBe(200);
+    });
+
+    const row = getTask(t.id)!;
+    expect(row.last_viewed_at).toBeGreaterThan(0);
+    expect(row.awaiting_input).toBe(1); // raw column untouched
+    expect(isTaskAwaiting(t.id)).toBe(false); // derived flips
+    expect(seen).toContainEqual({ type: "task_updated" });
+  });
+
+  it("does not clear a parked ask — running=1 stays awaiting even after view", async () => {
+    const project = createProject({ name: "ParkedView" });
+    const t = createTask({ project_id: project.id, title: "T" });
+    updateTask(t.id, { status: "in_progress", awaiting_input: 1, running: 1 }); // parked ask
+    const m = addMessage(t.id, 1, "assistant", "here's the ask");
+    stampMessageAt(m.id, 1_000_000);
+
+    await viewRoute(new Request("http://test/view", { method: "POST" }), params(t.id));
+
+    // The stamp landed…
+    expect(getTask(t.id)!.last_viewed_at).toBeGreaterThan(0);
+    // …but the running=1 short-circuit keeps the row counted.
+    expect(isTaskAwaiting(t.id)).toBe(true);
+    expect(countAwaiting(project.id)).toBe(1);
+  });
+
+  it("404s on an unknown task", async () => {
+    const res = await viewRoute(new Request("http://test/view", { method: "POST" }), params("nope"));
+    expect(res.status).toBe(404);
+  });
+});
+
+describe("last_viewed_at migration", () => {
+  it("is idempotent: re-running migrate() on an up-to-date schema is a no-op", () => {
+    const db = getDb();
+    // Baseline column presence.
+    const cols = () => (db.prepare("PRAGMA table_info(tasks)").all() as { name: string }[]).map((c) => c.name);
+    expect(cols()).toContain("last_viewed_at");
+    // Should not throw and should not add a duplicate column.
+    expect(() => { migrate(db); migrate(db); }).not.toThrow();
+    expect(cols().filter((n) => n === "last_viewed_at")).toHaveLength(1);
+  });
+
+  it("backfills existing rows to 0 (never viewed) so upgraded instances show as awaiting on next activity", () => {
+    const project = createProject({ name: "MigrateBackfill" });
+    const t = createTask({ project_id: project.id, title: "Existing" });
+    // The default: a fresh row is unread until POST /view stamps it.
+    expect(getTask(t.id)!.last_viewed_at).toBe(0);
+    // With last_viewed_at=0 and an agent message at any time > 0, the row shows as awaiting.
+    updateTask(t.id, { status: "in_progress", awaiting_input: 1 });
+    const m = addMessage(t.id, 1, "assistant", "hi");
+    stampMessageAt(m.id, 1);
+    expect(isTaskAwaiting(t.id)).toBe(true);
   });
 });
 
@@ -110,6 +240,10 @@ describe("mutation routes publish lifecycle events", () => {
     updateTask(t.id, { status: "in_progress", awaiting_input: 1, running: 1 }); // parked on an ask
     const other = createTask({ project_id: project.id, title: "Still waiting" });
     updateTask(other.id, { status: "in_progress", awaiting_input: 1 });
+    // Give `other` some agent activity so the read-tracking clause counts it
+    // (an untouched row with no messages has last_agent_activity = 0 and would
+    // fall out — see the state × viewed matrix test above).
+    addMessage(other.id, 1, "assistant", "waiting on you");
     expect(countAwaiting(project.id)).toBe(2);
 
     const rowGoneAtPublish: boolean[] = [];

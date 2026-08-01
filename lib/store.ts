@@ -11,14 +11,24 @@ import type { Project, Task, Message, PendingMessage, Summary, Session, Priority
 // ---------- projects ----------
 
 // The single "needs you" predicate (over tasks aliased `t`): a real task,
-// in progress, flagged awaiting_input. Deliberately NO running condition — a
-// turn parked mid-stream on an AskUserQuestion has running=1 AND
-// awaiting_input=1 and needs the user exactly as much as a settled one (the
-// client-side isAwaiting in app/orchestrator/format.ts makes the same call).
-// Shared by listProjects' awaiting_count subquery, listNeedsYou, and
-// countAwaiting so the project badges, the titlebar "N need you" pill, and its
-// dropdown can never disagree.
-const NEEDS_YOU = "t.suggested = 0 AND t.status = 'in_progress' AND t.awaiting_input = 1";
+// in progress, flagged awaiting_input, that HASN'T been read since the last
+// agent activity. A turn parked mid-stream on an AskUserQuestion (running=1 +
+// awaiting_input=1) always counts — an unanswered question needs the user
+// regardless of viewing, and the flag stays lit until ask_answered clears it.
+// Only settled turns (running=0) clear on read, so a fleet of finished tasks
+// stops nagging once each is opened. Shared by listProjects' awaiting_count
+// subquery, listNeedsYou, and countAwaiting so the project badges, the
+// titlebar "N need you" pill, and its dropdown can never disagree.
+//
+// last_agent_activity is derived per-row as MAX(messages.created_at) over the
+// roles the agent produces (assistant/tool/system). No new column: this
+// matches the shape listNeedsYou already uses for waiting_since. If it ever
+// bites a hot path a dedicated column can replace the subquery in one place.
+const LAST_AGENT_ACTIVITY_SUB =
+  "(SELECT MAX(m.created_at) FROM messages m WHERE m.task_id = t.id AND m.role IN ('assistant','tool','system'))";
+const NEEDS_YOU =
+  `t.suggested = 0 AND t.status = 'in_progress' AND t.awaiting_input = 1
+     AND (t.running = 1 OR COALESCE(${LAST_AGENT_ACTIVITY_SUB}, 0) > t.last_viewed_at)`;
 
 export function listProjects(): (Project & { task_count: number; last_activity: number; awaiting_count: number; cost_usd: number })[] {
   return getDb()
@@ -96,6 +106,23 @@ export function countAwaiting(projectId: string): number {
   return row.n;
 }
 
+// Derived "waiting on you" for a single task — the same NEEDS_YOU predicate,
+// evaluated per row. User-facing surfaces (GET /api/tasks/[id], /api/events)
+// call this so clients see one value: raw awaiting_input, minus read tasks
+// whose only agent activity is already viewed. Internal consumers (idle
+// telemetry, instance rollup, the runner's own writes) read the raw column.
+export function isTaskAwaiting(taskId: string): boolean {
+  const row = getDb()
+    .prepare(`SELECT 1 AS one FROM tasks t WHERE t.id = ? AND ${NEEDS_YOU}`)
+    .get(taskId) as { one: number } | undefined;
+  return !!row;
+}
+
+// Stamp a task as viewed (POST /api/tasks/[id]/view). No-op on unknown ids.
+export function markTaskViewed(taskId: string): void {
+  getDb().prepare("UPDATE tasks SET last_viewed_at = ? WHERE id = ?").run(Date.now(), taskId);
+}
+
 // Lightweight rows for the ⌘K command palette's session search: every real task
 // across all active projects, plus just enough of its project to label it. The
 // client only holds the selected project's tasks, so the palette fetches this
@@ -113,9 +140,13 @@ export function listAllTasksLite(): {
   project_color: string;
   project_icon: string;
 }[] {
+  // `awaiting_input` is the DERIVED value (via NEEDS_YOU) so palette rows
+  // agree with project badges and the titlebar pill — a settled, read task
+  // clears here just as it does in the counts.
   return getDb()
     .prepare(
-      `SELECT t.id, t.project_id, t.title, t.status, t.running, t.awaiting_input, t.updated_at,
+      `SELECT t.id, t.project_id, t.title, t.status, t.running, t.updated_at,
+         CASE WHEN ${NEEDS_YOU} THEN 1 ELSE 0 END AS awaiting_input,
          p.name AS project_name, p.color AS project_color, p.icon AS project_icon
        FROM tasks t
        JOIN projects p ON p.id = t.project_id
@@ -228,7 +259,15 @@ export function listTasks(projectId: string): TaskWithUsage[] {
   const db = getDb();
   const rows = db
     .prepare(
-      `SELECT t.*,
+      // `awaiting_input` is the DERIVED value (NEEDS_YOU) — a settled task
+      // whose only agent activity has been viewed no longer nags in the list.
+      // The raw column stays on disk for internal writers; the wire value
+      // agrees with the project badge and the "N need you" pill.
+      `SELECT t.id, t.project_id, t.title, t.description, t.priority, t.status, t.suggested, t.agent, t.model,
+         t.resolved_model, t.reasoning, t.permission_mode, t.session_id, t.worktree_path, t.work_branch,
+         t.base_sha, t.merged_at, t.pr_url, t.generation, t.position, t.started, t.running, t.last_viewed_at,
+         t.created_at, t.updated_at,
+         CASE WHEN ${NEEDS_YOU} THEN 1 ELSE 0 END AS awaiting_input,
          COALESCE((SELECT SUM(u.cost_usd) FROM task_usage u WHERE u.task_id = t.id), 0) AS cost_usd,
          COALESCE((SELECT SUM(u.input_tokens + u.output_tokens + u.cache_read_tokens + u.cache_creation_tokens)
                    FROM task_usage u WHERE u.task_id = t.id), 0) AS total_tokens,

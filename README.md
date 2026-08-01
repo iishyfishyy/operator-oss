@@ -23,7 +23,7 @@ Each **project** carries reusable context. Each **task** is its own agent sessio
 - Your Claude plan can run more than one session at a time — stop working it one terminal at a time.
 - One screen for every project and every task. No tab-juggling.
 - Project context is written once and injected into every task. Stop re-explaining your stack.
-- A cross-project **"N need you"** signal shows exactly which session is waiting on you.
+- A cross-project **"N need you"** signal shows exactly which session is waiting on you — and clears its badge once you've actually opened the task, so a fleet of finished sessions stops nagging as you work through them (parked questions keep counting until answered).
 
 ## Features
 

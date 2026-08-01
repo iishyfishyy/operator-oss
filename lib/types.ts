@@ -56,6 +56,7 @@ export interface Task {
   started: number; // 1 once the initial prompt has been sent
   running: number; // 1 while a Claude turn is actively streaming
   awaiting_input: number; // 1 when it's your turn: Claude's turn ended mid-task, or it's parked on an AskUserQuestion
+  last_viewed_at: number; // when the transcript was last read (see POST /api/tasks/[id]/view); 0 = never viewed
   created_at: number;
   updated_at: number;
 }
