@@ -425,7 +425,7 @@ export function SessionView({ project, task, agents, messages, running, blockedB
             )}
             <div style={{ position: "relative" }}>
               <button
-                className="status-ctl"
+                className="status-ctl sh-more"
                 title="More task actions"
                 aria-label="More task actions"
                 onClick={(e) => { e.stopPropagation(); setMoreOpen((o) => !o); setStatusOpen(false); setPriOpen(false); setModelOpen(false); setSettingsOpen(false); }}

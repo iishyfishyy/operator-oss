@@ -436,6 +436,26 @@ export function useOrchestrator() {
     // The server clears awaiting_input on a manual status change.
     if (wasAwaiting) decAwaiting(task);
   };
+  // Task-id-aware "mark done" for the card-level and row-menu affordances that
+  // can act on a task other than the currently selected one. Same PATCH body
+  // (and same server-side awaiting_input clear) as setStatus("done"); optimistic
+  // so the card leaves the working set without waiting for the round-trip.
+  const completeTask = async (id: string) => {
+    const t = tasks.find((x) => x.id === id);
+    if (!t || t.status === "done") return;
+    const wasAwaiting = isAwaiting(t);
+    setTasks((prev) => prev.map((x) => (x.id === id ? { ...x, status: "done", awaiting_input: 0 } : x)));
+    if (wasAwaiting) decAwaiting(t);
+    try {
+      const fresh = await jsend<TaskRow>(`/api/tasks/${id}`, "PATCH", { status: "done" });
+      setTasks((prev) => prev.map((x) => (x.id === id ? { ...x, ...fresh } : x)));
+    } catch {
+      // Roll the optimistic status back if the server rejected — leaves
+      // awaiting_input at 0 (server would have cleared it too on success), but
+      // that's a rare edge and the next lifecycle event resyncs the row.
+      setTasks((prev) => prev.map((x) => (x.id === id ? { ...x, status: t.status } : x)));
+    }
+  };
   const setPriority = async (p: Priority) => {
     if (!task) return;
     const fresh = await jsend<TaskRow>(`/api/tasks/${task.id}`, "PATCH", { priority: p });
@@ -609,7 +629,7 @@ export function useOrchestrator() {
     servicesOpen, setServicesOpen, servicesMounted, setServicesMounted, servicesHeight, setServicesHeight,
     // actions
     setSelTask, fetchRecap, runTurn, answerQuestion, stopTurn, cancelQueued, resolveConflictsWithAI,
-    selectProject, jumpToNeedsYou, goToTask, clearSession, setStatus, setPriority, setModel,
+    selectProject, jumpToNeedsYou, goToTask, clearSession, setStatus, completeTask, setPriority, setModel,
     setReasoning, setPermission, createTask, saveTask, removeTask, moveTask, startSuggestion, acceptSuggestion,
     dismissSuggestion, saveContext, createProject, reorderProjects, removeProject, setDeprecated,
     resetSettings, setProjectDefaultAgent,

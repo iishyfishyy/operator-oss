@@ -197,6 +197,7 @@ export default function Orchestrator() {
       view={o.taskView} onSetView={setTaskView} onMoveTask={o.moveTask}
       onSelectTask={o.setSelTask} onNewTask={() => o.setModal("task")} onEditContext={() => o.setModal("context")}
       onShowSessions={() => o.setModal("sessions")} onShowRecap={() => o.setSelTask(null)} onEditTask={o.setEditId}
+      onCompleteTask={o.completeTask}
       onDeleteTask={o.setDeleteId}
       onStartSuggestion={o.startSuggestion} onAcceptSuggestion={o.acceptSuggestion} onDismissSuggestion={o.dismissSuggestion}
     />

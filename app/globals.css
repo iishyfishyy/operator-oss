@@ -366,11 +366,24 @@ button{font-family:inherit;color:inherit;cursor:pointer;border:none;background:n
 .task-foot{display:flex;align-items:center;gap:8px;margin-top:9px;}
 .task-foot .activity{font-family:var(--mono);font-size:10px;color:var(--ink-3);display:flex;align-items:center;gap:5px;}
 .task-foot .spacer{flex:1;}
-/* Kebab (overflow) trigger inside a task-row: reveals on row hover/focus so
-   the row stays visually calm at rest, then presents a Delete affordance. */
-.task .task-kebab{width:22px;height:22px;color:var(--ink-4);opacity:0;transition:opacity .12s;}
-.task:hover .task-kebab,.task:focus-within .task-kebab,.task .task-kebab:focus,.task .task-kebab:focus-visible{opacity:1;}
+/* Kebab (overflow) trigger inside a task row: visible at rest so it's
+   findable — the earlier hover-only version was invisible until you knew to
+   look for it. Still muted so it doesn't compete with the title/status. */
+.task .task-kebab{width:22px;height:22px;color:var(--ink-3);opacity:.7;transition:opacity .12s, color .12s;}
+.task:hover .task-kebab,.task:focus-within .task-kebab,.task .task-kebab:focus,.task .task-kebab:focus-visible{opacity:1;color:var(--ink-2);}
 .task .task-kebab svg{width:14px;height:14px;}
+/* Circle-check control on the task-foot: quick "mark done" from the row. Sits
+   right of the meta so it never crowds the title, faint at rest with a subtle
+   accent lift on hover — same "findable but not loud" treatment as the kebab. */
+.task .task-complete{flex:0 0 auto;width:22px;height:22px;border-radius:50%;display:grid;place-items:center;color:var(--ink-3);background:transparent;border:0;cursor:pointer;opacity:.7;transition:opacity .12s, color .12s, background .12s;}
+.task:hover .task-complete,.task:focus-within .task-complete{opacity:1;}
+.task .task-complete:hover{color:var(--green);background:var(--green-soft);}
+.task .task-complete svg{width:16px;height:16px;}
+/* Session-header overflow (…): pill shape same as its neighbors, but the
+   iconless-only trigger disappeared visually next to labelled pickers. Bump
+   the resting ink one notch so the affordance is findable at first glance. */
+.status-ctl.sh-more{color:var(--ink);padding:0 10px;}
+.status-ctl.sh-more svg{width:16px;height:16px;}
 
 /* task dependencies (ordering) -------------------------------------- */
 /* "blocked by" chip on a task card */

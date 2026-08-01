@@ -41,6 +41,7 @@ export const Icon = {
   x: (p?: P) => S(<><line x1={6} y1={6} x2={18} y2={18} /><line x1={6} y1={18} x2={18} y2={6} /></>, p),
   clip: (p?: P) => S(<path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />, p),
   check: (p?: P) => S(<path d="M5 12l5 5 9-11" />, p),
+  checkCircle: (p?: P) => S(<><circle cx={12} cy={12} r={9} /><path d="M8 12l3 3 5-6" /></>, p),
   lock: (p?: P) => S(<><rect x={4} y={11} width={16} height={9} rx={2} /><path d="M8 11V7a4 4 0 0 1 8 0v4" /></>, p),
   edit: (p?: P) => S(<><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" /></>, p),
   doc: (p?: P) => S(<><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6" /></>, p),
