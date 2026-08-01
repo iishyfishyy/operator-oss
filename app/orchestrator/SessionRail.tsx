@@ -103,11 +103,12 @@ function ContextPane({ task, sessions, running, onClear }: { task: TaskRow; sess
   );
 }
 
-export function SessionRail({ project, task, sessions, running, onResolveWithAI, onMerged, onPrCreated, onClear, onCollapse, onSwitchToChat }: {
+export function SessionRail({ project, task, sessions, running, onResolveWithAI, onMerged, onPrCreated, onMarkComplete, onClear, onCollapse, onSwitchToChat }: {
   project: ProjectRow; task: TaskRow; sessions: Session[]; running: boolean;
   onResolveWithAI: (taskId: string) => Promise<ResolveResult>;
   onMerged?: () => void;
   onPrCreated?: (url: string) => void;
+  onMarkComplete?: () => void;
   onClear: () => void; onCollapse: () => void; onSwitchToChat: () => void;
 }) {
   // PREVIEW (project live-URL view) rides on the remote-execution backend, which
@@ -129,7 +130,7 @@ export function SessionRail({ project, task, sessions, running, onResolveWithAI,
       </div>
       <div className="rail-scroll">
         {tab === "diff" && (
-          <TaskChanges taskId={task.id} running={running} prUrl={task.pr_url} onMerged={onMerged} onPrCreated={onPrCreated} onResolveWithAI={async (id) => {
+          <TaskChanges taskId={task.id} running={running} prUrl={task.pr_url} taskStatus={task.status} onMerged={onMerged} onPrCreated={onPrCreated} onMarkComplete={onMarkComplete} onResolveWithAI={async (id) => {
             const res = await onResolveWithAI(id);
             if (res.ok && !res.merged) onSwitchToChat();
             return res;

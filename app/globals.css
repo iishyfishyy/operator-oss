@@ -713,6 +713,10 @@ a.tc-btn{display:inline-flex;align-items:center;text-decoration:none;line-height
 .tc-mergebar.bad{background:var(--red-soft);color:var(--red);}
 .tc-conflicts{margin-top:4px;font-family:var(--mono);white-space:pre-wrap;}
 .tc-mergebar.review{background:var(--amber-soft);color:var(--amber);}
+/* Post-merge / post-PR completion nudge — soft neutral, sits between the row
+   of action buttons and the file list, and lays its Dismiss/Confirm inline. */
+.tc-mergebar.tc-complete-offer{display:flex;align-items:center;gap:10px;background:var(--surface-2);color:var(--ink-2);border:1px solid var(--line);}
+.tc-mergebar.tc-complete-offer .tc-spacer{flex:1;}
 .tc-conflict-actions{display:flex;gap:8px;margin-top:8px;}
 .tc-manual{margin-top:8px;padding-top:8px;border-top:1px solid var(--line);color:var(--ink-2);line-height:1.5;}
 .tc-manual code{font-family:var(--mono);background:var(--surface-2);padding:1px 4px;border-radius:3px;}

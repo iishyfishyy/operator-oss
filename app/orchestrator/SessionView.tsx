@@ -407,6 +407,19 @@ export function SessionView({ project, task, agents, messages, running, blockedB
                 </Popover>
               )}
             </div>
+            {/* One-click completion — mirrors the status dropdown's 'done' choice
+                but keeps the terminal state one visible tap away, so a
+                dependency chain isn't stuck waiting on a state nobody knew to
+                produce. Hidden once the task is already done. */}
+            {task.status !== "done" && (
+              <button
+                className="btn btn-line btn-sm"
+                title="Mark this task complete — releases any dependents waiting on it"
+                onClick={() => onSetStatus("done")}
+              >
+                {Icon.check()} Mark complete
+              </button>
+            )}
             {hasSession && task.started === 1 && (
               <button className="btn btn-line btn-sm" title="Save summary & start a fresh context window" onClick={onClear} disabled={running}>{Icon.clear()} /clear</button>
             )}
@@ -456,12 +469,14 @@ export function SessionView({ project, task, agents, messages, running, blockedB
               />
               <SessionRail
                 project={project} task={task} sessions={sessions} running={running}
-                onResolveWithAI={onResolveWithAI} onMerged={onMerged} onPrCreated={onPrCreated} onClear={onClear} onCollapse={onRailCollapse} onSwitchToChat={() => { /* desktop transcript is always visible */ }}
+                onResolveWithAI={onResolveWithAI} onMerged={onMerged} onPrCreated={onPrCreated}
+                onMarkComplete={() => onSetStatus("done")}
+                onClear={onClear} onCollapse={onRailCollapse} onSwitchToChat={() => { /* desktop transcript is always visible */ }}
               />
             </div>
           )
         ) : view === "changes" ? (
-          <TaskChanges taskId={task.id} running={running} prUrl={task.pr_url} onMerged={onMerged} onPrCreated={onPrCreated} onResolveWithAI={async (id) => {
+          <TaskChanges taskId={task.id} running={running} prUrl={task.pr_url} taskStatus={task.status} onMerged={onMerged} onPrCreated={onPrCreated} onMarkComplete={() => onSetStatus("done")} onResolveWithAI={async (id) => {
             const res = await onResolveWithAI(id);
             // Resolution turn was kicked off (conflicts, not a clean merge) —
             // jump back to Chat so the user sees the message stream in.
