@@ -51,15 +51,19 @@ export function resolveCodexModel(taskModel: string | null | undefined): string 
 }
 
 /**
- * Estimate the dollar cost of a turn from its token counts. `input_tokens` is
- * the full prompt (cached tokens included, as the API reports it), so cached
- * reads are re-priced at the cached rate rather than double-counted. Unknown
- * models price at the CLI-default family so the estimate degrades gracefully
- * instead of silently reporting $0.
+ * Estimate the dollar cost of a turn from its token counts. Takes the buckets in
+ * the app's DISJOINT form (the shape lib/agents/codex/events.ts emits, matching
+ * Claude's): `input_tokens` is fresh prompt only, cache reads and cache writes
+ * are counted separately. Cache writes bill at the plain input rate (OpenAI adds
+ * no write surcharge); cache reads at the 90%-off rate. Unknown models price at
+ * the CLI-default family so the estimate degrades gracefully instead of silently
+ * reporting $0.
  */
-export function estimateCostUsd(model: string, usage: Pick<TurnUsage, "input_tokens" | "output_tokens" | "cache_read_tokens">): number {
+export function estimateCostUsd(
+  model: string,
+  usage: Pick<TurnUsage, "input_tokens" | "output_tokens" | "cache_read_tokens" | "cache_creation_tokens">
+): number {
   const p = PRICES.find((r) => model.startsWith(r.prefix)) ?? PRICES.find((r) => DEFAULT_CODEX_MODEL.startsWith(r.prefix))!;
-  const cached = Math.min(usage.cache_read_tokens, usage.input_tokens);
-  const fresh = usage.input_tokens - cached;
-  return (fresh * p.input + cached * p.cachedInput + usage.output_tokens * p.output) / 1_000_000;
+  const fresh = Math.max(0, usage.input_tokens) + Math.max(0, usage.cache_creation_tokens);
+  return (fresh * p.input + Math.max(0, usage.cache_read_tokens) * p.cachedInput + usage.output_tokens * p.output) / 1_000_000;
 }

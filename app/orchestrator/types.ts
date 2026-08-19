@@ -42,6 +42,7 @@ export interface TaskRow {
   reasoning: string | null; // thinking preset; null = inherit default
   permission_mode: string | null; // run permission; null = bypassPermissions (default)
   session_id: string | null;
+  worktree_path: string; // isolated git worktree this task runs in ("" = not created yet — appears on the first turn)
   pr_url: string; // GitHub PR opened from this task's branch ("" = none yet)
   generation: number;
   started: number;

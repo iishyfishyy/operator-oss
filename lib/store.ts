@@ -591,6 +591,36 @@ export function endSession(taskId: string, generation: number): void {
     .run(Date.now(), taskId, generation);
 }
 
+// The agent thread's last reported CUMULATIVE token counters (sessions.usage_cum,
+// stored as JSON, keyed by the driver's opaque thread/session id). Codex reports
+// the WHOLE thread's totals on every turn.completed, so a turn's own usage is the
+// delta against this baseline — which has to survive a server restart, hence the
+// DB rather than a process-local map. Claude reports per-turn usage and never
+// touches this. Returns null when the thread has no baseline yet (fresh thread,
+// or a session row that predates the column).
+export function getThreadUsageCum<T>(threadId: string): T | null {
+  if (!threadId) return null;
+  const row = getDb()
+    .prepare("SELECT usage_cum FROM sessions WHERE claude_session_id = ? ORDER BY started_at DESC LIMIT 1")
+    .get(threadId) as { usage_cum: string | null } | undefined;
+  if (!row?.usage_cum) return null;
+  try {
+    return JSON.parse(row.usage_cum) as T;
+  } catch {
+    return null;
+  }
+}
+
+// Store the new cumulative baseline for a thread. Written mid-turn (as soon as
+// the driver maps the turn's usage) so a crash before turn end can't make the
+// NEXT turn re-count the whole thread. No-op if no session row carries the id.
+export function setThreadUsageCum(threadId: string, cum: unknown): void {
+  if (!threadId) return;
+  getDb()
+    .prepare("UPDATE sessions SET usage_cum = ? WHERE claude_session_id = ?")
+    .run(JSON.stringify(cum), threadId);
+}
+
 export function listProjectSessions(projectId: string): ProjectSession[] {
   return getDb()
     .prepare(

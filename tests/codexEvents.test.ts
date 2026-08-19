@@ -60,14 +60,16 @@ describe("codex event mapping", () => {
     expect(fc.peek).toMatchObject({ kind: "lines", lines: ["A  /work/notes.txt"] });
     expect(results.find((r) => r.id === "item_2")).toBeUndefined();
 
-    // turn.completed → one usage event: tokens from usage, reasoning folded
-    // into output, cache_read from cached_input_tokens, and cost_usd ESTIMATED
-    // from the token counts at the default model's published API prices
-    // ((39612−30848)×$5.00 + 30848×$0.50 + 119×$30, per 1M).
+    // turn.completed → one usage event. Codex's input_tokens (39612) is the FULL
+    // prompt including the 30848 cached reads; the buckets are kept disjoint, so
+    // input_tokens carries fresh prompt only and the total doesn't double-count
+    // the cache. Reasoning folds into output. cost_usd is ESTIMATED from the
+    // token counts at the default model's published API prices
+    // (8764×$5.00 + 30848×$0.50 + 119×$30, per 1M).
     const usage = byType(evs, "usage") as Extract<StreamEvent, { type: "usage" }>[];
     expect(usage).toHaveLength(1);
     expect(usage[0].usage).toMatchObject({
-      input_tokens: 39612,
+      input_tokens: 8764,
       output_tokens: 119,
       cache_read_tokens: 30848,
       cache_creation_tokens: 0,
@@ -151,7 +153,9 @@ describe("codex event mapping", () => {
 });
 
 describe("codex cost estimation", () => {
-  const usage = { input_tokens: 1_000_000, output_tokens: 100_000, cache_read_tokens: 400_000 };
+  // The app's DISJOINT bucket form (what events.ts emits): 600k fresh prompt
+  // tokens alongside 400k cache reads, i.e. a 1M-token prompt.
+  const usage = { input_tokens: 600_000, output_tokens: 100_000, cache_read_tokens: 400_000, cache_creation_tokens: 0 };
 
   it("prices per resolved model: fresh + cached input and output at published rates", () => {
     // Max: 600k×$1.25 + 400k×$0.125 + 100k×$10 per 1M = 0.75 + 0.05 + 1.00.
@@ -185,10 +189,14 @@ describe("codex cost estimation", () => {
     }
   });
 
-  it("never bills cached reads above the full prompt (defensive clamp)", () => {
-    // cache_read > input would go negative on fresh tokens without the clamp.
-    const c = estimateCostUsd("gpt-5.1-codex-max", { input_tokens: 100, output_tokens: 0, cache_read_tokens: 200 });
-    expect(c).toBeCloseTo((100 * 0.125) / 1e6, 12);
+  it("bills cache writes at the plain input rate and never bills a negative bucket", () => {
+    // Cache writes are ordinary input tokens (OpenAI adds no write surcharge).
+    const w = estimateCostUsd("gpt-5.1-codex-max", { input_tokens: 100, output_tokens: 0, cache_read_tokens: 0, cache_creation_tokens: 100 });
+    expect(w).toBeCloseTo((200 * 1.25) / 1e6, 12);
+    // A bucket that somehow arrives negative contributes nothing rather than
+    // refunding the turn.
+    const n = estimateCostUsd("gpt-5.1-codex-max", { input_tokens: -500, output_tokens: 0, cache_read_tokens: 100, cache_creation_tokens: 0 });
+    expect(n).toBeCloseTo((100 * 0.125) / 1e6, 12);
   });
 
   it("resolves the task's model, else the CLI default", () => {
@@ -206,5 +214,66 @@ describe("codex cost estimation", () => {
     // Reasoning folds into output before pricing: 100k output at mini rates.
     expect(out.usage.output_tokens).toBe(100_000);
     expect(out.usage.cost_usd).toBeCloseTo(0.36, 10);
+  });
+});
+
+// Codex reports the THREAD's running totals on every turn.completed, so without
+// a baseline every turn re-bills the whole conversation (a 5-turn task ends up
+// charging turn 1 five times, and the per-turn figure the UI appends at turn end
+// is meaningless). The usage event must carry THIS turn's delta.
+describe("codex cumulative usage → per-turn deltas", () => {
+  const completed = (input: number, cached: number, output: number, reasoning = 0, cacheWrite = 0) =>
+    ({
+      type: "turn.completed",
+      usage: {
+        input_tokens: input,
+        cached_input_tokens: cached,
+        cache_write_input_tokens: cacheWrite,
+        output_tokens: output,
+        reasoning_output_tokens: reasoning,
+      },
+    }) as unknown as ThreadEvent;
+
+  function usageOf(ev: ThreadEvent, state: ReturnType<typeof newState>) {
+    const [out] = mapThreadEvent(ev, state);
+    if (out.type !== "usage") throw new Error("expected usage event");
+    return out.usage;
+  }
+
+  it("charges only the growth since the thread's last reported total", () => {
+    const state = newState("gpt-5.1-codex-max");
+    // Turn 1 on a fresh thread: nothing to subtract.
+    const first = usageOf(completed(14_000, 11_000, 500), state);
+    expect(first).toMatchObject({ input_tokens: 3_000, cache_read_tokens: 11_000, output_tokens: 500 });
+    // Turn 2 re-reports the thread's totals; only the delta is this turn's.
+    const second = usageOf(completed(28_000, 22_000, 900), state);
+    expect(second).toMatchObject({ input_tokens: 3_000, cache_read_tokens: 11_000, output_tokens: 400 });
+    // The state carries the raw cumulative forward for the driver to persist.
+    expect(state.cum).toMatchObject({ input: 28_000, cachedInput: 22_000, output: 900 });
+    expect(state.cumDirty).toBe(true);
+  });
+
+  it("resumes from the baseline a previous turn left behind (new process, same thread)", () => {
+    // What the driver does on resume: seed the state from sessions.usage_cum.
+    const state = newState("gpt-5.1-codex-max", { input: 28_000, cachedInput: 22_000, cacheWrite: 0, output: 900, reasoning: 0 });
+    const u = usageOf(completed(30_000, 23_000, 1_100, 200), state);
+    expect(u).toMatchObject({ input_tokens: 1_000, cache_read_tokens: 1_000, output_tokens: 400 });
+  });
+
+  it("takes a non-cumulative report at face value instead of zeroing the turn", () => {
+    // Counters going backwards mean the thread reset (or upstream switched to
+    // per-turn reporting) — subtracting would swallow the turn entirely.
+    const state = newState("gpt-5.1-codex-max", { input: 99_000, cachedInput: 0, cacheWrite: 0, output: 9_000, reasoning: 0 });
+    const u = usageOf(completed(5_000, 1_000, 300), state);
+    expect(u).toMatchObject({ input_tokens: 4_000, cache_read_tokens: 1_000, output_tokens: 300 });
+    expect(state.cum.input).toBe(5_000);
+  });
+
+  it("keeps the three token buckets disjoint (cache reads/writes netted out of input)", () => {
+    const state = newState("gpt-5.1-codex-max");
+    const u = usageOf(completed(10_000, 6_000, 100, 0, 1_500), state);
+    expect(u).toMatchObject({ input_tokens: 2_500, cache_read_tokens: 6_000, cache_creation_tokens: 1_500 });
+    // 2_500 + 6_000 + 1_500 = the 10_000-token prompt, counted exactly once.
+    expect(u.input_tokens + u.cache_read_tokens + u.cache_creation_tokens).toBe(10_000);
   });
 });

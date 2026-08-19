@@ -47,10 +47,12 @@ mental context when you return later.
 
 ## Workspace tools
 
-The integrated terminal provides a real shell for each project. Managed `dev`, `setup`, and
-`test` services keep running after an agent turn or browser tab ends, with live logs and
-stable per-project ports. Optional service hostnames can expose previews with private,
-shared-link, or public visibility.
+The integrated terminal provides a real shell for each project. It opens in the project's
+working directory; a Project/Task toggle in its bar switches the shell into the selected
+task's git worktree, so you can run tests or poke at a task's changes before merging.
+Managed `dev`, `setup`, and `test` services keep running after an agent turn or browser tab
+ends, with live logs and stable per-project ports. Optional service hostnames can expose
+previews with private, shared-link, or public visibility.
 
 See [Managed services](SERVICES.md) for setup and security details.
 

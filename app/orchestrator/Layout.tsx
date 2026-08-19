@@ -135,10 +135,16 @@ export function ColRail({ label, task, right, onExpand }: { label: string; task?
   );
 }
 
-export function TerminalDrawer({ cwd, port, visible, height, onClose, onResize }: { cwd: string; port?: number; visible: boolean; height: number; onClose: () => void; onResize: (h: number) => void }) {
+export function TerminalDrawer({ cwd, port, taskDir, taskTitle, visible, height, onClose, onResize }: { cwd: string; port?: number; taskDir?: string; taskTitle?: string; visible: boolean; height: number; onClose: () => void; onResize: (h: number) => void }) {
   const dragging = useRef(false);
   // Remount key for the terminal — bumping it kills the current shell and spawns a fresh one.
   const [epoch, setEpoch] = useState(0);
+  // Scope pin: null = project working dir; otherwise the worktree the user
+  // explicitly switched to. Pinned (not derived from the selected task) so
+  // clicking around task cards can't respawn a shell that's running something —
+  // TerminalView tears down and restarts the shell whenever its cwd changes.
+  const [pinned, setPinned] = useState<{ path: string; title: string } | null>(null);
+  const effCwd = pinned ? pinned.path : cwd;
   useEffect(() => {
     const move = (e: MouseEvent) => {
       if (!dragging.current) return;
@@ -157,13 +163,28 @@ export function TerminalDrawer({ cwd, port, visible, height, onClose, onResize }
       <div className="term-bar">
         {Icon.terminal()}
         <span className="term-title">Terminal</span>
-        <span className="term-cwd">{cwd || "~ (no working dir set for this project)"}{port ? `  ·  PORT=${port}` : ""}</span>
+        <div className="bseg" aria-label="Terminal working directory">
+          <button
+            className={pinned ? "" : "on"}
+            title="Shell in the project's working dir (the main checkout)"
+            onClick={() => setPinned(null)}
+          >Project</button>
+          <button
+            className={pinned ? "on" : ""}
+            disabled={!taskDir}
+            title={taskDir
+              ? `Shell in the selected task's worktree${pinned && pinned.path !== taskDir ? ` (currently pinned to ${pinned.title} — click to switch)` : ""}`
+              : "Select a started task — a task gets its worktree when its first turn runs"}
+            onClick={() => { if (taskDir && pinned?.path !== taskDir) setPinned({ path: taskDir, title: taskTitle || "task" }); }}
+          >Task</button>
+        </div>
+        <span className="term-cwd" title={effCwd}>{pinned ? `${pinned.title}  ·  ${pinned.path}` : (cwd || "~ (no working dir set for this project)")}{port ? `  ·  PORT=${port}` : ""}</span>
         <span style={{ flex: 1 }} />
         <button className="icon-btn" onClick={() => setEpoch((e) => e + 1)} title="Restart terminal (kills the current shell and starts a new one)">{Icon.clear()}</button>
         <button className="icon-btn" onClick={onClose} title="Hide terminal (the shell keeps running)">{Icon.chevDown()}</button>
       </div>
       {/* keep TerminalView mounted even when collapsed so long-running processes (npm run dev) survive */}
-      <TerminalView key={epoch} cwd={cwd} port={port} />
+      <TerminalView key={epoch} cwd={effCwd} port={port} />
     </div>
   );
 }

@@ -410,6 +410,36 @@ export function migrate(db: Database.Database) {
     db.exec("UPDATE task_usage SET agent = COALESCE((SELECT t.agent FROM tasks t WHERE t.id = task_usage.task_id), 'claude') WHERE agent = ''");
   }
 
+  // The agent thread's last reported CUMULATIVE token counters, as JSON. Only
+  // drivers whose usage reporting is cumulative-per-thread need it (Codex
+  // re-reports the whole thread's totals on every turn.completed), so a turn's
+  // own usage is the delta against this baseline — see lib/agents/codex/events.ts.
+  const sessCols = (db.prepare("PRAGMA table_info(sessions)").all() as { name: string }[]).map((c) => c.name);
+  if (!sessCols.includes("usage_cum")) {
+    db.exec("ALTER TABLE sessions ADD COLUMN usage_cum TEXT");
+    // Seed the baseline for codex threads that already ran: every usage row they
+    // recorded WAS a cumulative report, so the newest one is the thread's total
+    // so far. Without this, the first turn after upgrading would re-bill the
+    // whole thread one last time. (Rows written before the agent column exists
+    // are covered by the backfill above, which runs first.) The output side of a
+    // codex report can't be split back into plain vs reasoning tokens, so it
+    // seeds as a single output figure — worst case that costs one turn its
+    // output tokens, never a double charge on the much larger input side.
+    db.exec(`
+      UPDATE sessions SET usage_cum = (
+        SELECT json_object(
+                 'input', u.input_tokens, 'cachedInput', u.cache_read_tokens,
+                 'cacheWrite', u.cache_creation_tokens, 'output', u.output_tokens, 'reasoning', 0)
+          FROM task_usage u
+         WHERE u.task_id = sessions.task_id AND u.generation = sessions.generation AND u.agent = 'codex'
+         ORDER BY u.created_at DESC, u.rowid DESC LIMIT 1
+      )
+      WHERE claude_session_id IS NOT NULL
+        AND EXISTS (SELECT 1 FROM task_usage u2
+                     WHERE u2.task_id = sessions.task_id AND u2.generation = sessions.generation AND u2.agent = 'codex');
+    `);
+  }
+
   // Backfill the sessions table from existing message history (one row per
   // task generation). Idempotent via UNIQUE(task_id, generation) + OR IGNORE,
   // so it only ever fills gaps for sessions that predate the sessions table.

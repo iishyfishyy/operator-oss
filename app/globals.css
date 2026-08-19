@@ -1130,6 +1130,12 @@ button.tpeek-more:hover{color:var(--accent-ink);}
 .term-bar .term-title{font-weight:700;color:var(--ink-2);letter-spacing:.04em;text-transform:uppercase;font-size:10px;}
 .term-bar .term-cwd{color:var(--ink-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .term-bar .icon-btn{width:24px;height:24px;}
+/* project ↔ task-worktree scope toggle (reuses the board-header segmented look,
+   shrunk to fit the 30px bar) */
+.term-bar .bseg{padding:1px;gap:1px;}
+.term-bar .bseg button{padding:3px 8px;font-size:9px;}
+.bseg button:disabled{opacity:.45;cursor:not-allowed;}
+.bseg button:disabled:hover{color:var(--ink-4);}
 .term-host{flex:1;min-height:0;padding:6px 8px;overflow:hidden;}
 .term-host .xterm{height:100%;}
 .term-host .xterm-viewport{overflow-y:auto;}

@@ -382,11 +382,13 @@ describe("codex driver contract through the runner", () => {
 
     // Token usage persisted from turn.completed, with cost_usd ESTIMATED from
     // the fixture's token counts at the default model's published API prices
-    // ((39612−30848)×$5.00 + 30848×$0.50 + 119×$30, per 1M) — this is what
+    // (8764 fresh×$5.00 + 30848 cached×$0.50 + 119×$30, per 1M) — this is what
     // populates the task cost chip and Insights for Codex tasks.
     const taskUsage = getTaskUsage(task.id)!;
     expect(taskUsage).toMatchObject({ turns: 1 });
-    expect(taskUsage.total_tokens).toBeGreaterThan(0);
+    // The fixture's 39612 input_tokens INCLUDE its 30848 cached reads; the
+    // buckets are disjoint here, so the prompt is counted once (8764 + 30848).
+    expect(taskUsage.total_tokens).toBe(8764 + 30848 + 119);
     expect(taskUsage.cost_usd).toBeCloseTo(0.062814, 6);
 
     // The driver reports the model it resolved (task.model null → the CLI
@@ -406,5 +408,45 @@ describe("codex driver contract through the runner", () => {
     // Publish contract closes with done + turn_end, same as the Claude path.
     expect(events.map((e) => e.type).slice(-2)).toEqual(["done", "turn_end"]);
     expect(events.some((e) => e.type === "session")).toBe(true);
+    // …including the usage event, published live so the cost chip updates the
+    // moment the turn ends rather than on the next page load.
+    const live = events.find((e) => e.type === "usage") as { usage?: { cost_usd: number } } | undefined;
+    expect(live?.usage?.cost_usd).toBeCloseTo(0.062814, 6);
+  });
+
+  it("bills a resumed codex turn for its own tokens, not the whole thread's running total", async () => {
+    const project = createProject({ name: "CodexCumulative" });
+    updateProject(project.id, { default_agent: "codex" });
+    const task = createTask({ project_id: project.id, title: "T", description: "" });
+
+    // Turn 1: the recorded fixture (39612 input / 30848 cached / 119 output).
+    codexRun.events = loadCodexFixture("command-file-message.jsonl");
+    const first = collectEvents(task.id);
+    await startResumeTurn(task, project, "go");
+    await first.done;
+    const afterFirst = getTaskUsage(task.id)!;
+
+    // Turn 2 resumes the same thread, so codex re-reports the thread's TOTALS
+    // (turn 1's numbers plus this turn's 1000 fresh / 200 cached / 50 output).
+    // Only that growth may be added to the task's spend.
+    codexRun.events = [
+      { type: "thread.started", thread_id: "019f3ecf-fed2-7ba3-b46e-dc6097412033" },
+      { type: "turn.started" },
+      { type: "item.completed", item: { id: "item_9", type: "agent_message", text: "Done." } },
+      {
+        type: "turn.completed",
+        usage: { input_tokens: 40_812, cached_input_tokens: 31_048, output_tokens: 169, reasoning_output_tokens: 0 },
+      },
+    ];
+    const second = collectEvents(getTask(task.id)!.id);
+    await startResumeTurn(getTask(task.id)!, project, "again");
+    await second.done;
+
+    const afterSecond = getTaskUsage(task.id)!;
+    expect(afterSecond.turns).toBe(2);
+    // 1000 fresh + 200 cached + 50 output — not another 39612/30848/119.
+    expect(afterSecond.total_tokens - afterFirst.total_tokens).toBe(1_250);
+    const secondUsage = second.events.find((e) => e.type === "usage") as { usage?: { input_tokens: number; cache_read_tokens: number; output_tokens: number } } | undefined;
+    expect(secondUsage?.usage).toMatchObject({ input_tokens: 1_000, cache_read_tokens: 200, output_tokens: 50 });
   });
 });
