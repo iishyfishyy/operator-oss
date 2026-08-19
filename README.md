@@ -13,7 +13,7 @@ Every task gets a persistent agent session in an isolated git worktree.
 
 Operator uses your existing Max, Pro, or ChatGPT subscription, with no API key or per-token billing required.
 
-[**Try Operator hosted**](https://getoperator.dev) · [**Run locally**](#run-locally) · [**Self-host**](docs/SELF_HOSTING.md) · [**Request a feature**](https://github.com/iishyfishyy/operator-oss/discussions/categories/ideas)
+[**Try Operator hosted**](https://getoperator.dev) · [**Run locally**](#run-locally) · [**Self-host**](docs/SELF_HOSTING.md) · [**Join Discord**](https://discord.gg/p4aaXvzJq2) · [**Request a feature**](https://github.com/iishyfishyy/operator-oss/discussions/categories/ideas)
 
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Node ≥20.9](https://img.shields.io/badge/node-%E2%89%A520.9-brightgreen.svg)](package.json)
@@ -96,6 +96,7 @@ control plane.
 
 ## Community
 
+- [Join the Operator Discord](https://discord.gg/p4aaXvzJq2)
 - [Request a feature or share an idea](https://github.com/iishyfishyy/operator-oss/discussions/categories/ideas)
 - [Ask a question](https://github.com/iishyfishyy/operator-oss/discussions/categories/q-a)
 - [Report a bug](https://github.com/iishyfishyy/operator-oss/issues/new?template=bug_report.yml)

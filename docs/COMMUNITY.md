@@ -1,13 +1,15 @@
 # Operator community
 
-Operator's community lives on GitHub so decisions remain searchable and connected to the
-work. Real-time chat may be added as the community grows; GitHub will remain the canonical
-record for bugs, proposals, and releases.
+Join the [Operator Discord](https://discord.gg/p4aaXvzJq2) for real-time conversation,
+quick help, showcases, and contributor discussion. GitHub remains the canonical record for
+bugs, feature proposals, technical decisions, and releases so they stay searchable and
+connected to the work.
 
 ## Where to go
 
 | You want to… | Use |
 |-|-|
+| Chat with users and contributors | [Operator Discord](https://discord.gg/p4aaXvzJq2) |
 | Propose or vote on a feature | [Ideas in GitHub Discussions](https://github.com/iishyfishyy/operator-oss/discussions/categories/ideas) |
 | Ask for help | [Q&A in GitHub Discussions](https://github.com/iishyfishyy/operator-oss/discussions/categories/q-a) |
 | Show what you built | [Show and tell](https://github.com/iishyfishyy/operator-oss/discussions/categories/show-and-tell) |

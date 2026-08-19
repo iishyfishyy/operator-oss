@@ -2,7 +2,8 @@
 
 Thanks for your interest in Operator!
 
-Questions and feature ideas belong in
+Join the [Operator Discord](https://discord.gg/p4aaXvzJq2) for real-time conversation and
+quick help. Questions and feature ideas that should remain searchable belong in
 [GitHub Discussions](https://github.com/iishyfishyy/operator-oss/discussions). Reproducible
 bugs belong in [Issues](https://github.com/iishyfishyy/operator-oss/issues). For the full
 map, see the [community guide](docs/COMMUNITY.md).
