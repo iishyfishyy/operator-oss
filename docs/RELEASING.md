@@ -11,6 +11,17 @@ reviewed commit on `main`.
 4. Run `npm run preflight`.
 5. Open and merge the release pull request.
 
+Create a private draft release during review so the final GitHub page can be checked without
+publishing a tag:
+
+```bash
+gh release create vX.Y.Z \
+  --draft \
+  --target main \
+  --title "Operator vX.Y.Z" \
+  --notes-file docs/releases/vX.Y.Z.md
+```
+
 ## Publish from main
 
 ```bash
@@ -19,10 +30,7 @@ git pull --ff-only origin main
 git status --short
 git tag -a vX.Y.Z -m "Operator vX.Y.Z"
 git push origin vX.Y.Z
-gh release create vX.Y.Z \
-  --title "Operator vX.Y.Z" \
-  --notes-file docs/releases/vX.Y.Z.md \
-  --verify-tag
+gh release edit vX.Y.Z --draft=false
 ```
 
 Use `git tag -s` instead when signed tags are configured. Confirm the release page, source
