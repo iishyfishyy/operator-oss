@@ -15,15 +15,18 @@
 // agent SDK. tests/importGraph.test.ts pins this.
 
 import type { AgentCapabilities } from "./types";
-import { CLAUDE_CAPABILITIES } from "./claude/capabilities";
+import { claudeCapabilities } from "./claude/capabilities";
 import { CODEX_CAPABILITIES } from "./codex/capabilities";
 import { MOCK_CAPABILITIES } from "./mock/capabilities";
 
 export const DEFAULT_AGENT = "claude";
 
-const CAPABILITIES: Record<string, AgentCapabilities> = {
-  claude: CLAUDE_CAPABILITIES,
-  codex: CODEX_CAPABILITIES,
+// Thunks, not values: Claude's descriptor depends on instance config (its model
+// list is Bedrock-shaped when Claude routes through AWS), so it's computed per
+// read. The others are static and just close over their constant.
+const CAPABILITIES: Record<string, () => AgentCapabilities> = {
+  claude: () => claudeCapabilities(),
+  codex: () => CODEX_CAPABILITIES,
 };
 
 // The deterministic e2e agent, under the same env gate registry.ts uses. It has
@@ -32,7 +35,7 @@ const CAPABILITIES: Record<string, AgentCapabilities> = {
 // firstConnectedAgent() skips it, and completeOnboarding() then finds nothing to
 // adopt on a mock-only first run. Read at import time like the rest of this
 // module; the env is set before the server boots (e2e/env.ts).
-if (process.env.ORCH_E2E_MOCK_AGENT === "1") CAPABILITIES.mock = MOCK_CAPABILITIES;
+if (process.env.ORCH_E2E_MOCK_AGENT === "1") CAPABILITIES.mock = () => MOCK_CAPABILITIES;
 
 /** Every registered agent id, in registry order — the SDK-free half of
  * listDrivers(), for callers that only need to enumerate/validate ids
@@ -50,7 +53,7 @@ export function isAgentId(id: string): boolean {
  * agent (same forgiving resolution as getDriver — a hand-edited tasks.agent row
  * should still resolve to something). */
 export function getCapabilities(id: string | null | undefined): AgentCapabilities {
-  return (id && CAPABILITIES[id]) || CAPABILITIES[DEFAULT_AGENT];
+  return ((id && CAPABILITIES[id]) || CAPABILITIES[DEFAULT_AGENT])();
 }
 
 // Context window for an (agent, model) pair, from the capability descriptor
@@ -65,6 +68,13 @@ export function modelContextWindow(agent: string | null | undefined, model: stri
   if (model) {
     const hit = models.find((m) => m.value === model);
     if (hit) return hit.contextWindow;
+    // Provider-native ids and inference-profile ARNs are intentionally open
+    // ended. Only claim 1M when the string itself identifies that mode/model;
+    // otherwise use the conservative standard window rather than the widest
+    // catalog entry (which would make a 200k custom model look nearly empty).
+    const id = model.toLowerCase();
+    if (id.includes("[1m]") || id.includes("claude-sonnet-5") || id.includes("claude-fable-5")) return 1_000_000;
+    return DEFAULT_CONTEXT_WINDOW;
   }
   const widest = models.reduce((mx, m) => Math.max(mx, m.contextWindow), 0);
   return widest || DEFAULT_CONTEXT_WINDOW;

@@ -13,6 +13,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const { id } = await params;
   const driver = getDriverStrict(id);
   if (!driver) return NextResponse.json({ error: "unknown agent" }, { status: 404 });
+  if (driver.configuredProvider?.() === "bedrock")
+    return NextResponse.json({ error: "Claude is configured for Amazon Bedrock; remove CLAUDE_CODE_USE_BEDROCK before using an Anthropic API key" }, { status: 409 });
   if (!driver.apiKey) return NextResponse.json({ error: `${driver.label} has no API-key path` }, { status: 400 });
 
   const { key } = (await req.json()) as { key?: string };

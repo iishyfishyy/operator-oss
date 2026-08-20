@@ -10,7 +10,7 @@ import { query, createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk"
 import { z } from "zod";
 import type { Project, Task, StreamEvent, AskQuestion, TurnUsage } from "../../types";
 import type { AgentDriver, OneShotResult } from "../types";
-import { CLAUDE_CAPABILITIES } from "./capabilities";
+import { claudeCapabilities } from "./capabilities";
 import { getSetting } from "../../store";
 import { createSuggestedTask, registerExposedService, resolveTitleRefs } from "../../agentTools";
 import { SUGGEST_TASK, EXPOSE_SERVICE } from "../../agentToolDefs.mjs";
@@ -37,6 +37,8 @@ import {
   verifyTurn,
 } from "../../claude-auth";
 import { claudeUsage } from "./usage";
+import { isBedrockConfigured, bedrockAuthRefreshCommand } from "./provider";
+import { startBedrockRefresh, getBedrockRefresh, cancelBedrockRefresh } from "./bedrock-auth";
 
 function orchestratorServer(project: Project, onSuggest: (title: string) => void, onExpose: (info: { name: string; url: string }) => void) {
   // Titles created this session, so `blocked_by` can reference earlier suggestions
@@ -458,18 +460,28 @@ async function summarizeProjectRecap(project: Project, digest: string): Promise<
 export const claudeDriver: AgentDriver = {
   id: "claude",
   label: "Claude Code",
-  capabilities: CLAUDE_CAPABILITIES,
+  // Computed per read: on Bedrock the model catalog is instance-config-shaped
+  // (only the aliases the AWS config actually maps), not the Anthropic list.
+  get capabilities() { return claudeCapabilities(); },
+  configuredProvider: () => isBedrockConfigured() ? "bedrock" : null,
+  providerAuthRefreshable: () => isBedrockConfigured() && !!bedrockAuthRefreshCommand(),
   runTurn,
   summarizeTranscript,
   draftProjectContext,
   summarizeProjectRecap,
   // Auth delegates to lib/claude-auth.ts (the headless `claude auth login`
   // flow); the interface shapes were modeled on it, so this is a direct map.
+  // On Bedrock the same login surface drives the AWS SSO device-code refresh
+  // instead (lib/agents/claude/bedrock-auth.ts) — no code to paste back, so
+  // submitLoginCode is a no-op there.
   authStatus: claudeStatus,
-  startLogin: startClaudeLogin,
-  getLogin: getClaudeLogin,
-  submitLoginCode: submitClaudeCode,
-  cancelLogin: cancelClaudeLogin,
+  startLogin: () => (isBedrockConfigured() ? startBedrockRefresh() : startClaudeLogin()),
+  getLogin: () => (isBedrockConfigured() ? getBedrockRefresh() : getClaudeLogin()),
+  submitLoginCode: async (code) =>
+    isBedrockConfigured()
+      ? getBedrockRefresh() ?? { status: "error", url: null, email: null, plan: null, error: "no refresh in progress", log: "" }
+      : submitClaudeCode(code),
+  cancelLogin: () => (isBedrockConfigured() ? cancelBedrockRefresh() : cancelClaudeLogin()),
   verify: verifyTurn,
   // The "I have an API key instead" path (lib/anthropic-key.ts).
   apiKey: { hint: "sk-ant-…", looksValid: looksLikeApiKey, has: hasApiKey, set: setApiKey, clear: clearApiKey },

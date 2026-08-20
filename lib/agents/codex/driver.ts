@@ -23,8 +23,9 @@ import type { SandboxMode, ApprovalMode, ModelReasoningEffort, ThreadOptions, Co
 import type { Project, Task, StreamEvent, TurnUsage } from "../../types";
 import type { AgentDriver, OneShotResult } from "../types";
 import { CODEX_CAPABILITIES } from "./capabilities";
-import { getSetting, getThreadUsageCum, setThreadUsageCum } from "../../store";
+import { getSetting, setSetting, getThreadUsageCum, setThreadUsageCum } from "../../store";
 import { CODEX_APPROVAL_POLICY, CODEX_CLI_PATH, INTERNAL_BASE_URL, ORCH_MCP_SCRIPT } from "../../config";
+import { isApprovalDowngrade } from "../../approvalFailure";
 import { buildProjectContext } from "../shared";
 import { mapThreadEvent, newState, ZERO_CUM, type CodexCum } from "./events";
 import { resolveCodexModel } from "./pricing";
@@ -104,12 +105,36 @@ function runControls(mode: string | null): RunControls {
   return { sandboxMode: "workspace-write", networkAccessEnabled: true };
 }
 
+// ---------- approval-policy negotiation ----------
+// Enterprise-managed Codex requirements can disallow the "never" policy we ask
+// for. The CLI doesn't error — it warns ("Configured value for `approval_policy`
+// is disallowed by requirements; falling back to required value UnlessTrusted")
+// and downgrades to a policy that requires interactive approvals, which the
+// exec transport cannot service: every non-allowlisted command is rejected and
+// the task flails. That warning arrives as an error item on the first affected
+// turn (mapped to a StreamEvent error by ./events.ts), so we match it there,
+// persist an instance-wide flag (same pattern as agent_auth_broken_<id> in
+// ../connections.ts), and request "on-request" — the least-permissive policy
+// that actually works non-interactively — from then on. Managed users self-heal
+// after one turn; everyone else keeps "never". Sticky on purpose: on-request is
+// safe wherever never is, and re-probing would cost one broken turn per boot.
+
+const APPROVAL_DOWNGRADE_KEY = "codex_approval_downgraded";
+
+/** Record (once) that the CLI downgraded our approval policy. Exported for
+ *  tests (tests/codexApproval.test.ts). */
+export function noteApprovalDowngrade(errText: string): void {
+  if (!isApprovalDowngrade(errText)) return;
+  if (!getSetting(APPROVAL_DOWNGRADE_KEY)) setSetting(APPROVAL_DOWNGRADE_KEY, String(Date.now()));
+}
+
 // The approval-policy override sent to the CLI, or nothing when the instance
-// opts to inherit ~/.codex/config.toml — enterprise-managed requirements can
-// disallow "never", and omitting the flag lets the managed config decide.
-// See CODEX_APPROVAL_POLICY in lib/config.ts.
-function approvalOverride(): { approvalPolicy?: ApprovalMode } {
+// opts to inherit ~/.codex/config.toml — "inherit" is an explicit "Operator,
+// don't override", so the downgrade flag does not apply there either.
+// See CODEX_APPROVAL_POLICY in lib/config.ts. Exported for tests.
+export function approvalOverride(): { approvalPolicy?: ApprovalMode } {
   if (CODEX_APPROVAL_POLICY === "inherit") return {};
+  if (getSetting(APPROVAL_DOWNGRADE_KEY)) return { approvalPolicy: "on-request" };
   return { approvalPolicy: CODEX_APPROVAL_POLICY as ApprovalMode };
 }
 
@@ -174,7 +199,10 @@ async function* runTurn(
   try {
     const { events } = await thread.runStreamed(prompt, { signal: abortController?.signal });
     for await (const ev of events) {
-      for (const out of mapThreadEvent(ev, state)) yield out;
+      for (const out of mapThreadEvent(ev, state)) {
+        if (out.type === "error") noteApprovalDowngrade(out.content);
+        yield out;
+      }
       // Advance the thread's cumulative baseline the moment a turn's usage is
       // mapped, not at the end of the run: a crash (or a Stop) between here and
       // turn end would otherwise make the NEXT turn re-count everything this
@@ -239,6 +267,7 @@ async function oneShot(project: Project, prompt: string, maxItems: number, mode:
     for await (const ev of events) {
       for (const mapped of mapThreadEvent(ev, state)) {
         if (mapped.type === "usage") usage = mapped.usage;
+        if (mapped.type === "error") noteApprovalDowngrade(mapped.content);
       }
       if (ev.type === "turn.failed" || ev.type === "error") return { text: "", usage };
       if (ev.type === "item.started" && ++items > maxItems) {

@@ -6,6 +6,7 @@ import { CLAUDE_CLI_PATH as CLAUDE } from "./config";
 import { addInternalUsage } from "./internalUsage";
 import { claudeUsage } from "./agents/claude/usage";
 import type { TurnUsage } from "./types";
+import { bedrockStatusFromJson } from "./agents/claude/auth-status";
 
 const run = promisify(execFile);
 
@@ -257,12 +258,26 @@ export interface ClaudeStatus {
   email: string | null;
   plan: string | null; // "Max" | "Pro" | "API" | null
   error: string | null;
+  provider?: string | null;
 }
 
 const planOf = (text: string): string | null =>
   /\bmax\b/i.test(text) ? "Max" : /\bpro\b/i.test(text) ? "Pro" : /api key|console|anthropic api/i.test(text) ? "API" : null;
 
 export async function claudeStatus(): Promise<ClaudeStatus> {
+  // Bedrock and other third-party providers do not have an Anthropic login.
+  // Current Claude Code exposes the effective provider in JSON; detect it
+  // before falling back to the human-readable subscription status below.
+  try {
+    const { stdout } = await run(CLAUDE, ["auth", "status", "--json"], {
+      timeout: 20_000,
+      env: process.env,
+    });
+    const status = bedrockStatusFromJson(stdout);
+    if (status) return status;
+  } catch {
+    // Older CLIs do not support --json; retain the text fallback.
+  }
   // `--text` prints a plain, parseable summary; fall back to bare status on
   // older CLIs that don't take the flag.
   for (const args of [["auth", "status", "--text"], ["auth", "status"]]) {
@@ -271,19 +286,19 @@ export async function claudeStatus(): Promise<ClaudeStatus> {
       const text = `${stdout}\n${stderr}`;
       const method = text.match(/Login method:\s*(.+)/i)?.[1]?.trim() ?? null;
       const email = text.match(/Email:\s*(\S+@\S+)/i)?.[1] ?? text.match(/\b([\w.+-]+@[\w.-]+\.\w+)\b/)?.[1] ?? null;
-      return { authenticated: true, method, email, plan: planOf(method ?? text), error: null };
+      return { authenticated: true, method, email, plan: planOf(method ?? text), error: null, provider: null };
     } catch (e) {
       const err = e as { code?: string; stdout?: string; stderr?: string };
-      if (err.code === "ENOENT") return { authenticated: false, method: null, email: null, plan: null, error: "the claude CLI isn't installed in this workspace" };
+      if (err.code === "ENOENT") return { authenticated: false, method: null, email: null, plan: null, error: "the claude CLI isn't installed in this workspace", provider: null };
       // Unknown-flag errors fall through to the next arg form; a real "not
       // logged in" exit (code 1) lands here on the bare-status attempt.
       if (args.length === 2) {
         const out = `${err.stdout ?? ""}${err.stderr ?? ""}`;
-        return { authenticated: false, method: null, email: null, plan: null, error: out.trim() || "not logged in" };
+        return { authenticated: false, method: null, email: null, plan: null, error: out.trim() || "not logged in", provider: null };
       }
     }
   }
-  return { authenticated: false, method: null, email: null, plan: null, error: "not logged in" };
+  return { authenticated: false, method: null, email: null, plan: null, error: "not logged in", provider: null };
 }
 
 /**

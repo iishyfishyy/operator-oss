@@ -82,6 +82,12 @@ describe("costDisplay", () => {
     expect(c).toEqual({ show: true, approx: false, note: "" });
   });
 
+  it("labels Bedrock cost as a client-side estimate", () => {
+    const c = costDisplay(agent({ account: { email: null, plan: "AWS", method: "bedrock" } }));
+    expect(c).toMatchObject({ show: true, approx: true });
+    expect(c.note).toContain("AWS bill is authoritative");
+  });
+
   it("labels a tokens-only driver estimated, and doubly so on a subscription", () => {
     const codex = (over: Partial<AgentInfo>) =>
       costDisplay(agent({ id: "codex", label: "Codex", capabilities: CODEX_CAPABILITIES, ...over }));

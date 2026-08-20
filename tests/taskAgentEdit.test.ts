@@ -12,6 +12,27 @@ async function patch(id: string, body: Record<string, unknown>) {
 }
 
 describe("editing a task's agent", () => {
+  it("accepts a Bedrock inference-profile ARN as a custom model", async () => {
+    const project = createProject({ name: "Bedrock model" });
+    const task = createTask({ project_id: project.id, title: "Use profile", agent: "claude" });
+    const model = "arn:aws:bedrock:us-east-2:123456789012:application-inference-profile/sonnet-prod";
+    const response = await patch(task.id, { model: `  ${model}  ` });
+    expect(response.status).toBe(200);
+    expect(getTask(task.id)?.model).toBe(model);
+  });
+
+  it.each([
+    ["non-string", { model: { id: "opus" } }],
+    ["control character", { model: "opus\nsonnet" }],
+    ["oversized", { model: "m".repeat(2049) }],
+  ])("rejects an invalid custom model: %s", async (_name, body) => {
+    const project = createProject({ name: `Bad model ${_name}` });
+    const task = createTask({ project_id: project.id, title: "Invalid model", agent: "claude" });
+    const response = await patch(task.id, body);
+    expect(response.status).toBe(400);
+    expect(getTask(task.id)?.model).toBeNull();
+  });
+
   it("switches an unstarted task and clears provider-specific run controls", async () => {
     const project = createProject({ name: "Agent switch" });
     const task = createTask({ project_id: project.id, title: "Switch me", agent: "claude" });

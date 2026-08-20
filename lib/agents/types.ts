@@ -57,6 +57,10 @@ export interface AgentCapabilities {
   costIsEstimated: boolean;
   /** Turns can resume a prior session/thread id (tasks.session_id). */
   supportsResume: boolean;
+  /** The driver accepts a user-supplied model id in addition to its catalog. */
+  supportsCustomModels?: boolean;
+  /** Claude Code can use Amazon Bedrock instead of Anthropic-hosted auth. */
+  supportsBedrock?: boolean;
   /**
    * Placeholder for the "I have an API key instead" field, e.g. "sk-ant-…".
    * null = this agent has no per-token API-key path (subscription login only),
@@ -80,6 +84,8 @@ export interface AgentAuthStatus {
   email: string | null;
   plan: string | null;
   error: string | null;
+  /** Underlying API provider when the CLI reports it (for example "bedrock"). */
+  provider?: string | null;
 }
 
 // A headless device-style login in progress (start → awaiting code → success).
@@ -141,6 +147,13 @@ export interface AgentDriver {
   id: string; // persisted in tasks.agent / projects.default_agent
   label: string; // human name, e.g. "Claude Code"
   capabilities: AgentCapabilities;
+  /** Instance-wide provider selected outside Operator, when applicable. */
+  configuredProvider?(): string | null;
+  /** Whether the configured provider's credentials can be refreshed from the
+   *  UI via the login surface (e.g. an AWS SSO device-code flow). Drives the
+   *  refresh button in the connect card and gates POST /api/agents/[id]/login
+   *  when a third-party provider is active. */
+  providerAuthRefreshable?(): boolean;
 
   /**
    * Run one user turn. Resumes task.session_id when set, otherwise starts a

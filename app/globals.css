@@ -668,7 +668,10 @@ button{font-family:inherit;color:inherit;cursor:pointer;border:none;background:n
 .sess-head .sh-main{min-width:150px;flex:1;}
 .sess-head .crumb{font-family:var(--mono);font-size:10.5px;color:var(--ink-3);display:flex;align-items:center;gap:6px;}
 .sess-head .crumb .sep{opacity:.5;}
-.sess-head .sh-title{font-size:17px;font-weight:700;letter-spacing:-.02em;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.sess-head .sh-title{font-size:17px;font-weight:700;letter-spacing:-.02em;margin-top:2px;display:flex;align-items:center;gap:4px;min-width:0;}
+.sess-head .sh-title .sht-text{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;}
+.sess-head .sh-edit{flex:0 0 auto;width:24px;height:24px;display:grid;place-items:center;border-radius:6px;color:var(--ink-3);}
+.sess-head .sh-edit svg{width:13px;height:13px;}
 .sess-head .sh-tools{display:flex;align-items:center;gap:7px;flex:0 0 auto;}
 
 /* clickable link to the GitHub PR opened from this task's branch */
@@ -1228,6 +1231,10 @@ button.tpeek-more:hover{color:var(--accent-ink);}
 .pop-item .pi-check svg{width:14px;height:14px;}
 .pop-item .pi-sub{font-family:var(--mono);font-size:10px;color:var(--ink-3);font-weight:400;}
 .pop-sec{padding:8px 13px 4px;font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);}
+.pop-custom-model{border-top:1px solid var(--line);padding-bottom:10px;}
+.pop-custom-row{display:flex;gap:7px;padding:5px 10px;}
+.pop-custom-row input{min-width:260px;flex:1;font-size:11px;}
+.pop-custom-model>.pi-sub{max-width:360px;padding:0 11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 
 /* ⌘K command palette */
 .palette-scrim{position:fixed;inset:0;background:rgba(0,0,0,.38);backdrop-filter:blur(3px);z-index:240;display:flex;align-items:flex-start;justify-content:center;padding-top:13vh;animation:fadein .12s ease;}

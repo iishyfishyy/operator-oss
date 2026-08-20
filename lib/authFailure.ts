@@ -38,6 +38,10 @@ const AUTH_FAILURE_RES = [
   /run [`'"]?(?:claude|codex)(?: auth)? login/i,
   /\b40[13]\b[^\n]{0,60}(?:unauthorized|forbidden|authentication|invalid|expired|api[- ]?key)/i,
   /(?:unauthorized|forbidden)[^\n]{0,40}\b40[13]\b/i,
+  /unable to locate (?:aws )?credentials/i,
+  /aws default-chain credential resolve (?:timed out|failed)/i,
+  /(?:ExpiredToken|InvalidClientTokenId|UnrecognizedClientException)/i,
+  /(?:aws|sso)[^.\n]{0,30}(?:credentials?|session|token)[^.\n]{0,30}(?:expired|invalid|missing)/i,
 ];
 
 /** True when a turn's error text is a dead-credential rejection (expired OAuth
@@ -53,10 +57,10 @@ export function isAuthFailure(msg: string | null | undefined): boolean {
  *  the durable channel: it survives SSE reconnects because the snapshot replays
  *  from SQLite. */
 export const AUTH_EXPIRED_NOTICE =
-  "This agent's connection has stopped working — its login expired or was revoked, " +
-  "so no turn can run until you reconnect it. Nothing was lost: this session and its " +
+  "This agent's connection has stopped working — its credentials expired, were revoked, or are unavailable, " +
+  "so no turn can run until you reconnect or refresh them. Nothing was lost: this session and its " +
   "worktree are untouched, and any queued messages stay queued.";
 
 /** The one-line, instance-wide version of the same news, for the titlebar banner
  *  (app/orchestrator/AgentConnect.tsx → AgentAuthBanner). */
-export const AUTH_BANNER_HINT = "No session can run until it's reconnected.";
+export const AUTH_BANNER_HINT = "No session can run until its credentials are refreshed.";

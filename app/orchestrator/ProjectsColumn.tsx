@@ -13,7 +13,9 @@ function agentAuthLine(agents: AgentInfo[]): string {
   const parts = agents
     .filter((a) => a.authenticated)
     .map((a) =>
-      a.account?.method === "api_key" ? `${a.label} · API key` : `${a.label} · ${a.account?.plan ? `${a.account.plan} login` : "subscription"}`,
+      a.account?.method === "bedrock"
+        ? `${a.label} · Amazon Bedrock`
+        : a.account?.method === "api_key" ? `${a.label} · API key` : `${a.label} · ${a.account?.plan ? `${a.account.plan} login` : "subscription"}`,
     );
   return parts.length ? parts.join(", ") : "No agent connected";
 }

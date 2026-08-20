@@ -45,6 +45,15 @@ beforeEach(() => {
 });
 
 describe("dead-login recovery", () => {
+  it.each([
+    "Unable to locate credentials",
+    "AWS default-chain credential resolve timed out",
+    "ExpiredToken: The security token included in the request is expired",
+    "SSO session credentials have expired",
+  ])("recognizes an AWS credential failure: %s", (message) => {
+    expect(isAuthFailure(message)).toBe(true);
+  });
+
   it("flags the agent instance-wide, offers a reconnect, and parks the queue instead of burning it", async () => {
     const project = createProject({ name: "P", repo_path: "" });
     const task = createTask({ project_id: project.id, title: "T", description: "d" });

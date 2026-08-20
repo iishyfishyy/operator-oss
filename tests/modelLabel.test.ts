@@ -62,4 +62,10 @@ describe("claude model list", () => {
     expect(contextWindowOf("opus[1m]", claude)).toBe(1_000_000);
     expect(contextWindowOf("fable", claude)).toBe(1_000_000);
   });
+
+  it("handles provider-native custom model ids conservatively", () => {
+    expect(contextWindowOf("arn:aws:bedrock:us-east-1:123:application-inference-profile/sonnet-prod", claude)).toBe(200_000);
+    expect(contextWindowOf("us.anthropic.claude-opus-4-8[1m]", claude)).toBe(1_000_000);
+    expect(contextWindowOf("anthropic.claude-sonnet-5", claude)).toBe(1_000_000);
+  });
 });

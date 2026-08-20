@@ -8,6 +8,7 @@ import { clockTime, diffCls, splitAttachments, type MsgAttachment } from "./form
 import { CONTEXT_OVERFLOW_NOTICE } from "@/lib/promptLimits";
 import { AUTH_EXPIRED_NOTICE } from "@/lib/authFailure";
 import { USAGE_LIMIT_NOTICE } from "@/lib/usageLimit";
+import { APPROVAL_BLOCKED_NOTICE } from "@/lib/approvalFailure";
 import type { Msg } from "./types";
 import { Avatar } from "./shared";
 
@@ -177,7 +178,7 @@ function AttachmentStrip({ items }: { items: MsgAttachment[] }) {
 // changes), so unchanged messages skip re-rendering — and re-parsing their
 // markdown — entirely. Callers must pass identity-stable handlers or the memo
 // is defeated (SessionView wraps its handlers for exactly this reason).
-export const MessageView = memo(function MessageView({ m, initial, hideWho, running, agent, agentLabel = "The agent", onAnswer, onCancelQueued, onClear, onReconnect }: { m: Msg; initial: boolean; hideWho: boolean; running?: boolean; agent?: string | null; agentLabel?: string; onAnswer?: (askId: string, questions: AskQuestion[], answers: AskAnswers) => void; onCancelQueued?: (pendingId: string) => void; onClear?: () => void; onReconnect?: () => void }) {
+export const MessageView = memo(function MessageView({ m, initial, hideWho, running, agent, agentLabel = "The agent", onAnswer, onCancelQueued, onClear, onReconnect, onRetry }: { m: Msg; initial: boolean; hideWho: boolean; running?: boolean; agent?: string | null; agentLabel?: string; onAnswer?: (askId: string, questions: AskQuestion[], answers: AskAnswers) => void; onCancelQueued?: (pendingId: string) => void; onClear?: () => void; onReconnect?: () => void; onRetry?: (msgId: string) => void }) {
   if (m.role === "queued") {
     // A follow-up the user typed mid-turn, waiting its turn. Reads like a user
     // bubble but dimmed, tagged "Queued", with an × to drop it before it runs.
@@ -250,6 +251,27 @@ export const MessageView = memo(function MessageView({ m, initial, hideWho, runn
       return (
         <div className="msg system overflow">
           <div className="msg-body">{m.content}</div>
+        </div>
+      );
+    }
+    // The approval policy blocked the turn (enterprise-managed Codex downgraded
+    // the driver's "never" to an approval-requiring policy that exec mode can't
+    // service): same shape as the cases above, with a Retry button — the driver
+    // already switched future turns to the compatible "on-request" policy, so
+    // resending the failed message is the recovery (see lib/approvalFailure.ts).
+    if (m.content.includes(APPROVAL_BLOCKED_NOTICE)) {
+      return (
+        <div className="msg system overflow">
+          <div className="msg-body">
+            {m.content}
+            {onRetry && (
+              <div className="overflow-actions">
+                <button className="btn btn-sm" onClick={() => onRetry(m.id)} disabled={running} title="Send the failed message again">
+                  {Icon.bolt()} Retry
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       );
     }

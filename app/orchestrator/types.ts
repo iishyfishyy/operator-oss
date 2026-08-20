@@ -159,6 +159,7 @@ export type ClaudeVerifyT = {
   email: string | null;
   plan: string | null;
   method: string | null;
+  provider?: string | null;
   error: string | null;
 };
 
@@ -169,13 +170,18 @@ export type ClaudeVerifyT = {
 export type AgentCapabilitiesT = {
   apiKeyHint: string | null;
   loginStyle: "paste_code" | "device_code";
+  supportsBedrock?: boolean;
 };
 export type AgentInfoT = {
   id: string;
   label: string;
+  provider?: string | null;
+  // The active provider's credentials can be refreshed from the UI (AWS SSO
+  // device-code flow) — shows the refresh button in the Bedrock connect card.
+  providerRefresh?: boolean;
   capabilities: AgentCapabilitiesT;
   connected: boolean;
-  account: { email: string | null; plan: string | null; method: "subscription" | "api_key" } | null;
+  account: { email: string | null; plan: string | null; method: "subscription" | "api_key" | "bedrock" } | null;
   authBroken?: AgentAuthBrokenT | null;
 };
 // Connected, but its login stopped working mid-flight (see lib/authFailure.ts).
@@ -214,13 +220,15 @@ export interface AgentCapabilities {
   reportsCostUsd: boolean;    // usage carries a real dollar cost (not just tokens)
   costIsEstimated: boolean;   // cost is estimated from tokens × API prices — show with ~
   supportsResume: boolean;    // turns can resume a prior session/thread id
+  supportsCustomModels?: boolean;
+  supportsBedrock?: boolean;
 }
 // How this agent is signed in. "subscription" (a Max/Pro or ChatGPT login) means
 // turns draw on plan quota and cost no marginal money, so a dollar figure is an
 // API-PRICE EQUIVALENT rather than a charge; "api_key" means it really is billed.
 // Mirrors lib/agents/connections.ts AgentConnection; null when not connected.
-export interface AgentAccount { email: string | null; plan: string | null; method: "subscription" | "api_key" }
-export interface AgentInfo { id: string; label: string; capabilities: AgentCapabilities; authenticated: boolean; account?: AgentAccount | null; authBroken?: AgentAuthBrokenT | null }
+export interface AgentAccount { email: string | null; plan: string | null; method: "subscription" | "api_key" | "bedrock" }
+export interface AgentInfo { id: string; label: string; provider?: string | null; capabilities: AgentCapabilities; authenticated: boolean; account?: AgentAccount | null; authBroken?: AgentAuthBrokenT | null }
 export interface AgentsBundle { default: string; agents: AgentInfo[]; utility?: UtilityAgentT }
 export const EMPTY_AGENTS: AgentsBundle = { default: "claude", agents: [] };
 

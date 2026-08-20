@@ -15,6 +15,7 @@ process.env.ORCH_WORKTREES_DIR = path.join(root, "worktrees");
 // isolated orchestrator.db instead of the user's real one. Read at import time
 // by lib/config.ts, so it must be set here (before the module graph loads).
 process.env.ORCH_DB_DIR = path.join(root, "db");
+process.env.CLAUDE_CONFIG_DIR = path.join(root, "claude");
 
 // Control plane v2: isolate its SQLite db and pin the seams to their in-process
 // mocks. Set here (before the module graph loads) so lib/control-plane/config.ts
@@ -27,7 +28,7 @@ process.env.ORCH_BILLING_PROVIDER = "mock";
 // shell would otherwise leak into the suite — hasApiKey()/hasOpenAiKey() are
 // env-aware (they report the effective billing credential; see lib/env-keys.mjs)
 // and would flip status assertions. Same list the boot strip covers.
-for (const v of ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "OPENAI_API_KEY", "ORCH_ALLOW_API_KEY_ENV"]) {
+for (const v of ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "OPENAI_API_KEY", "ORCH_ALLOW_API_KEY_ENV", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_MANTLE"]) {
   delete process.env[v];
 }
 

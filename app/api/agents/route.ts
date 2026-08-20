@@ -25,15 +25,21 @@ export async function GET() {
     // agent isn't connected. `id: null` means nothing is connected at all.
     utility: resolveUtilityAgent(),
     agents: listDrivers().map((d) => {
+      const provider = d.configuredProvider?.() ?? null;
       const conn = getAgentConnection(d.id);
       // Effective-credential overlay (issue #4): the settings record says how
       // the user CONNECTED, but a live API key (persisted 0600 file, or env via
       // the ORCH_ALLOW_API_KEY_ENV opt-in) is what turns actually bill — it
       // outranks a stored subscription login, so report it, not the record.
-      const keyed = !!d.apiKey?.has();
+      const keyed = provider !== "bedrock" && !!d.apiKey?.has();
       return {
         id: d.id,
         label: d.label,
+        provider,
+        // Whether the active provider's credentials can be refreshed from the
+        // UI (AWS SSO device-code flow) — drives the connect card's refresh
+        // button; false = "reconfigure and restart" guidance only.
+        providerRefresh: d.providerAuthRefreshable?.() ?? false,
         capabilities: d.capabilities,
         connected: keyed || !!conn,
         authenticated: keyed || !!conn,

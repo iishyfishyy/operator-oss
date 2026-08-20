@@ -44,9 +44,10 @@ FROM node:22-bookworm-slim
 
 # git: project repos + per-task worktrees.  openssh-client: git over ssh.
 # tini: PID 1 (reaps the pty shells' orphans).  procps: ps for debugging shells.
+# awscli: Bedrock profile/SSO setup and credential refresh from the terminal.
 RUN apt-get update \
   && apt-get install -y --no-install-recommends \
-       git openssh-client ca-certificates curl bash tini procps \
+       git openssh-client ca-certificates curl bash tini procps awscli \
   && rm -rf /var/lib/apt/lists/*
 
 # GitHub CLI: powers the in-app "Connect GitHub" device-flow login and the
@@ -65,7 +66,8 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
 # The `claude` CLI (Agent SDK spawns it; login state lives in ~/.claude on the
 # volume). Pinned location via CLAUDE_CLI_PATH; updates ship as image rebuilds,
 # so the in-place autoupdater is disabled.
-RUN npm install -g @anthropic-ai/claude-code && claude --version
+ARG CLAUDE_CODE_VERSION=2.1.226
+RUN npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" && claude --version
 
 # The `codex` CLI (the Codex agent driver drives it via @openai/codex-sdk; login
 # state lives in ~/.codex on the volume). Installed globally so CODEX_CLI_PATH /
@@ -76,7 +78,7 @@ RUN npm install -g @openai/codex && codex --version
 # volumes initialize from this skeleton with correct ownership on first mount.
 RUN userdel -r node \
   && useradd --create-home --uid 1000 --home-dir /home/orch --shell /bin/bash orch \
-  && mkdir -p /home/orch/.zen-orchestrator /home/orch/worktrees /home/orch/projects /home/orch/.claude /home/orch/.codex \
+  && mkdir -p /home/orch/.zen-orchestrator /home/orch/worktrees /home/orch/projects /home/orch/.claude /home/orch/.codex /home/orch/.aws \
   && chown -R orch:orch /home/orch
 
 WORKDIR /app

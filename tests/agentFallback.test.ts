@@ -8,7 +8,7 @@ import { describe, expect, it, beforeEach } from "vitest";
 
 import { setSetting, getSetting, createProject, createTask, getTask, updateTask } from "../lib/store";
 import { getDb } from "../lib/db";
-import { setAgentConnection, isAgentConnected, firstConnectedAgent, resolveConnectedAgent } from "../lib/agents/connections";
+import { setAgentConnection, getAgentConnection, isAgentConnected, firstConnectedAgent, resolveConnectedAgent } from "../lib/agents/connections";
 import { utilityDriver, resolveUtilityAgent } from "../lib/agents/oneshots";
 import { completeOnboarding } from "../lib/onboarding";
 import { createSuggestedTask } from "../lib/agentTools";
@@ -51,6 +51,26 @@ describe("connection record", () => {
     expect(resolveConnectedAgent(["claude", "codex"])).toBe("codex");
     expect(resolveConnectedAgent(["not-an-agent"])).toBe("codex");
     expect(firstConnectedAgent()).toBe("codex");
+  });
+
+  it("persists Amazon Bedrock as a distinct Claude connection method", () => {
+    process.env.CLAUDE_CODE_USE_BEDROCK = "1";
+    try {
+      setAgentConnection("claude", { method: "bedrock", email: null, plan: "AWS" });
+      expect(getAgentConnection("claude")).toEqual({ method: "bedrock", email: null, plan: "AWS" });
+    } finally {
+      delete process.env.CLAUDE_CODE_USE_BEDROCK;
+    }
+  });
+
+  it("invalidates a Claude connection recorded under the other provider", () => {
+    setAgentConnection("claude", { method: "subscription", email: "a@b.c", plan: "Max" });
+    process.env.CLAUDE_CODE_USE_BEDROCK = "1";
+    try {
+      expect(getAgentConnection("claude")).toBeNull();
+    } finally {
+      delete process.env.CLAUDE_CODE_USE_BEDROCK;
+    }
   });
 });
 

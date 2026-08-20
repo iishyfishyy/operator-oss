@@ -71,6 +71,20 @@ test("the transcript survives a reload (persisted, not stream-bound)", async ({ 
   await expect(page.getByText("Mock turn complete").first()).toBeVisible();
 });
 
+test("the task description stays viewable after the session starts", async ({ page }) => {
+  await gotoApp(page);
+  await page.getByText(PROJECT).first().click();
+  await page.getByText(TASK_TITLE).first().click();
+  // The session header's edit button opens the task modal even after start —
+  // the original description must stay viewable/copyable for a started task.
+  await page.getByRole("button", { name: "View & edit task details" }).click();
+  await expect(page.getByText("Edit task").first()).toBeVisible();
+  await expect(page.getByPlaceholder("e.g. Add rate-limiting to auth endpoints")).toHaveValue(TASK_TITLE);
+  await expect(page.getByPlaceholder(/Describe the feature or task/)).toHaveValue(/e2e:write=greeting\.txt/);
+  // Started task → the helper explains edits don't reach the running session.
+  await expect(page.getByText(/Already sent to the agent/)).toBeVisible();
+});
+
 async function taskIdByTitle(request: import("@playwright/test").APIRequestContext, title: string): Promise<string> {
   const projects = await (await request.get("/api/projects")).json();
   const proj = projects.find((p: { name: string }) => p.name === PROJECT);

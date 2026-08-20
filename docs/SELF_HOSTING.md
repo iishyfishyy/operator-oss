@@ -26,6 +26,20 @@ full shell and a `bypassPermissions` agent, so **never expose the port raw**.
 The `claude` CLI works headless: it prints the OAuth URL and accepts a pasted code, and
 the setup wizard drives that flow from the browser.
 
+### Amazon Bedrock
+
+The image also includes the AWS CLI and persists `~/.aws` on the home volume. To use
+Bedrock instead of a Claude subscription, set `CLAUDE_CODE_USE_BEDROCK=1`, configure a
+region, and provide credentials through the AWS default credential chain. A Bedrock API
+key via `AWS_BEARER_TOKEN_BEDROCK` is the simplest headless option; profiles, SSO, and
+temporary access-key credentials are also supported. Restart the container, then open
+Settings → Agents → Amazon Bedrock and run Verify.
+
+Claude provider selection is instance-wide: do not configure Anthropic subscription/API
+credentials and Bedrock credentials in the same Operator instance. Model IDs, cross-region
+inference profile IDs, and application inference-profile ARNs can be entered with
+**Custom model** in a task's model picker.
+
 ## Origin-side auth (Cloudflare Access)
 
 If you front an instance with Cloudflare Access, set `CF_ACCESS_TEAM_DOMAIN` +
@@ -91,6 +105,11 @@ Export the variables in the environment that launches `npm run dev` / `npm start
 | `ORCH_SERVICE_HOSTS` | *(off)* | Set `1` to serve each service on a public hostname `<slug>--<appHost>` with per-service visibility (private / shared link / public). Separate opt-in from the services feature itself; also needs `PUBLIC_BASE_URL` + wildcard DNS/TLS |
 | `ORCH_FEATURE_SERVICES` | `1` (on) | The managed-services feature (Services drawer, supervisor, persisted registry with boot auto-restart + orphan reaping). Set `0` to disable |
 | `CLAUDE_CLI_PATH` | `~/.local/bin/claude` | Path to the logged-in `claude` CLI (pinned because Next's server may run with a trimmed `PATH`) |
+| `CLAUDE_CODE_USE_BEDROCK` | *(off)* | Set `1` to route every Claude turn and utility job through Amazon Bedrock instead of Anthropic |
+| `AWS_REGION` | AWS chain/default | Bedrock region; `AWS_DEFAULT_REGION` and the active AWS profile are also supported by current Claude Code |
+| `AWS_PROFILE` | `default` | AWS profile used by Claude Code; `~/.aws` persists on the container home volume |
+| `AWS_BEARER_TOKEN_BEDROCK` | *(empty)* | Optional Bedrock API key; alternative to profile/access-key credentials |
+| `ANTHROPIC_MODEL` | provider default | Optional default Bedrock model ID or inference-profile ARN; each task can override it |
 | `POSTHOG_KEY` | *(empty)* | PostHog project API key. Set = product analytics on (browser snippet + server events). Empty = fully no-op, nothing is ever sent |
 | `POSTHOG_HOST` | `https://us.i.posthog.com` | PostHog ingest host |
 | `ORCH_ACCOUNT_ID` | *(empty)* | The `distinct_id` analytics events are keyed by. Empty = `self-hosted` |

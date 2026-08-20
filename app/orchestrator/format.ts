@@ -79,16 +79,19 @@ export function costDisplay(agent: AgentInfo | undefined): CostDisplay {
   const estimated = caps?.costIsEstimated === true;
   const show = caps?.reportsCostUsd !== false || estimated;
   const subscription = agent?.account?.method === "subscription";
+  const bedrock = agent?.account?.method === "bedrock";
   const plan = agent?.account?.plan;
   // "Max"/"Pro"/"ChatGPT Plus" → "your Max plan"; unknown/"API" → "your plan".
   const planName = plan && !/^api$/i.test(plan) ? `your ${plan} plan` : "your plan";
   const source = estimated ? "estimated from token counts × published API prices" : "API-price equivalent";
-  const note = subscription
+  const note = bedrock
+    ? "estimated by Claude Code from token usage and published prices; your AWS bill is authoritative"
+    : subscription
     ? `${source}: this ran on ${planName} login, so it draws on plan quota, not a bill`
     : estimated
       ? source
       : "";
-  return { show, approx: subscription || estimated, note };
+  return { show, approx: subscription || bedrock || estimated, note };
 }
 
 // The usage chip's tooltip: the full breakdown the compact chip can't fit, one
@@ -121,6 +124,9 @@ export function contextWindowOf(model: string | null | undefined, caps?: AgentCa
   if (model) {
     const hit = models.find((m) => m.value === model);
     if (hit) return hit.contextWindow;
+    const id = model.toLowerCase();
+    if (id.includes("[1m]") || id.includes("claude-sonnet-5") || id.includes("claude-fable-5")) return 1_000_000;
+    return DEFAULT_CONTEXT_WINDOW;
   }
   // Default (null) model → the driver picks its own; approximate with the widest
   // window it offers so the gauge doesn't over-report fullness.

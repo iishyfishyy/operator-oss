@@ -139,7 +139,11 @@ export function EditTaskModal({ task, tasks, agents, onClose, onSave, onDelete, 
       <div className="field">
         <div className="lab">Description <span className="opt">— what to do</span></div>
         <textarea value={desc} placeholder="Describe the feature or task. This is the body of the prompt the agent starts with." onChange={(e) => setDesc(e.target.value)} />
-        <div className="hlp">Project context is prepended automatically — no need to restate the stack or conventions.</div>
+        {task.started === 1 ? (
+          <div className="hlp">Already sent to the agent — edits here update the task record and any future sessions, not the running one.</div>
+        ) : (
+          <div className="hlp">Project context is prepended automatically — no need to restate the stack or conventions.</div>
+        )}
       </div>
       {canChangeAgent && <AgentPicker agents={agents} value={agent} onChange={setAgent} onConnect={onOpenSetup} />}
       <div className="field">

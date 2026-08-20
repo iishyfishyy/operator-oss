@@ -43,15 +43,24 @@ export const CODEX_CLI_PATH = process.env.CODEX_CLI_PATH || "";
  * one-shot helpers. Default "never" is the auto-run analog of Claude's
  * bypassPermissions — turns run unattended in isolated worktrees, with nobody
  * in the loop to answer approval prompts. Enterprise-managed Codex deployments
- * can disallow "never" (the CLI then warns and falls back per its requirements);
- * set this to an allowed value — "untrusted" (codex's UnlessTrusted),
- * "on-request", "on-failure" — or to "inherit" to omit the override entirely so
- * ~/.codex/config.toml and the enterprise requirements decide. Unknown values
- * fall back to "never".
+ * can disallow "never"; the CLI then warns and downgrades, and the driver
+ * detects that warning and self-heals to "on-request" from the next turn on
+ * (see lib/approvalFailure.ts). Set this to "on-request" or "on-failure" to
+ * pick an approval-capable policy up front, or to "inherit" to omit the
+ * override entirely so ~/.codex/config.toml and the enterprise requirements
+ * decide.
+ *
+ * "untrusted" (codex's UnlessTrusted) is deliberately NOT accepted: it is the
+ * one value that managed requirements allow but that is fatal under the exec
+ * transport — non-interactive runs cannot service approvals, so every
+ * non-allowlisted command is rejected ("approval request failed") and the task
+ * flails. It maps to "on-request", the closest policy that actually works.
+ * Unknown values fall back to "never".
  */
 export const CODEX_APPROVAL_POLICY = (() => {
   const v = String(process.env.CODEX_APPROVAL_POLICY || "never").toLowerCase();
-  return ["never", "on-request", "on-failure", "untrusted", "inherit"].includes(v) ? v : "never";
+  if (v === "untrusted") return "on-request";
+  return ["never", "on-request", "on-failure", "inherit"].includes(v) ? v : "never";
 })();
 
 /**

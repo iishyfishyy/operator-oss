@@ -11,7 +11,8 @@ mkdir -p \
   "$HOME/.zen-orchestrator" \
   "${ORCH_WORKTREES_DIR:-$HOME/worktrees}" \
   "$HOME/projects" \
-  "$HOME/.claude"
+  "$HOME/.claude" \
+  "$HOME/.aws"
 
 # Subscription login by default. If an agent key/token env var is present, the
 # `claude`/`codex` CLIs (and the Agent SDK child processes, and every pty shell

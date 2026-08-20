@@ -43,6 +43,16 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   for (const k of ["title", "description", "priority", "status", "suggested", "model", "reasoning", "permission_mode", "auto_start", "send_context"] as const) {
     if (k in body) (allowed as Record<string, unknown>)[k] = body[k];
   }
+  if ("model" in body) {
+    if (body.model !== null && typeof body.model !== "string")
+      return NextResponse.json({ error: "model must be a string or null" }, { status: 400 });
+    if (typeof body.model === "string") {
+      const model = body.model.trim();
+      if (model.length > 2048 || /[\0-\x1f\x7f]/.test(model))
+        return NextResponse.json({ error: "invalid model id" }, { status: 400 });
+      allowed.model = model || null;
+    }
+  }
   if ("agent" in body) {
     if (typeof body.agent !== "string" || !isAgentId(body.agent))
       return NextResponse.json({ error: "valid agent required" }, { status: 400 });

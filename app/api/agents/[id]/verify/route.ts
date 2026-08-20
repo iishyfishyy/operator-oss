@@ -26,7 +26,14 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   if (connected) {
     // Preserve the method already on record (api_key vs subscription) if any;
     // default to subscription for a first-time verify with no prior record.
-    const method = getAgentConnection(id)?.method ?? (status.plan === "API" ? "api_key" : "subscription");
+    // A provider switch is instance-wide for Claude. Prefer the provider the
+    // just-completed verification actually exercised over a stale connection
+    // record from the previous mode.
+    const method = status.provider === "bedrock"
+      ? "bedrock"
+      : getAgentConnection(id)?.method === "bedrock"
+        ? (status.plan === "API" ? "api_key" : "subscription")
+        : getAgentConnection(id)?.method ?? (status.plan === "API" ? "api_key" : "subscription");
     setAgentConnection(id, { method, email: status.email, plan: status.plan });
     track("agent_connected", { agent: id, plan: status.plan, method: status.method });
     // Funnel: the first-run wizard's Connect step now goes through this route
@@ -44,6 +51,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     email: status.email,
     plan: status.plan,
     method: status.method,
+    provider: status.provider ?? null,
     error: connected ? null : turn.error || status.error || `could not reach ${driver.label}`,
   });
 }

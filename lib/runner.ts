@@ -16,6 +16,7 @@ import { worktreeSyncStatus, fastForwardWorktree } from "@/lib/git";
 import { track } from "@/lib/analytics";
 import { isPromptTooLong, CONTEXT_OVERFLOW_NOTICE } from "@/lib/promptLimits";
 import { isAuthFailure, AUTH_EXPIRED_NOTICE } from "@/lib/authFailure";
+import { isApprovalBlocked, APPROVAL_BLOCKED_NOTICE } from "@/lib/approvalFailure";
 import { isUsageLimit, USAGE_LIMIT_NOTICE } from "@/lib/usageLimit";
 import { markAgentAuthBroken, clearAgentAuthBroken } from "@/lib/agents/connections";
 import type { Task, Project, ToolData, TurnUsage } from "@/lib/types";
@@ -145,7 +146,11 @@ export async function startResumeTurn(task: Task, project: Project, userText: st
  *     AUTH_EXPIRED_NOTICE, which becomes a "Reconnect <agent>" button;
  *   - a spent usage limit (Claude's 5-hour/weekly subscription cap, an API 429)
  *     → USAGE_LIMIT_NOTICE, informational — the recovery is waiting for the
- *     reset, so there is no button.
+ *     reset, so there is no button;
+ *   - an approval-policy block (enterprise-managed Codex downgraded our
+ *     "never" to an approval-requiring policy that exec mode can't service) →
+ *     APPROVAL_BLOCKED_NOTICE, which becomes a "Retry" button — the Codex
+ *     driver has already self-healed to "on-request" for the next turn.
  * Either way the raw provider text stays visible above the hint, so token counts
  * and the actual wording remain legible. The persisted message is the durable
  * channel — it survives SSE reconnects because the snapshot replays from SQLite.
@@ -157,7 +162,9 @@ export function publishTurnError(id: string, gen: number, errText: string): void
       ? AUTH_EXPIRED_NOTICE
       : isUsageLimit(errText)
         ? USAGE_LIMIT_NOTICE
-        : null;
+        : isApprovalBlocked(errText)
+          ? APPROVAL_BLOCKED_NOTICE
+          : null;
   const content = notice ? `⚠ ${errText}\n\n${notice}` : `⚠ ${errText}`;
   // The persist can itself throw — most importantly when the task row is gone
   // (project/task deleted mid-turn): addMessage then hits a FOREIGN KEY error.

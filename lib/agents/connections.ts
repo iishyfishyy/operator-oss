@@ -6,6 +6,7 @@ import { getSetting, setSetting } from "../store";
 // lib/agentTools.ts resolve a connected agent without poisoning the internal
 // agent-tools routes. Pinned by tests/importGraph.test.ts.
 import { listAgentIds, isAgentId, DEFAULT_AGENT } from "./capabilities";
+import { isBedrockConfigured } from "./claude/provider";
 
 // Per-agent connection state, persisted in the settings table keyed by agent id
 // (`agent_conn_<id>`). Distinct from lib/onboarding.ts, which tracks the single
@@ -16,9 +17,9 @@ import { listAgentIds, isAgentId, DEFAULT_AGENT } from "./capabilities";
 // api-key save.
 //
 // Stored as "method|email|plan" (same compact encoding as onboarding_account),
-// where method is "subscription" | "api_key". An absent key = not connected.
+// where method is "subscription" | "api_key" | "bedrock". An absent key = not connected.
 
-export type AgentConnMethod = "subscription" | "api_key";
+export type AgentConnMethod = "subscription" | "api_key" | "bedrock";
 
 export interface AgentConnection {
   method: AgentConnMethod;
@@ -30,9 +31,13 @@ const key = (agentId: string) => `agent_conn_${agentId}`;
 
 export function getAgentConnection(agentId: string): AgentConnection | null {
   const raw = getSetting(key(agentId));
-  if (!raw) return agentId === DEFAULT_AGENT ? legacyClaudeConnection() : null;
+  const bedrock = agentId === "claude" && isBedrockConfigured();
+  if (!raw) return agentId === DEFAULT_AGENT && !bedrock ? legacyClaudeConnection() : null;
   const [method, email, plan] = raw.split("|");
-  if (method !== "subscription" && method !== "api_key") return null;
+  if (method !== "subscription" && method !== "api_key" && method !== "bedrock") return null;
+  // Claude's provider is instance-wide. A connection verified under the other
+  // mode is stale after the configuration changes and must be verified again.
+  if (bedrock !== (method === "bedrock")) return null;
   return { method, email: email || null, plan: plan || null };
 }
 

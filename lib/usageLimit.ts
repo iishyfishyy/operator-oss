@@ -47,6 +47,8 @@ const USAGE_LIMIT_RES = [
   /out of (?:usage|quota|credits)/i,
   /\b429\b[^\n]{0,60}(?:rate[_ ]limit|quota|usage limit|too many requests)/i,
   /too many requests[^\n]{0,40}\b429\b/i,
+  /(?:ThrottlingException|TooManyRequestsException)/i,
+  /(?:bedrock|aws)[^.\n]{0,40}(?:service quota|throttl)[^.\n]{0,40}(?:exceed|reached|exception)/i,
 ];
 
 /** True when a turn's error text is a spent-quota rejection (Claude's 5-hour /
