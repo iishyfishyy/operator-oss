@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title desc">
+  <title id="title">Operator</title>
+  <desc id="desc">A blue orbital ring around a central point</desc>
+  <defs>
+    <linearGradient id="orbit" x1="16" y1="16" x2="112" y2="112" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#9cc0ff"/>
+      <stop offset="0.55" stop-color="#4d8cff"/>
+      <stop offset="1" stop-color="#245dc7"/>
+    </linearGradient>
+    <filter id="glow" x="-80%" y="-80%" width="260%" height="260%">
+      <feGaussianBlur stdDeviation="5" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  <circle cx="64" cy="64" r="45" fill="none" stroke="#4d8cff" stroke-width="3" opacity="0.35"/>
+  <path d="M64 19a45 45 0 0 1 44.7 39.8" fill="none" stroke="url(#orbit)" stroke-width="7" stroke-linecap="round"/>
+  <path d="M64 109a45 45 0 0 1-44.7-39.8" fill="none" stroke="url(#orbit)" stroke-width="7" stroke-linecap="round" opacity="0.7"/>
+  <circle cx="64" cy="64" r="8" fill="#4d8cff" filter="url(#glow)"/>
+</svg>

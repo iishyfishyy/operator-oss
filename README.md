@@ -1,120 +1,105 @@
 <div align="center">
 
+<img src="docs/images/operator-mark.svg" alt="Operator logo" width="96" />
+
 # Operator
 
-### Run Claude Code and Codex in parallel across every project, from any browser.
+### Run Claude Code and Codex in parallel from any browser.
 
-Operator is a web-based control room for your coding agents. 
+Operator is a web-based control room for coding agents. Every task gets a persistent agent
+session in an isolated git worktree, so you can delegate across projects without juggling
+terminals or mixing branches.
 
-Run it locally on your machine, self-host it on a server, or use our hosted version. A
-deployed Operator workspace is available from your computer, tablet, or phone.
+Run Operator on your own computer, self-host it on a server, or use the hosted version. A
+deployed workspace is available from your computer, tablet, or phone.
 
-Every task gets a persistent agent session in an isolated git worktree. 
+[**Try hosted**](https://getoperator.dev) · [**Run locally**](#quick-start) · [**Self-host**](docs/SELF_HOSTING.md) · [**Docs**](#documentation) · [**Join Discord**](https://discord.gg/p4aaXvzJq2)
 
-Operator uses your existing Max, Pro, or ChatGPT subscription, with no API key or per-token billing required.
-
-[**Try Operator hosted**](https://getoperator.dev) · [**Run locally**](#run-locally) · [**Self-host**](docs/SELF_HOSTING.md) · [**Join Discord**](https://discord.gg/p4aaXvzJq2) · [**Request a feature**](https://github.com/iishyfishyy/operator-oss/discussions/categories/ideas)
-
-[![Discord: Join the community](https://img.shields.io/badge/Discord-Join%20the%20community-5865F2?logo=discord&logoColor=white)](https://discord.gg/p4aaXvzJq2)
+[![Discord](https://img.shields.io/badge/Discord-Join%20the%20community-5865F2?logo=discord&logoColor=white)](https://discord.gg/p4aaXvzJq2)
+[![GitHub stars](https://img.shields.io/github/stars/iishyfishyy/operator-oss?style=flat&logo=github)](https://github.com/iishyfishyy/operator-oss/stargazers)
+[![GitHub release](https://img.shields.io/github/v/release/iishyfishyy/operator-oss?display_name=tag)](https://github.com/iishyfishyy/operator-oss/releases/latest)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-[![Node ≥20.9](https://img.shields.io/badge/node-%E2%89%A520.9-brightgreen.svg)](package.json)
-[![PRs welcome](https://img.shields.io/badge/PRs-welcome-8A2BE2.svg)](CONTRIBUTING.md)
 
 ![Operator workspace showing projects and parallel agent tasks](docs/images/workspace.png)
 
 </div>
 
-## Why Operator
+## One web workspace for every agent
 
-- **Your workspace is wherever you are.** Deploy Operator once and manage agents from any
-  device with a browser.
-- **Run many tasks without juggling terminals.** Every task has its own worktree, branch,
-  transcript, and agent session.
-- **Know where you are needed.** A cross-project inbox surfaces sessions waiting for input
-  while the rest keep working.
-- **Stay in control of every change.** Review the diff beside the conversation, then merge,
-  resolve conflicts, or open a pull request.
+- **Run tasks in parallel.** Each task has its own worktree, branch, transcript, and Claude
+  Code or Codex session.
+- **Know where you are needed.** One cross-project inbox surfaces every session waiting for
+  your input while other agents keep working.
+- **Keep context alive.** Save project knowledge once, persist transcripts across reloads,
+  and use `/clear` to start a fresh context window without losing the task lineage.
+- **Review before you ship.** Inspect the diff beside the conversation, sync the branch,
+  resolve conflicts, merge, or open a pull request.
 
-## How it works
+## Chain tasks into pipelines
 
-**Create tasks → connect them into a pipeline → Operator gives each one an isolated worktree
-and runs it when its dependencies finish → it alerts you when needed → you review and merge.**
+Make a task depend on one or several earlier tasks. Work can branch into parallel paths,
+then join again for final integration. Enable **Start when unblocked** and Operator launches
+each task as soon as its last dependency finishes.
 
-Project context is written once and carried into each task. Server-owned turns and persisted
-transcripts survive browser reloads and laptop sleep, and `/clear` starts a fresh context
-window while preserving the task's lineage.
+**Create tasks → connect dependencies → agents work in isolated branches → review and merge**
 
-## What makes it different
+![Operator board showing branching tasks and automatic starts](docs/images/pipeline.png)
 
-- **Parallel, isolated tasks:** work across multiple repositories without agents mixing
-  files or branches.
-- **Web-based and self-hostable:** run Operator on your own machine or server, then securely
-  access the same workspace from desktop or mobile.
-- **One “Needs you” inbox:** jump directly to any session waiting for an answer.
-- **Persistent context:** reuse project knowledge and continue long-running work across
-  fresh context windows.
-- **Review-to-merge workflow:** inspect diffs, sync branches, resolve conflicts, merge, or
-  create a GitHub PR from the same screen.
-- **Branching task pipelines:** make tasks depend on one or several earlier tasks, branch
-  work into parallel paths, and launch each task automatically when its blockers finish.
-- **A complete workspace:** chat, terminal, managed services, live logs, and transparent
-  token and usage insights stay together.
+## Run it your way
 
-![Operator diff review beside an agent session](docs/images/changes.png)
+| | Best for | Access |
+|---|---|---|
+| **Local** | Using Operator on one machine with the least setup | `localhost` in your browser |
+| **Self-hosted** | An always-on workspace on infrastructure you control | Any authorized browser or device |
+| **Hosted** | An always-on workspace without managing a server | [getoperator.dev](https://getoperator.dev) from any browser or device |
 
-[Explore all features](docs/FEATURES.md)
+Operator is a web app in all three modes. Running locally keeps the app and its data on your
+machine. Deploying it makes the same control room reachable wherever you are, including on
+mobile.
 
-## Supported agents
+<p align="center">
+  <img src="docs/images/mobile.png" alt="Operator task pipeline in a mobile browser" width="390" />
+</p>
 
-Operator supports **Claude Code** and **OpenAI Codex** end to end. Choose an agent per task,
-or connect only the one you use. Both work with subscription login; API keys remain an
-optional explicit choice.
+## Quick start
 
-[Agent support, permissions, and usage details](docs/AGENTS.md)
-
-## Run locally
-
-You need Node 20.9+, macOS or Linux, and at least one supported agent CLI.
+You need Node 20.9 or newer, macOS or Linux, and at least one supported agent CLI.
 
 ```bash
+git clone https://github.com/iishyfishyy/operator-oss.git
+cd operator-oss
 npm install
 npm run build
 npm start
 ```
 
-Open <http://localhost:3000>. The first-run wizard connects Claude Code or Codex and takes
-you through a short hands-on tutorial.
+Open <http://localhost:3000>. The first-run wizard connects Claude Code or Codex and guides
+you through a small real task. Both agents support subscription login, so an API key is not
+required. API keys remain an explicit option.
 
-Use `npm run dev` only when developing Operator itself. For Docker, authentication,
-networking, and secure access from anywhere, see the [self-hosting guide](docs/SELF_HOSTING.md).
+For Docker, authentication, TLS, and secure access from outside your machine, follow the
+[self-hosting guide](docs/SELF_HOSTING.md). Do not expose an unauthenticated Operator origin
+to a network.
 
-## Hosted
+## More than chat
 
-[**getoperator.dev**](https://getoperator.dev) gives you an always-on Operator instance
-with no server setup. Open it from any browser, including your phone, and return to the same
-projects, tasks, and running agent sessions. It uses this open-source app with a hosted
-control plane.
+Operator also includes list and kanban views, agent-suggested follow-up tasks, per-project
+and per-task terminals, managed services with live logs, project recaps, and transparent
+token and usage insights.
+
+[Explore all features](docs/FEATURES.md) · [Compare agent support](docs/AGENTS.md) · [Read the architecture](docs/ARCHITECTURE.md)
 
 ## Community
 
-- [Join the Operator Discord](https://discord.gg/p4aaXvzJq2)
-- [Request a feature or share an idea](https://github.com/iishyfishyy/operator-oss/discussions/categories/ideas)
-- [Ask a question](https://github.com/iishyfishyy/operator-oss/discussions/categories/q-a)
-- [Report a bug](https://github.com/iishyfishyy/operator-oss/issues/new?template=bug_report.yml)
-- [Contribute](CONTRIBUTING.md)
-
-See [COMMUNITY.md](docs/COMMUNITY.md) for where each kind of conversation belongs.
+[Join Discord](https://discord.gg/p4aaXvzJq2) to meet users and contributors, show what you
+are building, and discuss Operator. Use
+[GitHub Discussions](https://github.com/iishyfishyy/operator-oss/discussions/categories/ideas)
+for feature requests, [GitHub Issues](https://github.com/iishyfishyy/operator-oss/issues/new?template=bug_report.yml)
+for reproducible bugs, and [CONTRIBUTING.md](CONTRIBUTING.md) for pull requests.
 
 ## Documentation
 
-- [Installation and local development](docs/INSTALLATION.md)
-- [Features](docs/FEATURES.md)
-- [Agents](docs/AGENTS.md)
-- [Insights and usage](docs/INSIGHTS.md)
-- [Managed services](docs/SERVICES.md)
-- [Self-hosting](docs/SELF_HOSTING.md)
-- [Architecture](docs/ARCHITECTURE.md)
-- [Security](SECURITY.md)
+[Install and develop](docs/INSTALLATION.md) · [Self-host](docs/SELF_HOSTING.md) · [Features](docs/FEATURES.md) · [Agents](docs/AGENTS.md) · [Changelog](CHANGELOG.md) · [Security](SECURITY.md) · [Community](docs/COMMUNITY.md)
 
 ## License
 
