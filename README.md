@@ -15,6 +15,7 @@ Operator uses your existing Max, Pro, or ChatGPT subscription, with no API key o
 
 [**Try Operator hosted**](https://getoperator.dev) · [**Run locally**](#run-locally) · [**Self-host**](docs/SELF_HOSTING.md) · [**Join Discord**](https://discord.gg/p4aaXvzJq2) · [**Request a feature**](https://github.com/iishyfishyy/operator-oss/discussions/categories/ideas)
 
+[![Discord: Join the community](https://img.shields.io/badge/Discord-Join%20the%20community-5865F2?logo=discord&logoColor=white)](https://discord.gg/p4aaXvzJq2)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Node ≥20.9](https://img.shields.io/badge/node-%E2%89%A520.9-brightgreen.svg)](package.json)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-8A2BE2.svg)](CONTRIBUTING.md)
