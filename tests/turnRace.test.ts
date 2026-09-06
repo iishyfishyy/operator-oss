@@ -24,7 +24,7 @@ vi.mock("@/lib/agents/claude/driver", () => ({
 
 import { createProject, createTask, getTask, listMessages, listPendingMessages } from "@/lib/store";
 import { startResumeTurn } from "@/lib/runner";
-import { INITIAL_TASK_PROMPT } from "@/lib/agents/shared";
+import { buildInitialPrompt } from "@/lib/agents/shared";
 import { subscribe } from "@/lib/events";
 import { hasTurn } from "@/lib/abort";
 import { POST as messagesPost } from "@/app/api/tasks/[id]/messages/route";
@@ -88,10 +88,12 @@ describe("turn-launch races", () => {
     expect(bodies.filter((b) => b.queued).length).toBe(1);
     expect(bodies.filter((b) => typeof b.generation === "number" && !b.queued).length).toBe(1);
     expect(runTurnMock).toHaveBeenCalledTimes(1);
-    expect(runTurnMock.mock.calls[0][2]).toBe(INITIAL_TASK_PROMPT);
-    expect(runTurnMock.mock.calls[0][2]).not.toContain(task.title);
-    expect(runTurnMock.mock.calls[0][2]).not.toContain(task.description);
-    expect(listMessages(task.id)[0]?.content).toBe(INITIAL_TASK_PROMPT);
+    // The opening turn is the task itself — title heading + description — so
+    // the transcript's first bubble reads as what the session was asked to do.
+    expect(runTurnMock.mock.calls[0][2]).toBe(buildInitialPrompt(task));
+    expect(runTurnMock.mock.calls[0][2]).toContain("# T");
+    expect(runTurnMock.mock.calls[0][2]).toContain(task.description);
+    expect(listMessages(task.id)[0]?.content).toBe(buildInitialPrompt(task));
     expect(listPendingMessages(task.id)).toHaveLength(1);
     expect(hasTurn(task.id)).toBe(true);
 
