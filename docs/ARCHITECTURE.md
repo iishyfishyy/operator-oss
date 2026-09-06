@@ -140,6 +140,17 @@ lives in the transcript. Both the in-process server and the endpoints call the S
 logic in **`lib/agentTools.ts`**, and both build their tool defs from the SAME constants in
 **`lib/agentToolDefs.mjs`**, so the two paths can't drift.
 
+Every `suggest_task` call is stamped with its **proposer**: `createSuggestedTask()` takes an
+optional `source: { taskId, generation }` and writes it to `tasks.suggested_by_task_id` /
+`tasks.suggested_by_generation`, which is what the tray groups by. Both callers already know
+the running task — the Claude driver's MCP server closes over it, and the bridge posts the
+`ORCH_TASK_ID` it uses for `ask_user`, from which the endpoint re-reads the live generation.
+The id is a self-referential FOREIGN KEY with `ON DELETE SET NULL`, so deleting the
+proposing task orphans its suggestions into the tray's "Other" bucket rather than taking
+them with it; a source whose task has vanished mid-turn is dropped at insert time for the
+same reason the project is re-read there. Provenance is write-once — `updateTask()`
+deliberately doesn't carry those columns.
+
 ### Adding a third agent (e.g. Gemini, Cursor)
 
 Implement the `AgentDriver` interface in `lib/agents/<id>/driver.ts` (`runTurn()` is the

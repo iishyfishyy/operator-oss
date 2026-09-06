@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import type { Status } from "@/lib/types";
 import { Icon } from "../icons";
 import { isAwaiting, relTime } from "./format";
 import { SEARCH_MIN, type ProjectRow, type TaskRow, type AgentsBundle, type TaskView } from "./types";
 import { agentLabel } from "./agents";
 import { StatusDot, PriPill, SearchBar, AgentBadge } from "./shared";
+import { groupSuggestions, showsGroupHeaders, suggestionGroupLabel, type SuggestionGroup } from "./suggestions";
 
 // The kanban alternative to the grouped task list (layout from the Claude
 // Design "Operator — Board View" study, rendered with the app's own tokens).
@@ -151,8 +152,12 @@ function BoardCard({ task, agents, selected, running, blockedBy, mini, dragging,
   );
 }
 
-export function TaskBoard({ tasks, suggested, agents, selTaskId, running, blockedBy, canDrag, onSelect, onEditTask, onMove, onStartSuggestion, onAcceptSuggestion, onDismissSuggestion }: {
-  tasks: TaskRow[]; suggested: TaskRow[]; agents: AgentsBundle; selTaskId: string | null;
+export function TaskBoard({ tasks, suggested, allTasks, agents, selTaskId, running, blockedBy, canDrag, onSelect, onEditTask, onMove, onStartSuggestion, onAcceptSuggestion, onDismissSuggestion, onOpenParent }: {
+  tasks: TaskRow[]; suggested: TaskRow[];
+  // The project's UNFILTERED task list, used only to name a suggestion's
+  // proposer — a group header must still resolve when a search hides the parent.
+  allTasks: TaskRow[];
+  agents: AgentsBundle; selTaskId: string | null;
   running: Set<string>; blockedBy: Map<string, string[]>;
   // Dragging is disabled while a search filter is active: hidden cards would be
   // silently dropped from the persisted order.
@@ -160,6 +165,8 @@ export function TaskBoard({ tasks, suggested, agents, selTaskId, running, blocke
   onSelect: (id: string) => void; onEditTask: (id: string) => void;
   onMove: (id: string, patch: Partial<Pick<TaskRow, "status" | "suggested">>, orderedIds: string[]) => void;
   onStartSuggestion: (id: string) => void; onAcceptSuggestion: (id: string) => void; onDismissSuggestion: (id: string) => void;
+  // Jump to the task a suggestion group came from (its header).
+  onOpenParent: (id: string) => void;
 }) {
   const [dragId, setDragId] = useState<string | null>(null);
   const [over, setOver] = useState<{ col: ColKey; index: number } | null>(null);
@@ -209,9 +216,17 @@ export function TaskBoard({ tasks, suggested, agents, selTaskId, running, blocke
         const accepts = !!dragTask && def.patchFor(dragTask) !== null;
         const reject = !!dragTask && !accepts;
         const isOver = over?.col === key;
+        // Suggested is grouped by the session that proposed each card (headers
+        // below); the column renders group by group rather than in raw position
+        // order, so drag indices are resolved against colTasks, not the display.
+        const sugGroups = key === "suggested" ? groupSuggestions(colTasks, allTasks) : null;
+        const sugHead = new Map<string, SuggestionGroup>();
+        if (sugGroups && showsGroupHeaders(sugGroups)) {
+          for (const g of sugGroups) if (g.tasks[0]) sugHead.set(g.tasks[0].id, g);
+        }
         // Terminal columns render newest-first in compact rows; ordering within
         // them is meaningless, so drops append and no insertion line is shown.
-        const display = def.mini ? [...colTasks].sort((a, b) => b.updated_at - a.updated_at) : colTasks;
+        const display = sugGroups ? sugGroups.flatMap((g) => g.tasks) : def.mini ? [...colTasks].sort((a, b) => b.updated_at - a.updated_at) : colTasks;
         const expanded = !!showAll[key];
         const visible = def.mini && !expanded ? display.slice(0, MINI_CAP) : display;
         const hidden = display.length - visible.length;
@@ -239,14 +254,33 @@ export function TaskBoard({ tasks, suggested, agents, selTaskId, running, blocke
               </div>
             )}
             <div className="bcol-body">
-              {visible.map((t, i) => {
+              {visible.map((t) => {
                 const day = def.mini && key === "done" ? dayBucket(t.updated_at) : null;
                 const divider = day !== null && day !== lastDay ? <div className="b-day" key={`day-${day}`}>{day}<i /></div> : null;
                 lastDay = day;
+                // Drop targets are positions in the COLUMN's own order, which the
+                // grouped Suggested display no longer matches 1:1 — resolve the
+                // card back to its column index (terminal columns just append).
+                const at = def.mini ? colTasks.length : colTasks.indexOf(t);
+                const head = sugHead.get(t.id);
                 return (
                   <div className="b-slot" key={t.id}>
                     {divider}
-                    {accepts && isOver && !def.mini && over!.index === i && <div className="b-dropline" />}
+                    {head && (
+                      head.parent ? (
+                        <button className="b-sugh" onClick={(e) => { e.stopPropagation(); onOpenParent(head.parent!.id); }} title={`Open “${head.parent.title}” — the session that suggested these`}>
+                          <span className="txt">{suggestionGroupLabel(head)}</span>
+                          <span className="n">{head.tasks.length}</span>
+                          {Icon.chevRight({ className: "go" })}
+                        </button>
+                      ) : (
+                        <div className="b-sugh static" title="No record of which session proposed these">
+                          <span className="txt">Other</span>
+                          <span className="n">{head.tasks.length}</span>
+                        </div>
+                      )
+                    )}
+                    {accepts && isOver && !def.mini && over!.index === at && <div className="b-dropline" />}
                     <BoardCard
                       task={t}
                       agents={agents}
@@ -258,8 +292,8 @@ export function TaskBoard({ tasks, suggested, agents, selTaskId, running, blocke
                       canDrag={canDrag}
                       onSelect={() => (t.suggested ? onEditTask(t.id) : onSelect(t.id))}
                       onDragStart={() => setDragId(t.id)}
-                      onDragOverCard={(e) => { e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = accepts ? "move" : "none"; if (dragId) setOver({ col: key, index: def.mini ? colTasks.length : i }); }}
-                      onDropOnCard={(e) => { e.preventDefault(); e.stopPropagation(); drop(key, def.mini ? colTasks.length : i); }}
+                      onDragOverCard={(e) => { e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = accepts ? "move" : "none"; if (dragId) setOver({ col: key, index: at }); }}
+                      onDropOnCard={(e) => { e.preventDefault(); e.stopPropagation(); drop(key, at); }}
                       onDragEnd={reset}
                       actions={t.suggested ? (
                         <div className="bsug-acts" onClick={(e) => e.stopPropagation()}>
@@ -293,7 +327,7 @@ export function TaskBoard({ tasks, suggested, agents, selTaskId, running, blocke
 // Full-workspace board shell (desktop): owns everything right of the projects
 // sidebar — header with the List/Board toggle, the board, and (via `children`)
 // the slide-over session panel + drawers the composition root mounts on top.
-export function BoardWorkspace({ project, agents, tasks, suggested, selTaskId, running, blockedBy, loading, onSetView, onMoveTask, onSelectTask, onNewTask, onEditContext, onShowSessions, onEditTask, onStartSuggestion, onAcceptSuggestion, onDismissSuggestion, children }: {
+export function BoardWorkspace({ project, agents, tasks, suggested, selTaskId, running, blockedBy, loading, onSetView, onMoveTask, onSelectTask, onNewTask, onEditContext, onShowSessions, onEditTask, onStartSuggestion, onAcceptSuggestion, onDismissSuggestion, onOpenParent, children }: {
   project: ProjectRow; agents: AgentsBundle; tasks: TaskRow[]; suggested: TaskRow[]; selTaskId: string | null;
   running: Set<string>; blockedBy: Map<string, string[]>; loading?: boolean;
   onSetView: (v: TaskView) => void;
@@ -301,6 +335,7 @@ export function BoardWorkspace({ project, agents, tasks, suggested, selTaskId, r
   onSelectTask: (id: string) => void; onNewTask: () => void; onEditContext: () => void; onShowSessions: () => void;
   onEditTask: (id: string) => void;
   onStartSuggestion: (id: string) => void; onAcceptSuggestion: (id: string) => void; onDismissSuggestion: (id: string) => void;
+  onOpenParent: (id: string) => void;
   children?: ReactNode;
 }) {
   const [query, setQuery] = useState("");
@@ -308,6 +343,7 @@ export function BoardWorkspace({ project, agents, tasks, suggested, selTaskId, r
   const match = (t: TaskRow) => !q || t.title.toLowerCase().includes(q) || (t.description ?? "").toLowerCase().includes(q);
   const shown = tasks.filter(match);
   const shownSuggested = suggested.filter(match);
+  const allTasks = useMemo(() => [...tasks, ...suggested], [tasks, suggested]);
   const total = tasks.length;
   return (
     <div className="col board-ws">
@@ -340,10 +376,11 @@ export function BoardWorkspace({ project, agents, tasks, suggested, selTaskId, r
         </div>
       ) : (
         <TaskBoard
-          tasks={shown} suggested={shownSuggested} agents={agents} selTaskId={selTaskId}
+          tasks={shown} suggested={shownSuggested} allTasks={allTasks} agents={agents} selTaskId={selTaskId}
           running={running} blockedBy={blockedBy} canDrag={!q}
           onSelect={onSelectTask} onEditTask={onEditTask} onMove={onMoveTask}
           onStartSuggestion={onStartSuggestion} onAcceptSuggestion={onAcceptSuggestion} onDismissSuggestion={onDismissSuggestion}
+          onOpenParent={onOpenParent}
         />
       )}
       {children}

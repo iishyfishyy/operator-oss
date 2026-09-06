@@ -11,7 +11,7 @@
 
 import { nanoid } from "nanoid";
 import type { Project, Task, ServiceInfo, Priority, AskQuestion, ToolData } from "./types";
-import { createTask, setTaskDeps, addMessage, updateMessage, updateTask, getProject } from "./store";
+import { createTask, setTaskDeps, addMessage, updateMessage, updateTask, getProject, getTask } from "./store";
 import { exposeService } from "./services";
 import { publish } from "./events";
 import { waitForAnswer, settleAsk } from "./asks";
@@ -39,13 +39,24 @@ export interface SuggestTaskInput {
 }
 
 /**
+ * Which running session proposed a suggestion. Both callers know it — the Claude
+ * driver's MCP server closes over the task, the stdio bridge is spawned per turn
+ * and posts its task id — so every new tray entry can be grouped under the task
+ * (and the /clear generation) that thought of it.
+ */
+export interface SuggestSource {
+  taskId: string;
+  generation: number;
+}
+
+/**
  * Create a suggested task in `project` and (optionally) set its dependencies.
  * Returns the created task plus the human-readable confirmation text both the
  * MCP server and the HTTP endpoint hand back to the agent verbatim. Bad deps
  * degrade to a note rather than throwing (setTaskDeps drops foreign ids and
  * rejects cycles). A null task means the project vanished and nothing was made.
  */
-export function createSuggestedTask(project: Project, input: SuggestTaskInput): { task: Task | null; text: string } {
+export function createSuggestedTask(project: Project, input: SuggestTaskInput, source?: SuggestSource): { task: Task | null; text: string } {
   // `project` can be the snapshot captured at turn START (the Claude driver's
   // MCP server closes over it) — the row may have been deleted while the turn
   // ran, and inserting its id would hit tasks' project_id FOREIGN KEY. Re-read
@@ -65,6 +76,13 @@ export function createSuggestedTask(project: Project, input: SuggestTaskInput): 
     // instance would silently accumulate dead Claude tasks in the tray. Null
     // (nothing connected) leaves createTask's own default in place.
     agent: resolveConnectedAgent([project.default_agent]) ?? undefined,
+    // Same mid-turn-deletion hazard as the project above: suggested_by_task_id
+    // is a FOREIGN KEY, so a proposer deleted while its turn ran would make the
+    // INSERT throw. Drop the provenance instead — the suggestion still lands,
+    // it just groups under "Other".
+    ...(source && getTask(source.taskId)
+      ? { suggested_by_task_id: source.taskId, suggested_by_generation: source.generation }
+      : {}),
   });
   let depNote = "";
   if (input.blocked_by?.length) {

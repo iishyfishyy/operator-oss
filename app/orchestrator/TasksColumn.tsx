@@ -8,6 +8,7 @@ import { agentLabel } from "./agents";
 import { StatusDot, PriPill, SearchBar, AgentBadge } from "./shared";
 import { TaskCardSkeleton } from "./Layout";
 import { TaskBoard } from "./TaskBoard";
+import { groupSuggestions, showsGroupHeaders, suggestionGroupLabel } from "./suggestions";
 
 function TaskCard({ task, agents, selected, running, blockedBy, onSelect }: { task: TaskRow; agents: AgentsBundle; selected: boolean; running: boolean; blockedBy?: string[]; onSelect: () => void }) {
   const sessionCount = task.started ? task.generation : Math.max(0, task.generation - 1);
@@ -88,13 +89,15 @@ function useCollapsed(key: string, def: boolean) {
   return [collapsed, toggle] as const;
 }
 
-export function TasksColumn({ project, agents, tasks, suggested, selTaskId, running, blockedBy, width, loading, view, onSetView, onMoveTask, onSelectTask, onNewTask, onEditContext, onShowSessions, onShowRecap, onEditTask, onStartSuggestion, onAcceptSuggestion, onDismissSuggestion, onCollapse, mobile, onBack }: {
+export function TasksColumn({ project, agents, tasks, suggested, selTaskId, running, blockedBy, width, loading, view, onSetView, onMoveTask, onSelectTask, onNewTask, onEditContext, onShowSessions, onShowRecap, onEditTask, onStartSuggestion, onAcceptSuggestion, onDismissSuggestion, onOpenParent, onCollapse, mobile, onBack }: {
   project: ProjectRow; agents: AgentsBundle; tasks: TaskRow[]; suggested: TaskRow[]; selTaskId: string | null; running: Set<string>; blockedBy: Map<string, string[]>; width: number; loading?: boolean;
   view: TaskView; onSetView: (v: TaskView) => void;
   onMoveTask: (id: string, patch: Partial<Pick<TaskRow, "status" | "suggested">>, orderedIds: string[]) => void;
   onSelectTask: (id: string) => void; onNewTask: () => void; onEditContext: () => void; onShowSessions: () => void; onShowRecap: () => void;
   onEditTask: (id: string) => void; onCollapse: () => void;
   onStartSuggestion: (id: string) => void; onAcceptSuggestion: (id: string) => void; onDismissSuggestion: (id: string) => void;
+  // Jump to the task a suggestion group came from (its header).
+  onOpenParent: (id: string) => void;
   mobile?: boolean; onBack?: () => void;
 }) {
   const [query, setQuery] = useState("");
@@ -116,6 +119,12 @@ export function TasksColumn({ project, agents, tasks, suggested, selTaskId, runn
     g: shown.filter((t) => t.status === "done").sort((a, b) => b.updated_at - a.updated_at),
     x: shown.filter((t) => t.status === "cancelled").sort((a, b) => b.updated_at - a.updated_at),
   };
+  // The tray is grouped by the session that proposed each entry. Parent lookup
+  // spans the project's WHOLE task list, not the search-filtered one — a group
+  // header must still name its proposer when the proposer itself is filtered out.
+  const allTasks = [...tasks, ...suggested];
+  const sugGroups = groupSuggestions(shownSuggested, allTasks);
+  const sugHeaders = showsGroupHeaders(sugGroups);
   const canSearch = tasks.length + suggested.length >= SEARCH_MIN;
   const noMatches = q && shown.length === 0 && shownSuggested.length === 0;
   return (
@@ -155,10 +164,11 @@ export function TasksColumn({ project, agents, tasks, suggested, selTaskId, runn
         <div className="board-wrap">
           {noMatches && <div className="search-empty">No tasks match “{query.trim()}”.</div>}
           <TaskBoard
-            tasks={shown} suggested={shownSuggested} agents={agents} selTaskId={selTaskId}
+            tasks={shown} suggested={shownSuggested} allTasks={allTasks} agents={agents} selTaskId={selTaskId}
             running={running} blockedBy={blockedBy} canDrag={!q}
             onSelect={onSelectTask} onEditTask={onEditTask} onMove={onMoveTask}
             onStartSuggestion={onStartSuggestion} onAcceptSuggestion={onAcceptSuggestion} onDismissSuggestion={onDismissSuggestion}
+            onOpenParent={onOpenParent}
           />
         </div>
       ) : (
@@ -176,17 +186,35 @@ export function TasksColumn({ project, agents, tasks, suggested, selTaskId, runn
         {shownSuggested.length > 0 && (
           <div className="suggest">
             <div className="suggest-h">{Icon.spark()} Suggested by agents<span className="sp">{shownSuggested.length}</span></div>
-            {shownSuggested.map((s) => (
-              <div key={s.id} className="sug">
-                <StatusDot status="not_started" />
-                <div className="sg-meta">
-                  <div className="sg-name">{s.title}</div>
-                  {s.description && <div className="sg-why">{s.description}</div>}
-                </div>
-                <button className="sug-dismiss" title="Edit title & description" onClick={() => onEditTask(s.id)}>{Icon.edit()}</button>
-                <button className="sug-add" title="Add to task list to start later" onClick={() => onAcceptSuggestion(s.id)}>{Icon.plus()} Add</button>
-                <button className="sug-btn" onClick={() => onStartSuggestion(s.id)}>{Icon.play()} Start</button>
-                <button className="sug-dismiss" title="Dismiss" onClick={() => onDismissSuggestion(s.id)}>{Icon.x()}</button>
+            {sugGroups.map((g) => (
+              <div key={g.key} className="sug-group">
+                {sugHeaders && (
+                  g.parent ? (
+                    <button className="sug-from" onClick={() => onOpenParent(g.parent!.id)} title={`Open “${g.parent.title}” — the session that suggested these`}>
+                      <span className="sf-txt">{suggestionGroupLabel(g)}</span>
+                      <span className="sf-count">{g.tasks.length}</span>
+                      {Icon.chevRight({ className: "sf-go" })}
+                    </button>
+                  ) : (
+                    <div className="sug-from static" title="No record of which session proposed these">
+                      <span className="sf-txt">Other</span>
+                      <span className="sf-count">{g.tasks.length}</span>
+                    </div>
+                  )
+                )}
+                {g.tasks.map((s) => (
+                  <div key={s.id} className="sug">
+                    <StatusDot status="not_started" />
+                    <div className="sg-meta">
+                      <div className="sg-name">{s.title}</div>
+                      {s.description && <div className="sg-why">{s.description}</div>}
+                    </div>
+                    <button className="sug-dismiss" title="Edit title & description" onClick={() => onEditTask(s.id)}>{Icon.edit()}</button>
+                    <button className="sug-add" title="Add to task list to start later" onClick={() => onAcceptSuggestion(s.id)}>{Icon.plus()} Add</button>
+                    <button className="sug-btn" onClick={() => onStartSuggestion(s.id)}>{Icon.play()} Start</button>
+                    <button className="sug-dismiss" title="Dismiss" onClick={() => onDismissSuggestion(s.id)}>{Icon.x()}</button>
+                  </div>
+                ))}
               </div>
             ))}
           </div>

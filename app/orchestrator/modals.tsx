@@ -105,7 +105,7 @@ export function NewTaskModal({ project, agents, tasks, onClose, onCreate, onOpen
   );
 }
 
-export function EditTaskModal({ task, tasks, agents, onClose, onSave, onDelete, onOpenSetup }: { task: TaskRow; tasks: TaskRow[]; agents: AgentsBundle; onClose: () => void; onSave: (id: string, patch: { title: string; description: string; priority: Priority; agent?: string; depends_on: string[]; auto_start: boolean }) => void; onDelete: (id: string) => void; onOpenSetup?: () => void }) {
+export function EditTaskModal({ task, tasks, agents, onClose, onSave, onDelete, onOpenSetup, onOpenParent }: { task: TaskRow; tasks: TaskRow[]; agents: AgentsBundle; onClose: () => void; onSave: (id: string, patch: { title: string; description: string; priority: Priority; agent?: string; depends_on: string[]; auto_start: boolean }) => void; onDelete: (id: string) => void; onOpenSetup?: () => void; onOpenParent?: (id: string) => void }) {
   const [title, setTitle] = useState(task.title);
   const [desc, setDesc] = useState(task.description);
   const [priority, setPriority] = useState<Priority>(task.priority);
@@ -118,6 +118,10 @@ export function EditTaskModal({ task, tasks, agents, onClose, onSave, onDelete, 
   const can = title.trim().length > 0;
   const canChangeAgent = task.started === 0 && task.running === 0;
   const candidates = useMemo(() => tasks.filter((t) => t.id !== task.id), [tasks, task.id]);
+  // Where a tray suggestion came from. `tasks` is the project's real (non-suggested)
+  // list, which is where a proposing session always lives; an id that doesn't
+  // resolve (proposer deleted, or a pre-provenance row) simply shows nothing.
+  const parent = task.suggested_by_task_id ? tasks.find((t) => t.id === task.suggested_by_task_id) : undefined;
   const save = () => can && onSave(task.id, { title: title.trim(), description: desc.trim(), priority, agent: canChangeAgent ? agent : undefined, depends_on: deps, auto_start: autoStart && deps.length > 0 });
   return (
     <Modal title="Edit task" sub="Title + description define the agent's task context" onClose={onClose}
@@ -131,6 +135,12 @@ export function EditTaskModal({ task, tasks, agents, onClose, onSave, onDelete, 
         <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
         <button className="btn btn-accent" disabled={!can} onClick={save}>{Icon.check()} Save changes</button>
       </>}>
+      {parent && (
+        <button className="from-parent" onClick={() => onOpenParent?.(parent.id)} disabled={!onOpenParent} title={onOpenParent ? `Open “${parent.title}”` : undefined}>
+          ↳ suggested by <b>{parent.title}</b>
+          {task.suggested_by_generation ? ` · session ${task.suggested_by_generation}` : ""}
+        </button>
+      )}
       <div className="field">
         <div className="lab">Title</div>
         <input ref={ref} type="text" value={title} placeholder="e.g. Add rate-limiting to auth endpoints"

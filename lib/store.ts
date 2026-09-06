@@ -342,6 +342,11 @@ export function createTask(input: {
   suggested?: boolean;
   agent?: string;
   send_context?: boolean;
+  // Provenance for tray suggestions: the task (and its /clear generation) whose
+  // session called suggest_task. Callers pass an id that exists — the column is
+  // a FK; see createSuggestedTask in lib/agentTools.ts for the liveness check.
+  suggested_by_task_id?: string | null;
+  suggested_by_generation?: number | null;
 }): Task {
   const now = Date.now();
   const id = nanoid();
@@ -358,10 +363,11 @@ export function createTask(input: {
   ).n;
   getDb()
     .prepare(
-      `INSERT INTO tasks (id, project_id, title, description, priority, status, suggested, agent, send_context, position, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, 'not_started', ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO tasks (id, project_id, title, description, priority, status, suggested, agent, send_context, position,
+                          suggested_by_task_id, suggested_by_generation, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, 'not_started', ?, ?, ?, ?, ?, ?, ?, ?)`
     )
-    .run(id, input.project_id, input.title, input.description ?? "", input.priority ?? "med", input.suggested ? 1 : 0, agent, sendContext ? 1 : 0, position, now, now);
+    .run(id, input.project_id, input.title, input.description ?? "", input.priority ?? "med", input.suggested ? 1 : 0, agent, sendContext ? 1 : 0, position, input.suggested_by_task_id ?? null, input.suggested_by_generation ?? null, now, now);
   return getTask(id)!;
 }
 
@@ -383,6 +389,8 @@ export function updateTask(id: string, patch: Partial<Task>): Task | undefined {
   const n = { ...cur, ...patch, updated_at: Date.now() };
   getDb()
     .prepare(
+      // suggested_by_* are deliberately absent: provenance is written once at
+      // creation and never patched (the FK clears it if the proposer is deleted).
       `UPDATE tasks SET title=?, description=?, priority=?, status=?, suggested=?, agent=?, send_context=?, model=?, resolved_model=?, reasoning=?, permission_mode=?,
         session_id=?, worktree_path=?, work_branch=?, base_sha=?, merged_at=?, pr_url=?, generation=?, started=?, auto_start=?, running=?, awaiting_input=?, updated_at=? WHERE id=?`
     )

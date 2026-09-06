@@ -119,7 +119,9 @@ export const mockDriver: AgentDriver = {
 
     for (const m of instructionText.matchAll(/e2e:suggest=([^\n]+)/g)) {
       const title = m[1].trim();
-      createSuggestedTask(project, { title, description: "Suggested by the mock agent (e2e)." });
+      // Same provenance stamp the real drivers write, so the e2e tray exercises
+      // the grouped-by-proposer rendering rather than the ungrouped fallback.
+      createSuggestedTask(project, { title, description: "Suggested by the mock agent (e2e)." }, { taskId: task.id, generation: task.generation });
       yield { type: "suggested", title };
     }
 

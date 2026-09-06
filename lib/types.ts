@@ -57,6 +57,8 @@ export interface Task {
   position: number; // manual order within the project (list groups + board columns, ascending)
   started: number; // 1 once the initial prompt has been sent
   auto_start: number; // 1 = start automatically when the last unfinished blocker is marked done (lib/autoStart.ts)
+  suggested_by_task_id: string | null; // task whose session proposed this one via suggest_task (null = user-created, or the proposer was deleted)
+  suggested_by_generation: number | null; // the proposer's /clear generation at the time (its "session N")
   running: number; // 1 while a Claude turn is actively streaming
   awaiting_input: number; // 1 when it's your turn: Claude's turn ended mid-task, or it's parked on an AskUserQuestion
   created_at: number;
