@@ -16,7 +16,7 @@ import {
 } from "../lib/store";
 import { maybeAutoStartDependents, readyAutoStartDependents } from "../lib/autoStart";
 import { hasTurn } from "../lib/abort";
-import { INITIAL_TASK_PROMPT, buildProjectContext } from "../lib/agents/shared";
+import { buildInitialPrompt, buildProjectContext } from "../lib/agents/shared";
 import { tmpDir } from "./helpers";
 import type { Task } from "../lib/types";
 
@@ -102,24 +102,26 @@ describe("maybeAutoStartDependents (the launch)", () => {
     // The launch initializes a real git repo + worktree — allow it a few seconds.
     await vi.waitFor(() => expect(startTurnMock).toHaveBeenCalledTimes(1), { timeout: 10_000 });
 
-    // The runner gets a generic opening turn plus the auto-start note; task
-    // metadata lives only in the injected project context.
+    // The runner gets the task text as its opening turn (same as the POST
+    // route) plus the auto-start note; the injected project context carries
+    // the same title/details and notes they're one and the same request.
     const [task, project, userText, note, controller] = startTurnMock.mock.calls[0];
     expect(task.id).toBe(b.id);
     expect(project.id).toBe(b.project_id);
-    expect(userText).toBe(INITIAL_TASK_PROMPT);
-    expect(userText).not.toContain(b.title);
-    expect(userText).not.toContain(b.description);
+    expect(userText).toBe(buildInitialPrompt(b));
+    expect(userText).toContain("# B");
+    expect(userText).toContain("build on A");
     const context = buildProjectContext(project, b);
     expect(context).toContain('The current task is: "B"');
     expect(context).toContain("Task details: build on A");
+    expect(context).toContain("also the first user message");
     expect(note).toContain('"A" is done');
     expect(controller).toBeInstanceOf(AbortController);
     expect(hasTurn(b.id)).toBe(true);
 
     // Same pre-launch state the POST route leaves: prompt echoed to the
     // transcript, running flagged, `started` deferred until a session opens.
-    expect(listMessages(b.id).map((m) => [m.role, m.content])).toEqual([["user", INITIAL_TASK_PROMPT]]);
+    expect(listMessages(b.id).map((m) => [m.role, m.content])).toEqual([["user", buildInitialPrompt(b)]]);
     const fresh = getTask(b.id)!;
     expect(fresh.running).toBe(1);
     expect(fresh.started).toBe(0);
