@@ -6,6 +6,7 @@
 
 import type { Project, Task, AskQuestion, AskAnswers, ToolPeek, DiffLine } from "../types";
 import { listSummaries } from "../store";
+import { suggestionPolicy } from "../suggestionPolicy";
 
 // The generic opening turn, used only when a task has no description: a fresh
 // agent session still needs a user turn to begin, and with nothing but a title
@@ -68,15 +69,36 @@ export function buildProjectContext(project: Project, task: Task): string {
     lines.push(`\nContinue this task from where the previous session left off.`);
   }
 
-  lines.push(
+  // The tray is the user's queue, not the agent's scratchpad: under the default
+  // `ask_first` policy an unrequested follow-up has to be confirmed in chat
+  // before it becomes a task. Explicit planning requests are exempt in both
+  // modes — filing the tasks IS the answer there. See lib/suggestionPolicy.ts.
+  const askTool = task.agent && task.agent !== "claude" ? "the `ask_user` tool" : "the AskUserQuestion tool";
+  const intro =
     `\n---\nYou have an "orchestrator" MCP tool \`suggest_task\` that creates a task in ` +
-      `THIS project. New tasks land in the user's "Suggested" tray for them to review and ` +
-      `start later as their own Claude session. Use it two ways:\n` +
-      `1. On request — when the user asks you to plan, break down, scope, or roadmap work, ` +
-      `call \`suggest_task\` once per task you propose (set a sensible priority for each). ` +
-      `Create as many as the plan needs.\n` +
-      `2. Proactively — if you notice follow-up work that is out of scope for the CURRENT ` +
-      `task, don't do it now; propose it with \`suggest_task\` instead.`
+    `THIS project. New tasks land in the user's "Suggested" tray for them to review and ` +
+    `start later as their own session. `;
+  lines.push(
+    suggestionPolicy() === "auto"
+      ? intro +
+          `Use it two ways:\n` +
+          `1. On request — when the user asks you to plan, break down, scope, or roadmap work, ` +
+          `call \`suggest_task\` once per task you propose (set a sensible priority for each). ` +
+          `Create as many as the plan needs.\n` +
+          `2. Proactively — if you notice follow-up work that is out of scope for the CURRENT ` +
+          `task, don't do it now; propose it with \`suggest_task\` instead — no need to ask first. ` +
+          `(This project is set to add suggestions automatically, which overrides the ask-first ` +
+          `note in the \`suggest_task\` tool description.)`
+      : intro +
+          `NEVER file a task the user didn't ask for:\n` +
+          `1. When the user's message explicitly asks you to plan, break down, scope, or roadmap ` +
+          `work, use \`suggest_task\` freely — call it once per task you propose (set a sensible ` +
+          `priority for each), as many as the plan needs.\n` +
+          `2. Otherwise, ASK FIRST. If you notice follow-up work that is out of scope for the ` +
+          `CURRENT task, don't do it and don't file it: list the follow-ups you would propose in ` +
+          `your reply (one short line each) and ask the user whether to add them, using ${askTool}. ` +
+          `Call \`suggest_task\` only after they confirm, and only for the ones they approved. ` +
+          `If they decline or don't answer, leave the tray alone and just mention what you noticed.`
   );
   lines.push(
     `\nYou also have an \`expose_service\` MCP tool. When you start a long-running server ` +

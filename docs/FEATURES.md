@@ -51,7 +51,14 @@ Use a compact list or a full-width kanban board with Suggested, Not started, In 
 Needs input, and Done states. Tasks can depend on other tasks; **Start when unblocked**
 launches an opted-in task as soon as its final blocker is marked done.
 
-Agents can also suggest follow-up tasks while they work. Every suggestion records which
+Agents can also suggest follow-up tasks while they work — but they ask first. When an agent
+notices out-of-scope follow-up work, it lists what it would propose in the chat and waits for
+your go-ahead before anything lands in the tray; asking an agent to plan, break down, scope or
+roadmap work still fills the tray straight away, since that's what you asked for. Settings →
+General → **Suggested tasks** switches this between **Ask me first** (default) and **Add them
+automatically**, the old always-proactive behaviour.
+
+Every suggestion records which
 task proposed it — and which of that task's sessions (its `/clear` generation) — so the
 tray groups them under a **From: ‹task› · session N** header instead of one flat pile when
 several sessions are planning at once. Suggestions from one planning call stay together

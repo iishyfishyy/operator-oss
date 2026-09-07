@@ -140,6 +140,20 @@ lives in the transcript. Both the in-process server and the endpoints call the S
 logic in **`lib/agentTools.ts`**, and both build their tool defs from the SAME constants in
 **`lib/agentToolDefs.mjs`**, so the two paths can't drift.
 
+Whether an agent may file a task the user never asked for is the `suggestion_policy` setting
+(`ask_first` default, `auto`; `lib/suggestionPolicy.ts`). `buildProjectContext()` reads it and
+swaps the `suggest_task` paragraph: `ask_first` tells the agent to list proposed follow-ups in
+chat and confirm — via AskUserQuestion on Claude, the bridge's `ask_user` elsewhere, picked
+from `task.agent` — before calling the tool, while an explicit "plan/break down/scope/roadmap"
+request stays free to file tasks directly. `auto` restores the old always-proactive wording.
+The tool DESCRIPTION in `lib/agentToolDefs.mjs` states the ask-first rule too, so the tool
+itself says it; those strings are static (the stdio bridge has no DB), so the `auto` branch of
+the prompt says outright that it overrides them. Enforcement stays prompt-based on purpose:
+the confirmation is prose in the transcript, not a tool call, so no server-side check can tell
+an approved suggestion from an unrequested one. Instead `createSuggestedTask()` emits a
+`suggestion_created` analytics event carrying the policy in force, which is what makes drift
+visible — under `ask_first` a rising rate means the prompt has stopped landing.
+
 Every `suggest_task` call is stamped with its **proposer**: `createSuggestedTask()` takes an
 optional `source: { taskId, generation }` and writes it to `tasks.suggested_by_task_id` /
 `tasks.suggested_by_generation`, which is what the tray groups by. Both callers already know
