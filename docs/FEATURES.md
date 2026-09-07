@@ -32,6 +32,16 @@ with a note that the two are one request. A task with no description falls back 
 generic "start working on the task" opener. Both the manual Start and the auto-start
 pipeline send the same opening turn.
 
+A session that opens **after `/clear`** is not that. Generation 2 and up start with a short
+resume turn instead — "you are continuing this task … pick up where it left off" — because
+re-sending the day-one kickoff would tell an agent that already has the previous session's
+handoff summary in its context to start the task over. The handoff summary has exactly one
+home, the system prompt, so the resume turn never repeats it. Anything you type on that
+first send after `/clear` rides along with the resume turn rather than being discarded, so
+you can steer the new session from its very first message. In the transcript the resume
+turn is an ordinary user bubble (no **task** badge) and the session divider under the
+`/clear` summary card is labelled **resumed after /clear**.
+
 ## Review and delivery
 
 Operator puts the task conversation and git diff side by side. From there you can:

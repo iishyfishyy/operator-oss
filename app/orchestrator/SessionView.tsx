@@ -294,12 +294,24 @@ export function SessionView({ project, task, agents, messages, running, blockedB
           {sessions.map((s, si) => (
             <div key={s.n}>
               {si > 0 && s.summaryBefore && <SessionBreak summary={s.summaryBefore} />}
-              <div className="session-label"><span className="ln" />Session {s.n}{si === sessions.length - 1 ? " · current" : ""}<span className="ln" /></div>
+              <div className="session-label">
+                <span className="ln" />Session {s.n}
+                {/* Generations only ever advance on /clear, so every session
+                    past the first opened with a resume prompt rather than the
+                    task kickoff — label it right under the break divider. */}
+                {si > 0 && <span className="resumed-tag">resumed after /clear</span>}
+                {si === sessions.length - 1 ? " · current" : ""}<span className="ln" />
+              </div>
               {s.messages.map((m, mi) => {
                 const prev = s.messages[mi - 1];
                 // collapse the repeated "Claude Code" header across an assistant run (text → tool → text)
                 const hideWho = m.role === "assistant" && !!prev && (prev.role === "assistant" || prev.role === "tool");
-                return <MessageView key={m.id} m={m} initial={mi === 0 && m.role === "user"} hideWho={hideWho} running={running} agent={task.agent} agentLabel={agentLabel(agents, task.agent)} onAnswer={stableAnswer} onCancelQueued={stableCancelQueued} onClear={stableClear} onReconnect={stableReconnect} onRetry={stableRetry} />;
+                // The "task" badge + "sent with project context" tag belong to
+                // the kickoff bubble only. A resumed generation's first message
+                // is a plain continue-from-here turn (possibly carrying the
+                // user's own text), so it renders as an ordinary user bubble.
+                const isKickoff = si === 0 && mi === 0 && m.role === "user";
+                return <MessageView key={m.id} m={m} initial={isKickoff} hideWho={hideWho} running={running} agent={task.agent} agentLabel={agentLabel(agents, task.agent)} onAnswer={stableAnswer} onCancelQueued={stableCancelQueued} onClear={stableClear} onReconnect={stableReconnect} onRetry={stableRetry} />;
               })}
             </div>
           ))}

@@ -37,6 +37,15 @@ stream isn't open. There is no task-list polling.
 condensed to a summary, and generation N+1 starts with a clean context window seeded by all
 prior summaries. The task persists — only the context window resets.
 
+`/clear` resets `tasks.started` to 0, so the next send is an *opening* turn — but not a
+first one. `buildOpeningPrompt()` (`lib/agents/shared.ts`) splits on the generation:
+generation 1 gets the task text (`buildInitialPrompt`), generation > 1 gets the short
+continue-from-here `buildResumePrompt`, carrying whatever the user typed on that send.
+Both launchers — `POST /api/tasks/[id]/messages` and `lib/autoStart.ts` — go through that
+one helper. Only a never-started task takes the route's inline first-turn branch; a resumed
+generation goes through `startResumeTurn()` like any other follow-up (its `session_id` is
+null, so the driver still opens a fresh session).
+
 ## The agent-driver seam (`lib/agents/`)
 
 The app talks to coding agents only through the `AgentDriver` interface.

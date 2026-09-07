@@ -24,7 +24,7 @@ vi.mock("@/lib/agents/claude/driver", () => ({
 
 import { createProject, createTask, getTask, listMessages, listPendingMessages } from "@/lib/store";
 import { startResumeTurn } from "@/lib/runner";
-import { buildInitialPrompt } from "@/lib/agents/shared";
+import { buildInitialPrompt, RESUME_PROMPT_LEAD } from "@/lib/agents/shared";
 import { subscribe } from "@/lib/events";
 import { hasTurn } from "@/lib/abort";
 import { POST as messagesPost } from "@/app/api/tasks/[id]/messages/route";
@@ -93,6 +93,9 @@ describe("turn-launch races", () => {
     expect(runTurnMock.mock.calls[0][2]).toBe(buildInitialPrompt(task));
     expect(runTurnMock.mock.calls[0][2]).toContain("# T");
     expect(runTurnMock.mock.calls[0][2]).toContain(task.description);
+    // Generation 1 only: a /clear'd task opens with the resume prompt instead
+    // (tests/resumePrompt.test.ts).
+    expect(runTurnMock.mock.calls[0][2]).not.toContain(RESUME_PROMPT_LEAD);
     expect(listMessages(task.id)[0]?.content).toBe(buildInitialPrompt(task));
     expect(listPendingMessages(task.id)).toHaveLength(1);
     expect(hasTurn(task.id)).toBe(true);

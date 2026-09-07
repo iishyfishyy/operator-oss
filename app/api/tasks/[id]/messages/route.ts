@@ -7,7 +7,7 @@ import { subscribe, publish } from "@/lib/events";
 import { sseOpened, sseClosed } from "@/lib/idle";
 import { ensureWorktree } from "@/lib/git";
 import { MAX_MESSAGE_CHARS } from "@/lib/promptLimits";
-import { buildInitialPrompt } from "@/lib/agents/shared";
+import { buildOpeningPrompt } from "@/lib/agents/shared";
 import type { TaskStreamEvent } from "@/lib/types";
 
 const TOO_LARGE = `Message too large (over ${Math.floor(MAX_MESSAGE_CHARS / 1024)} KB). Paste big text as an attachment instead — it'll be saved as a file and read on demand, keeping it out of the prompt.`;
@@ -83,13 +83,23 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       const fresh = getTask(id);
       if (!fresh) return new Response(JSON.stringify({ error: "not found" }), { status: 404 });
 
-      const isInitial = !fresh.started;
-      // The opening user turn IS the task (title + description), so the
-      // transcript shows what the session was asked to do; the system prompt
-      // (buildProjectContext) carries the same text alongside the metadata.
-      const userText = isInitial
-        ? buildInitialPrompt(fresh)
-        : String(text ?? "").trim();
+      // `started` is 0 both for a never-run task AND for the first turn after
+      // /clear (which resets it) — but those need different opening turns, so
+      // split on the generation. buildOpeningPrompt owns that choice:
+      //   gen 1  → the task itself (title + description + kickoff), so the
+      //            transcript's first bubble shows what the session was asked
+      //            to do; the system prompt carries the same text.
+      //   gen >1 → a short "you are continuing this task" resume prompt. The
+      //            handoff summary is NOT repeated here — buildProjectContext
+      //            already carries every prior generation's summary — and the
+      //            user's own text rides along instead of being discarded.
+      const isOpening = !fresh.started;
+      // A never-started task takes the inline launch below (it also has to
+      // create the worktree); a resumed generation goes through the ordinary
+      // resume path, which additionally catches the worktree up to base.
+      const isFirstEver = isOpening && fresh.generation <= 1;
+      const typed = String(text ?? "").trim();
+      const userText = isOpening ? buildOpeningPrompt(fresh, typed) : typed;
       if (!userText) return new Response(JSON.stringify({ error: "empty message" }), { status: 400 });
       if (userText.length > MAX_MESSAGE_CHARS) return new Response(JSON.stringify({ error: TOO_LARGE }), { status: 413 });
 
@@ -117,7 +127,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       }
 
       const gen = fresh.generation;
-      if (isInitial) {
+      if (isFirstEver) {
         const userMsg = addMessage(id, gen, "user", userText);
         // Mark running immediately, but defer `started` until Claude actually opens
         // a session — so a failed launch leaves the task cleanly retryable.
@@ -128,7 +138,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         startTurn(fresh, project, userText, "", controller);
       } else {
         // Resume: catch the worktree up, persist + echo the message, then hand off
-        // to the detached runner. Same path the queue drainer uses.
+        // to the detached runner. Same path the queue drainer uses — and the
+        // path a post-/clear generation takes too: its session_id is null, so
+        // the driver opens a fresh session even though this isn't a "resume"
+        // in the SDK sense.
         await startResumeTurn(fresh, project, userText, controller);
       }
       // The runner owns the claim now; its finally releases (or hands off) the slot.

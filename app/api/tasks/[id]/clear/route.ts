@@ -67,8 +67,11 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   addMessage(id, gen, "session_break", summary);
 
   // Fresh generation: new context window, session reset. started=0 so the next
-  // send opens with the generic start prompt; buildProjectContext supplies the
-  // task metadata and now includes the summary.
+  // send is treated as an opening turn — and because generation is now > 1 the
+  // messages route opens it with buildResumePrompt ("you are continuing this
+  // task"), not the kickoff the task got on day one. buildProjectContext
+  // supplies the task metadata and now includes the summary, so the resume
+  // turn itself doesn't repeat it.
   const next = updateTask(id, {
     generation: gen + 1,
     session_id: null,
