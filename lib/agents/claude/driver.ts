@@ -12,7 +12,7 @@ import type { Project, Task, StreamEvent, AskQuestion, TurnUsage } from "../../t
 import type { AgentDriver, OneShotResult } from "../types";
 import { claudeCapabilities } from "./capabilities";
 import { getSetting } from "../../store";
-import { createSuggestedTask, registerExposedService, resolveTitleRefs } from "../../agentTools";
+import { createSuggestedTask, registerExposedService, resolveTitleRefs, type SuggestSource } from "../../agentTools";
 import { SUGGEST_TASK, EXPOSE_SERVICE } from "../../agentToolDefs.mjs";
 import { waitForAnswer } from "../../asks";
 import { CLAUDE_CLI_PATH as CLAUDE_PATH } from "../../config";
@@ -40,7 +40,7 @@ import { claudeUsage } from "./usage";
 import { isBedrockConfigured, bedrockAuthRefreshCommand } from "./provider";
 import { startBedrockRefresh, getBedrockRefresh, cancelBedrockRefresh } from "./bedrock-auth";
 
-function orchestratorServer(project: Project, onSuggest: (title: string) => void, onExpose: (info: { name: string; url: string }) => void) {
+function orchestratorServer(project: Project, source: SuggestSource, onSuggest: (title: string) => void, onExpose: (info: { name: string; url: string }) => void) {
   // Titles created this session, so `blocked_by` can reference earlier suggestions
   // by title (not just id) — friendlier for the model when planning a roadmap.
   const createdByTitle = new Map<string, string>();
@@ -79,7 +79,7 @@ function orchestratorServer(project: Project, onSuggest: (title: string) => void
             description: args.description,
             priority: args.priority,
             blocked_by: resolveTitleRefs(args.blocked_by, createdByTitle),
-          });
+          }, source);
           // A null task = the project was deleted mid-turn; `text` already says so.
           if (task) {
             createdByTitle.set(args.title, task.id);
@@ -194,6 +194,11 @@ async function* runTurn(
       mcpServers: {
         orchestrator: orchestratorServer(
           project,
+          // Stamp every suggestion with the task + generation that proposed it,
+          // so the tray can group this turn's batch under its parent. The task
+          // snapshot is the one this turn started on, which IS the generation
+          // that did the thinking (a /clear can only land between turns).
+          { taskId: task.id, generation: task.generation },
           (t) => suggested.push(t),
           ({ name, url }) => queue.push({ type: "notice", content: `Service "${name}" is live at ${url}` })
         ),

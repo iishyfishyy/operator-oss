@@ -59,6 +59,8 @@ export interface TaskRow {
   session_cache_creation_tokens: number; // of that, cache writes
   depends_on: string[]; // task ids this task is blocked by until they're done
   auto_start: number; // 1 = start automatically when the last unfinished blocker is marked done
+  suggested_by_task_id: string | null; // task whose session proposed this suggestion (null = user-created / proposer deleted)
+  suggested_by_generation: number | null; // the proposer's session number (/clear generation) at the time
   context_tokens: number; // latest turn's input-side tokens ≈ current context-window occupancy
   context_pct: number; // context_tokens as a percent (0–100) of the model's window
 }

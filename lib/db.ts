@@ -82,6 +82,12 @@ export function init(db: Database.Database) {
       -- the moment its last unfinished blocker is marked done (lib/autoStart.ts).
       auto_start  INTEGER NOT NULL DEFAULT 0,
       position    INTEGER NOT NULL DEFAULT 0,
+      -- Provenance for tray suggestions (suggest_task): which task's session
+      -- proposed this one, and that task's /clear generation at the time. NULL
+      -- for user-created tasks. The FK nulls itself if the parent is deleted —
+      -- the suggestion outlives its proposer and just falls back to "Other".
+      suggested_by_task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL,
+      suggested_by_generation INTEGER,
       created_at  INTEGER NOT NULL,
       updated_at  INTEGER NOT NULL
     );
@@ -395,6 +401,14 @@ export function migrate(db: Database.Database) {
       )
     `);
   }
+
+  // Suggestion provenance (added after the tray shipped): the task + generation
+  // whose session called suggest_task. Pre-migration suggestions keep NULL and
+  // render under "Other" in the tray. SQLite allows a REFERENCES clause on ADD
+  // COLUMN as long as the default is NULL, which it is.
+  if (!taskCols.includes("suggested_by_task_id"))
+    db.exec("ALTER TABLE tasks ADD COLUMN suggested_by_task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL");
+  if (!taskCols.includes("suggested_by_generation")) db.exec("ALTER TABLE tasks ADD COLUMN suggested_by_generation INTEGER");
 
   // Orphan-reaping pid tracking for managed services (added after the services
   // table shipped; see lib/services.ts restoreServices).

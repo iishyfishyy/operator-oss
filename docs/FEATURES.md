@@ -51,8 +51,17 @@ Use a compact list or a full-width kanban board with Suggested, Not started, In 
 Needs input, and Done states. Tasks can depend on other tasks; **Start when unblocked**
 launches an opted-in task as soon as its final blocker is marked done.
 
-Agents can also suggest follow-up tasks while they work. Project recaps help restore your
-mental context when you return later.
+Agents can also suggest follow-up tasks while they work. Every suggestion records which
+task proposed it — and which of that task's sessions (its `/clear` generation) — so the
+tray groups them under a **From: ‹task› · session N** header instead of one flat pile when
+several sessions are planning at once. Suggestions from one planning call stay together
+and in the order they were proposed; clicking a header jumps to the task that made them.
+Anything with no recorded proposer (suggestions created before this shipped, or whose task
+was deleted) collects under **Other**, and a tray where nothing has a proposer shows no
+headers at all. The edit dialog for a suggestion repeats its origin as a
+"↳ suggested by ‹task›" line that opens the proposer.
+
+Project recaps help restore your mental context when you return later.
 
 ## Workspace tools
 
