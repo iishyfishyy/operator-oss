@@ -12,7 +12,8 @@ import {
 } from "./types";
 import { capsFor, agentLabel, findAgent } from "./agents";
 import { StatusDot, Avatar, Popover, AgentBadge, Skel } from "./shared";
-import { MessageView, SessionBreak } from "./Transcript";
+import { MessageView, SessionBreak, SuggestionBatch } from "./Transcript";
+import { suggestionBatches } from "./suggestions";
 import { Composer } from "./Composer";
 import { SessionRail } from "./SessionRail";
 import { ColResize, ColRail } from "./Layout";
@@ -159,6 +160,9 @@ export function SessionView({ project, task, agents, messages, running, blockedB
   const [view, setView] = useState<"chat" | "changes">("chat");
   const [clearEstimate, setClearEstimate] = useState<InternalUsageEstimate | null>(null);
   const sessions = useMemo(() => buildSessions(messages), [messages]);
+  // Turn-end summaries for turns that filed several suggestions, keyed by the
+  // message the block follows (see suggestionBatches).
+  const batches = useMemo(() => suggestionBatches(messages), [messages]);
   const hasSession = task.started === 1 || messages.length > 0;
   const awaiting = isAwaiting(task);
   const stableAnswer = useStableHandler(onAnswer);
@@ -311,7 +315,13 @@ export function SessionView({ project, task, agents, messages, running, blockedB
                 // is a plain continue-from-here turn (possibly carrying the
                 // user's own text), so it renders as an ordinary user bubble.
                 const isKickoff = si === 0 && mi === 0 && m.role === "user";
-                return <MessageView key={m.id} m={m} initial={isKickoff} hideWho={hideWho} running={running} agent={task.agent} agentLabel={agentLabel(agents, task.agent)} onAnswer={stableAnswer} onCancelQueued={stableCancelQueued} onClear={stableClear} onReconnect={stableReconnect} onRetry={stableRetry} />;
+                const batch = batches.get(m.id);
+                return (
+                  <Fragment key={m.id}>
+                    <MessageView m={m} initial={isKickoff} hideWho={hideWho} running={running} agent={task.agent} agentLabel={agentLabel(agents, task.agent)} onAnswer={stableAnswer} onCancelQueued={stableCancelQueued} onClear={stableClear} onReconnect={stableReconnect} onRetry={stableRetry} />
+                    {batch && <SuggestionBatch cards={batch} running={running} />}
+                  </Fragment>
+                );
               })}
             </div>
           ))}

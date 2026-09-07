@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { NextRequest } from "next/server";
 import { createProject, getTask, getTaskDeps } from "@/lib/store";
 import { createSuggestedTask, registerExposedService, resolveTitleRefs } from "@/lib/agentTools";
+import { formatSuggestedTaskText, parseSuggestedTaskId } from "@/lib/agents/shared";
 import { POST as suggestTask } from "@/app/api/internal/agent-tools/suggest-task/route";
 import { POST as exposeService } from "@/app/api/internal/agent-tools/expose-service/route";
 import { instanceServiceTokenOk } from "@/lib/cf-access.mjs";
@@ -38,6 +39,16 @@ describe("agentTools shared logic", () => {
     const foreign = createSuggestedTask(other, { title: "Foreign", description: "" }).task!;
     const c = createSuggestedTask(project, { title: "C", description: "", blocked_by: [a.id, "ghost", foreign.id] });
     expect(getTaskDeps(c.task!.id)).toEqual([a.id]);
+  });
+
+  it("the confirmation text round-trips the created task id (what the transcript card is keyed by)", () => {
+    const project = createProject({ name: "Round trip" });
+    const { task, text } = createSuggestedTask(project, { title: "Wire it added to the project tray (id: not-this). up", description: "", blocked_by: ["nope"] });
+    // Parses back the REAL id even with a dependency note appended and an
+    // "(id: …)"-shaped title in the way — the format is ours, so it's exact.
+    expect(parseSuggestedTaskId(text)).toBe(task!.id);
+    expect(parseSuggestedTaskId(formatSuggestedTaskText("Any", "abc_-9"))).toBe("abc_-9");
+    expect(parseSuggestedTaskId("Could not add the task: the project no longer exists.")).toBeUndefined();
   });
 
   it("resolveTitleRefs maps session titles to ids and passes ids through", () => {

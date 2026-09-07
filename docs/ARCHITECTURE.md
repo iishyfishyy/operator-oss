@@ -187,6 +187,34 @@ is a per-project timestamp in the localStorage prefs blob (`usePrefs`), advanced
 IntersectionObserver on the tray container and frozen for the life of the mounted tray so
 the pills don't vanish out from under the eye that's reading them.
 
+The transcript side of the same link: a `suggest_task` call's persisted tool message carries
+a `suggestion: { title, taskId }` (`ToolSuggestion` in `lib/types.ts`). The title comes from
+the tool input via `describeToolUse()`; the id can't — the MCP handler never sees the
+tool_use id it's answering — so it travels in the tool **result** text (`formatSuggestedTaskText`
+/ `parseSuggestedTaskId` in `lib/agents/shared.ts`, the one place both ends of the format
+live) and each driver lifts it onto its `tool_result` event as `taskId`: the Claude driver
+for tool_use ids it saw go to `suggest_task`, the Codex normalizer for `orchestrator`-server
+MCP items (which also render with Claude's title instead of the generic `⚙ server: tool`
+line), the e2e mock driver directly. The runner merges it into the row's `ToolData` and
+publishes `suggested` right then rather than at turn end — so the task list refreshes while
+the turn is live, and a driver that never emits a trailing `suggested` event (Codex) still
+updates the tray.
+
+`SuggestionChip` (`app/orchestrator/Transcript.tsx`) renders that card against the project's
+task list, which reaches it through `SuggestionContext` rather than props: `MessageView` is
+memoized on the message alone, and only the chips should re-render when tasks change. The
+context value (`useSuggestionActions`, provided once in `Orchestrator.tsx`) is a by-id index
+of the selected project's tasks plus the tray's handlers behind ref-backed stable functions.
+A chip resolves its state from the index — in the tray, accepted (with status), gone — with
+two guards against reading "missing" as "dismissed": `ready` is false until the project's
+tasks have loaded, and a card filed within the last half-minute by a still-running turn
+reads "adding…" (the `suggested` event's reload is in flight) rather than dismissed. Inline rename is a `PATCH
+/api/tasks/[id]` of `title` via `renameTask()` in `useOrchestrator`, optimistic so chip and
+tray move together. `suggestionBatches()` (`suggestions.ts`, pinned by
+`tests/suggestionChips.test.ts`) keys the "Suggested this session" block by the last message
+of any turn — user message to user message, `/clear` breaks and queued bubbles included —
+that filed two or more suggestions.
+
 ### Adding a third agent (e.g. Gemini, Cursor)
 
 Implement the `AgentDriver` interface in `lib/agents/<id>/driver.ts` (`runTurn()` is the

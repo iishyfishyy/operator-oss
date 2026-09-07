@@ -1,7 +1,7 @@
 "use client";
 
-import { memo, useState } from "react";
-import type { ToolData, ToolPeek, AskQuestion, AskAnswers } from "@/lib/types";
+import { createContext, memo, useContext, useEffect, useMemo, useRef, useState } from "react";
+import type { ToolData, ToolPeek, ToolSuggestion, AskQuestion, AskAnswers } from "@/lib/types";
 import { Icon } from "../icons";
 import { Markdown } from "../Markdown";
 import { clockTime, diffCls, splitAttachments, type MsgAttachment } from "./format";
@@ -9,8 +9,182 @@ import { CONTEXT_OVERFLOW_NOTICE } from "@/lib/promptLimits";
 import { AUTH_EXPIRED_NOTICE } from "@/lib/authFailure";
 import { USAGE_LIMIT_NOTICE } from "@/lib/usageLimit";
 import { APPROVAL_BLOCKED_NOTICE } from "@/lib/approvalFailure";
-import type { Msg } from "./types";
+import type { Msg, TaskRow } from "./types";
+import type { SuggestionCard } from "./suggestions";
 import { Avatar } from "./shared";
+
+// ---------- suggestion chips ----------
+//
+// A suggest_task tool card renders as a LIVE chip rather than a frozen tool
+// line: the created task's current title (read from the project's task list, so
+// a rename made in the tray or the edit modal shows here too), click-to-rename,
+// the edit modal, and the tray's own Add / Start / Dismiss — so a batch of
+// suggestions can be curated from the session that proposed them without
+// leaving the transcript. The task list and handlers arrive through a context
+// rather than props: MessageView is memoized on the message alone, and only the
+// chips (never the surrounding transcript) should re-render when tasks change.
+export interface SuggestionActions {
+  /** The selected project's tasks (real + suggested), by id. */
+  byId: Map<string, TaskRow>;
+  /** False until the task list has loaded — before that "missing" means nothing yet. */
+  ready: boolean;
+  onRename: (id: string, title: string) => void;
+  onEdit: (id: string) => void;
+  onAccept: (id: string) => void;
+  onStart: (id: string) => void;
+  onDismiss: (id: string) => void;
+  /** Jump to a suggestion that has since been added / started. */
+  onOpen: (id: string) => void;
+}
+export const SuggestionContext = createContext<SuggestionActions | null>(null);
+
+/**
+ * Build the context value: the by-id index is memoized on the task list and the
+ * handlers are ref-backed, so the value (and every chip) only re-renders when
+ * the tasks actually change — the shell passes fresh inline handlers per render.
+ */
+export function useSuggestionActions(tasks: TaskRow[], ready: boolean, handlers: Omit<SuggestionActions, "byId" | "ready">): SuggestionActions {
+  const ref = useRef(handlers);
+  ref.current = handlers;
+  const byId = useMemo(() => new Map(tasks.map((t) => [t.id, t])), [tasks]);
+  return useMemo(
+    () => ({
+      byId,
+      ready,
+      onRename: (id, title) => ref.current.onRename(id, title),
+      onEdit: (id) => ref.current.onEdit(id),
+      onAccept: (id) => ref.current.onAccept(id),
+      onStart: (id) => ref.current.onStart(id),
+      onDismiss: (id) => ref.current.onDismiss(id),
+      onOpen: (id) => ref.current.onOpen(id),
+    }),
+    [byId, ready]
+  );
+}
+
+const STATUS_BADGE: Record<string, string> = {
+  not_started: "added",
+  in_progress: "in progress",
+  on_hold: "on hold",
+  done: "done",
+  cancelled: "cancelled",
+};
+
+// The chip's states, resolved against the task list:
+//   tray      — still a suggestion: rename, Edit…, Add, Start, Dismiss
+//   accepted  — added or started: rename, Edit…, its status, Open
+//   pending   — created moments ago by the live turn; the list hasn't caught up
+//   gone      — hard-deleted (dismissed from anywhere): greyed, read-only
+//   unknown   — no task list yet (loading) or no provider: title only
+type ChipState = "tray" | "accepted" | "pending" | "gone" | "unknown";
+
+// How long after a card lands a missing task still reads as "adding…" rather
+// than "dismissed" while its turn runs. The `suggested` event's task-list reload
+// is in flight for milliseconds; the window just has to outlast it, and stay
+// short enough that a card from an earlier turn never borrows the excuse.
+const PENDING_WINDOW_MS = 30_000;
+
+export function SuggestionChip({ suggestion, running, ts }: { suggestion: ToolSuggestion; running?: boolean; ts?: number }) {
+  const ctx = useContext(SuggestionContext);
+  const taskId = suggestion.taskId;
+  const task = taskId && ctx ? ctx.byId.get(taskId) : undefined;
+  const justFiled = !!running && (ts == null || Date.now() - ts < PENDING_WINDOW_MS);
+  const state: ChipState = task
+    ? task.suggested ? "tray" : "accepted"
+    : !ctx || !ctx.ready || !taskId ? "unknown"
+    : justFiled ? "pending" : "gone";
+  const title = task?.title || suggestion.title || "(untitled)";
+  const canEdit = !!ctx && !!taskId && (state === "tray" || state === "accepted");
+
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (editing) inputRef.current?.select();
+  }, [editing]);
+  const begin = () => {
+    if (!canEdit) return;
+    setDraft(title);
+    setEditing(true);
+  };
+  const commit = () => {
+    setEditing(false);
+    const next = draft.trim();
+    if (next && next !== title && taskId) ctx?.onRename(taskId, next);
+  };
+
+  const badge =
+    state === "gone" ? "dismissed"
+    : state === "pending" ? "adding…"
+    : state === "accepted" && task ? STATUS_BADGE[task.status] ?? task.status
+    : null;
+
+  return (
+    <div className={`sug-chip is-${state}`} data-task-id={taskId}>
+      <span className="sug-chip-glyph" aria-hidden>✦</span>
+      {editing ? (
+        <input
+          ref={inputRef}
+          className="sug-chip-input"
+          value={draft}
+          autoFocus
+          aria-label="Task title"
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") { e.preventDefault(); commit(); }
+            else if (e.key === "Escape") { e.preventDefault(); setEditing(false); }
+          }}
+        />
+      ) : (
+        <button className="sug-chip-title" onClick={begin} disabled={!canEdit} title={canEdit ? "Click to rename" : undefined}>
+          {title}
+        </button>
+      )}
+      {badge && <span className="sug-chip-badge">{badge}</span>}
+      {canEdit && ctx && taskId && (
+        <span className="sug-chip-actions">
+          <button className="sug-dismiss" title="Edit title & description" aria-label="Edit task" onClick={() => ctx.onEdit(taskId)}>{Icon.edit()}</button>
+          {state === "tray" ? (
+            <>
+              <button className="sug-add" title="Add to task list to start later" onClick={() => ctx.onAccept(taskId)}>{Icon.plus()} Add</button>
+              <button className="sug-btn" onClick={() => ctx.onStart(taskId)}>{Icon.play()} Start</button>
+              <button className="sug-dismiss" title="Dismiss" aria-label="Dismiss suggestion" onClick={() => ctx.onDismiss(taskId)}>{Icon.x()}</button>
+            </>
+          ) : (
+            <button className="sug-add" title="Open this task" onClick={() => ctx.onOpen(taskId)}>{Icon.external()} Open</button>
+          )}
+        </span>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The "Suggested this session" summary: rendered after the last message of a
+ * turn that filed two or more suggestions (see suggestionBatches), listing all
+ * of them as one compact, collapsible unit — the place to fix five titles in a
+ * row after a planning turn. The same chips as the inline cards, so both stay
+ * in step by construction.
+ */
+export function SuggestionBatch({ cards, running }: { cards: SuggestionCard[]; running?: boolean }) {
+  const [open, setOpen] = useState(true);
+  const n = cards.length;
+  return (
+    <div className="sug-batch">
+      <button className="sug-batch-h" aria-expanded={open} onClick={() => setOpen((o) => !o)} title={open ? "Collapse" : `Show ${n} suggestions`}>
+        {Icon.chevDown({ className: `sb-chev ${open ? "" : "closed"}` })}
+        {Icon.spark()} Suggested this session
+        <span className="sb-count">{n} task{n === 1 ? "" : "s"}</span>
+      </button>
+      {open && (
+        <div className="sug-batch-list">
+          {cards.map((c) => <SuggestionChip key={c.msgId} suggestion={c.suggestion} running={running} ts={c.ts} />)}
+        </div>
+      )}
+    </div>
+  );
+}
 
 // The always-visible "peek" tier — Claude Code's `⎿` line. Counts show no
 // content; diffs/snippets show a capped hunk with a clickable "+N more" that
@@ -199,6 +373,12 @@ export const MessageView = memo(function MessageView({ m, initial, hideWho, runn
     try { data = JSON.parse(m.content) as ToolData; } catch { data = { title: m.content }; }
     if (data.ask) {
       return <div className="msg msg-tool"><AskView data={data} agentLabel={agentLabel} onAnswer={(answers) => onAnswer?.(data.ask?.id || m.toolId || "", data.ask?.questions ?? [], answers)} /></div>;
+    }
+    // A suggest_task call that created a task renders as its live chip. One
+    // that didn't (the project vanished mid-turn — or a card persisted before
+    // the id was carried) keeps the plain tool line with its result text.
+    if (data.suggestion?.taskId) {
+      return <div className="msg msg-tool"><SuggestionChip suggestion={data.suggestion} running={running} ts={m.ts} /></div>;
     }
     return <div className="msg msg-tool"><ToolView data={data} /></div>;
   }

@@ -213,6 +213,37 @@ describe("driver contract through the runner", () => {
     expect(events.map((e) => e.type).slice(-2)).toEqual(["done", "turn_end"]);
   });
 
+  it("persists the created task id on a suggest_task card and announces it mid-turn", async () => {
+    const project = createProject({ name: "Suggest card" });
+    const task = createTask({ project_id: project.id, title: "Planner", description: "" });
+    // What every driver emits for a suggest_task call: the tool event carries the
+    // proposed title, the result (once the tool returned) carries the created
+    // task's id — parsed from the confirmation text on the real drivers.
+    const created = createTask({ project_id: project.id, title: "Do the thing", description: "", suggested: true });
+    script([
+      { type: "session", sessionId: "s-1" },
+      { type: "tool", id: "t1", title: "✦ Suggested a task", detail: "{}", suggestion: { title: "Do the thing" } },
+      { type: "tool_result", id: "t1", content: `Suggested task "Do the thing" added to the project tray (id: ${created.id}).`, isError: false, taskId: created.id },
+      { type: "assistant", content: "Filed one follow-up." },
+      { type: "done", sessionId: "s-1" },
+    ]);
+
+    const { events, done } = collectEvents(task.id);
+    await startResumeTurn(task, project, "plan it");
+    await done;
+
+    // The persisted card links to its task — a reload must be able to find it.
+    const toolRow = listMessages(task.id).find((m) => m.role === "tool")!;
+    expect((JSON.parse(toolRow.content) as ToolData).suggestion).toEqual({ title: "Do the thing", taskId: created.id });
+    // The live stream carried the id too, and the runner raised `suggested` the
+    // moment the result landed — before the assistant text, not at turn end —
+    // so the task list (which the chip reads) refreshes while the turn is live.
+    const types = events.map((e) => e.type);
+    expect((events.find((e) => e.type === "tool_result") as { taskId?: string }).taskId).toBe(created.id);
+    expect(types.indexOf("suggested")).toBeGreaterThan(types.indexOf("tool_result"));
+    expect(types.indexOf("suggested")).toBeLessThan(types.indexOf("assistant"));
+  });
+
   it("persists a driver error event as a durable system line and still settles the task", async () => {
     const project = createProject({ name: "ContractErr" });
     const task = createTask({ project_id: project.id, title: "T", description: "" });

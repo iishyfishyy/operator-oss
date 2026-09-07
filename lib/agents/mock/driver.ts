@@ -11,7 +11,9 @@
 //   e2e:write=<relpath>:<content>   write a file into the task's worktree
 //   e2e:sleep=<ms>                  hold the turn open (Stop / queue tests)
 //   e2e:fail=<message>              end the turn with an error event
-//   e2e:suggest=<title>             create a suggested task + emit "suggested"
+//   e2e:suggest=<title>             file a suggested task as a suggest_task tool
+//                                   card (+ result carrying the created id, so
+//                                   the transcript chip renders) + "suggested"
 //   e2e:ask=<question>|<opt>|<opt>  park on an AskUserQuestion card until the
 //                                   user answers (a Stop dismisses it), then
 //                                   keep working — mirrors the Claude hook
@@ -30,6 +32,7 @@ import type {
   StreamEvent,
 } from "../types";
 import { createSuggestedTask } from "@/lib/agentTools";
+import { describeToolUse, parseSuggestedTaskId } from "@/lib/agents/shared";
 import { waitForAnswer } from "@/lib/asks";
 import { MOCK_CAPABILITIES } from "./capabilities";
 
@@ -149,9 +152,16 @@ export const mockDriver: AgentDriver = {
 
     for (const m of instructionText.matchAll(/e2e:suggest=([^\n]+)/g)) {
       const title = m[1].trim();
-      // Same provenance stamp the real drivers write, so the e2e tray exercises
-      // the grouped-by-proposer rendering rather than the ungrouped fallback.
-      createSuggestedTask(project, { title, description: "Suggested by the mock agent (e2e)." }, { taskId: task.id, generation: task.generation });
+      // Rendered the way the real drivers do it: a suggest_task tool card whose
+      // result names the created task, so the transcript's suggestion chip
+      // (rename / Add / Start / Dismiss) is exercised end-to-end. Same
+      // provenance stamp too, so the e2e tray exercises the grouped-by-proposer
+      // rendering rather than the ungrouped fallback.
+      const id = `mock-tool-${++toolN}`;
+      const desc = describeToolUse("mcp__orchestrator__suggest_task", { title, description: "Suggested by the mock agent (e2e)." });
+      yield { type: "tool", id, title: desc.title, detail: desc.detail, suggestion: desc.suggestion };
+      const { task: created, text } = createSuggestedTask(project, { title, description: "Suggested by the mock agent (e2e)." }, { taskId: task.id, generation: task.generation });
+      yield { type: "tool_result", id, content: text, isError: !created, taskId: created ? parseSuggestedTaskId(text) : undefined };
       yield { type: "suggested", title };
     }
 

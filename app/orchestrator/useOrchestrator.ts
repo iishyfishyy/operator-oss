@@ -537,6 +537,21 @@ export function useOrchestrator() {
     setEditId(null);
   };
 
+  // Inline rename — the transcript's suggestion chips (and anything else that
+  // edits just the title). Optimistic so the chip and the tray move together
+  // on the keystroke; a failed PATCH reloads the list to undo the guess.
+  const renameTask = useCallback(async (id: string, title: string) => {
+    const next = title.trim();
+    if (!next) return;
+    setTasks((prev) => prev.map((x) => (x.id === id ? { ...x, title: next } : x)));
+    try {
+      const fresh = await jsend<TaskRow>(`/api/tasks/${id}`, "PATCH", { title: next });
+      setTasks((prev) => prev.map((x) => (x.id === id ? { ...x, ...fresh } : x)));
+    } catch {
+      if (selProjRef.current) void loadTasks(selProjRef.current, false);
+    }
+  }, [loadTasks]);
+
   // Hard-deletes the task (and its worktree/branch server-side), closes the edit
   // modal, and drops it from the selection if it was the one being viewed.
   const removeTask = async (id: string) => {
@@ -663,7 +678,7 @@ export function useOrchestrator() {
     // actions
     setSelTask, fetchRecap, runTurn, answerQuestion, stopTurn, cancelQueued, resolveConflictsWithAI,
     selectProject, jumpToNeedsYou, goToTask, clearSession, setStatus, setPriority, setModel,
-    setReasoning, setPermission, setSendContext, createTask, saveTask, removeTask, moveTask, startSuggestion, acceptSuggestion,
+    setReasoning, setPermission, setSendContext, createTask, saveTask, renameTask, removeTask, moveTask, startSuggestion, acceptSuggestion,
     dismissSuggestion, dismissSuggestions, saveContext, createProject, reorderProjects, removeProject, setDeprecated,
     resetSettings, setProjectDefaultAgent,
   };

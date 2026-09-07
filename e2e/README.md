@@ -37,7 +37,7 @@ npx playwright test e2e/03-views.spec.ts   # one spec (post-01 specs self-onboar
   | `e2e:write=<relpath>:<content>` | write that file in the task worktree |
   | `e2e:sleep=<ms>` | hold the turn open (Stop / queueing tests) |
   | `e2e:fail=<message>` | end the turn with an error event |
-  | `e2e:suggest=<title>` | create a suggested task + emit the event |
+  | `e2e:suggest=<title>` | file a suggested task the way the real drivers do: a `suggest_task` tool card whose result carries the created id (so the transcript's suggestion chip renders), then the `suggested` event; one per line for a batch |
   | `e2e:ask=<question>\|<opt>\|<opt>` | park on an AskUserQuestion card until answered (a Stop dismisses it), then run the rest — so `e2e:ask=… e2e:sleep=3000` keeps working 3s after the answer |
   | *(none)* | append the prompt to `AGENT_NOTES.md` (so every turn has a diff) |
 
@@ -48,7 +48,7 @@ npx playwright test e2e/03-views.spec.ts   # one spec (post-01 specs self-onboar
 | `01-onboarding.spec.ts` | first-run wizard: connect agent → verify → tutorial seeded (must run first — needs the untouched fresh DB) |
 | `02-core-flow.spec.ts` | the core loop through the UI: new project → new task → session runs → transcript streams → diff → merge to main → file really lands on the base branch |
 | `03-views.spec.ts` | list ⇄ board (kanban) toggle, status columns, card placement |
-| `04-turn-behaviors.spec.ts` | mid-turn queueing, Stop, failed-turn notices, suggestions tray, session resume |
+| `04-turn-behaviors.spec.ts` | mid-turn queueing, Stop, failed-turn notices, suggestions tray + the transcript's suggestion chips (rename / dismiss / Add, the "Suggested this session" block), session resume |
 | `05-api-smoke.spec.ts` | REST contracts: diff/sync shapes, `/clear` generation lineage, agent registry, hard deletes |
 
 The suite runs serially (one shared app instance + SQLite DB). Every spec after

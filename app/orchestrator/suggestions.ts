@@ -1,4 +1,5 @@
-import type { TaskRow } from "./types";
+import type { Msg, TaskRow } from "./types";
+import type { ToolData, ToolSuggestion } from "@/lib/types";
 
 // Grouping for the "Suggested by agents" tray. Every suggestion carries the task
 // (and that task's /clear generation) whose session proposed it — see
@@ -125,3 +126,63 @@ export const isNewSuggestion = (t: TaskRow, since: number) => (t.created_at ?? 0
 /** How many of these suggestions are new — the "N new" count on the tray header. */
 export const countNewSuggestions = (suggested: TaskRow[], since: number) =>
   suggested.reduce((n, t) => n + (isNewSuggestion(t, since) ? 1 : 0), 0);
+
+// ---------- suggestions as seen from the proposer's transcript ----------
+//
+// A suggest_task call is persisted as a "tool" message whose ToolData carries a
+// `suggestion` (the proposed title + the created task's id, see lib/types.ts).
+// The transcript renders those as live chips keyed by the id against the
+// project's task list — so a rename made anywhere shows everywhere, and a
+// deleted suggestion reads as dismissed. These helpers are the pure half.
+
+/** One suggest_task card in a transcript: the message it lives on + its payload. */
+export interface SuggestionCard {
+  msgId: string;
+  suggestion: ToolSuggestion;
+  /** When the card landed (the row's created_at), for the chip's "just filed" grace. */
+  ts?: number;
+}
+
+/** The suggestion payload of a tool message, or null for any other message. */
+export function parseSuggestionCard(m: Msg): ToolSuggestion | null {
+  // Cheap pre-check: JSON.parse over every tool row on every render would be
+  // wasteful in a long transcript, and only suggest_task rows carry the key.
+  if (m.role !== "tool" || !m.content.includes('"suggestion"')) return null;
+  try {
+    const data = JSON.parse(m.content) as ToolData;
+    return data.suggestion && typeof data.suggestion.title === "string" ? data.suggestion : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Batches for the "Suggested this session" summary: a turn (the run of messages
+ * from one user message to the next) that filed TWO OR MORE suggestions gets one
+ * block after its last message, listing every chip together — so a planning
+ * turn's five tasks read as one compact unit at the end instead of five cards
+ * scattered among the tool calls that produced them. Keyed by the id of the
+ * turn's last message, which is where the block renders. A single suggestion
+ * needs no summary; its inline chip already is the summary.
+ */
+export function suggestionBatches(messages: Msg[]): Map<string, SuggestionCard[]> {
+  const out = new Map<string, SuggestionCard[]>();
+  let cards: SuggestionCard[] = [];
+  let lastId: string | null = null;
+  const flush = () => {
+    if (lastId && cards.length >= 2) out.set(lastId, cards);
+    cards = [];
+    lastId = null;
+  };
+  for (const m of messages) {
+    if (m.role === "user" || m.role === "session_break" || m.role === "queued") {
+      flush();
+      if (m.role !== "user") continue;
+    }
+    lastId = m.id;
+    const suggestion = parseSuggestionCard(m);
+    if (suggestion) cards.push({ msgId: m.id, suggestion, ts: m.ts });
+  }
+  flush();
+  return out;
+}

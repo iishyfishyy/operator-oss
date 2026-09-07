@@ -16,7 +16,7 @@ import { exposeService } from "./services";
 import { publish } from "./events";
 import { waitForAnswer, settleAsk } from "./asks";
 import { turnSignal } from "./abort";
-import { formatAnswers } from "./agents/shared";
+import { formatAnswers, formatSuggestedTaskText } from "./agents/shared";
 import { resolveConnectedAgent } from "./agents/connections";
 import { suggestionPolicy } from "./suggestionPolicy";
 import { track } from "./analytics";
@@ -112,7 +112,9 @@ export function createSuggestedTask(project: Project, input: SuggestTaskInput, s
   });
   return {
     task,
-    text: `Suggested task "${input.title}" added to the project tray (id: ${task.id}).${depNote}`,
+    // The "(id: …)" is load-bearing: drivers parse it back out of the tool result
+    // to tag the transcript card with the created task (parseSuggestedTaskId).
+    text: `${formatSuggestedTaskText(input.title, task.id)}${depNote}`,
   };
 }
 

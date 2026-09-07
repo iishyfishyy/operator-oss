@@ -271,7 +271,7 @@ async function run(task: Task, project: Project, userText: string, syncNote: str
         const m = addMessage(id, gen, "assistant", ev.content);
         publish(id, { ...ev, msgId: m.id, generation: gen, ts: m.created_at });
       } else if (ev.type === "tool") {
-        const data: ToolData = { title: ev.title, detail: ev.detail, peek: ev.peek, diff: ev.diff };
+        const data: ToolData = { title: ev.title, detail: ev.detail, peek: ev.peek, diff: ev.diff, suggestion: ev.suggestion };
         const m = addMessage(id, gen, "tool", JSON.stringify(data));
         toolMsgs[ev.id] = { dbId: m.id, data };
         publish(id, { ...ev, msgId: m.id, generation: gen, ts: m.created_at });
@@ -281,8 +281,17 @@ async function run(task: Task, project: Project, userText: string, syncNote: str
           t.data.result = ev.content;
           t.data.isError = ev.isError;
           if (ev.peek) t.data.peek = ev.peek;
+          // A suggest_task result names the task it created: persist the id on
+          // the card so it can find its task after a reload, then tell every
+          // viewer NOW rather than at turn end — the chip reads the task list,
+          // and a driver that never emits a trailing "suggested" event (Codex)
+          // would otherwise leave the tray stale until the next reload.
+          if (ev.taskId) {
+            t.data.suggestion = { title: t.data.suggestion?.title ?? "", taskId: ev.taskId };
+          }
           updateMessage(t.dbId, JSON.stringify(t.data));
           publish(id, { ...ev, msgId: t.dbId, generation: gen });
+          if (ev.taskId) publish(id, { type: "suggested", title: t.data.suggestion?.title ?? "" });
         }
       } else if (ev.type === "ask") {
         // Persist the question (with its id) so a page reload can re-render

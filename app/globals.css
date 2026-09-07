@@ -593,6 +593,31 @@ button{font-family:inherit;color:inherit;cursor:pointer;border:none;background:n
 .sug-add svg{width:13px;height:13px;}
 .sug-dismiss{flex:0 0 auto;width:22px;height:22px;border-radius:6px;display:grid;place-items:center;color:var(--ink-3);}
 .sug-dismiss:hover{background:rgba(194,96,60,.12);color:var(--accent-ink);}
+/* A suggest_task card in the proposer's transcript, rendered live: the created
+   task's CURRENT title (click to rename), the tray's Add / Start / Dismiss, and
+   an Open once it's been accepted — greyed + "dismissed" once the task is gone.
+   See SuggestionChip in app/orchestrator/Transcript.tsx. */
+.sug-chip{display:flex;align-items:center;gap:7px;min-height:34px;padding:5px 10px;border-radius:var(--r);border:1px solid rgba(194,96,60,.35);background:var(--accent-soft);font-size:12.5px;}
+.sug-chip .sug-chip-glyph{flex:0 0 auto;color:var(--accent-ink);font-size:12px;}
+.sug-chip .sug-chip-title{flex:1 1 auto;min-width:0;text-align:left;font:inherit;font-weight:600;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:2px 4px;margin:-2px -4px;border-radius:4px;}
+.sug-chip .sug-chip-title:not(:disabled){cursor:text;}
+.sug-chip .sug-chip-title:not(:disabled):hover{background:rgba(194,96,60,.12);}
+.sug-chip .sug-chip-input{flex:1 1 auto;min-width:0;font:inherit;font-weight:600;color:var(--ink);background:var(--surface);border:1px solid var(--accent);border-radius:4px;padding:1px 4px;outline:none;}
+.sug-chip .sug-chip-badge{flex:0 0 auto;font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-3);border:1px solid var(--line-strong);padding:1px 6px;border-radius:99px;white-space:nowrap;}
+.sug-chip .sug-chip-actions{flex:0 0 auto;display:flex;align-items:center;gap:5px;margin-left:auto;}
+.sug-chip.is-gone{opacity:.55;border-style:dashed;background:var(--surface-2);}
+.sug-chip.is-gone .sug-chip-title{text-decoration:line-through;color:var(--ink-3);}
+.sug-chip.is-accepted{border-color:var(--line-strong);background:var(--surface-2);}
+/* "Suggested this session": one collapsible block after a turn that filed
+   several suggestions, holding all of its chips (SuggestionBatch). */
+.sug-batch{margin:2px 0 12px;border-radius:var(--r-lg);border:1px dashed var(--accent);background:var(--accent-soft);overflow:hidden;}
+.sug-batch-h{display:flex;align-items:center;gap:6px;width:100%;padding:8px 12px;font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--accent-ink);text-align:left;}
+.sug-batch-h svg{width:12px;height:12px;flex:0 0 auto;}
+.sug-batch-h .sb-chev{transition:transform .14s;}
+.sug-batch-h .sb-chev.closed{transform:rotate(-90deg);}
+.sug-batch-h .sb-count{margin-left:auto;font-weight:600;opacity:.75;text-transform:none;letter-spacing:0;}
+.sug-batch-list{display:flex;flex-direction:column;gap:6px;padding:0 10px 10px;}
+.sug-batch-list .sug-chip{background:var(--surface);}
 /* One suggestion group: "From: <parent> · session N" plus the freshness signals
    (age of the newest member, how many are new since you last looked) and, when
    the group has gone stale, why + a bulk dismiss. Shared verbatim by the list

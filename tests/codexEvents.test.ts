@@ -28,6 +28,27 @@ function runFixture(name: string): StreamEvent[] {
 const byType = (evs: StreamEvent[], t: StreamEvent["type"]) => evs.filter((e) => e.type === t);
 
 describe("codex event mapping", () => {
+  it("renders the orchestrator's suggest_task like Claude does and lifts the created id off its result", () => {
+    const state = newState();
+    const args = { title: "Split the widget factory", description: "…", priority: "med" };
+    const started = { type: "item.started", item: { id: "m1", type: "mcp_tool_call", server: "orchestrator", tool: "suggest_task", arguments: args, status: "in_progress" } };
+    const completed = {
+      type: "item.completed",
+      item: { ...started.item, status: "completed", result: { content: [{ type: "text", text: 'Suggested task "Split the widget factory" added to the project tray (id: task_42).' }], structured_content: null } },
+    };
+    const evs = [...mapThreadEvent(started as unknown as ThreadEvent, state), ...mapThreadEvent(completed as unknown as ThreadEvent, state)];
+    // Same card the Claude driver emits (title + proposed-title payload)…
+    expect(evs[0]).toMatchObject({ type: "tool", id: "m1", title: "✦ Suggested a task", suggestion: { title: "Split the widget factory" } });
+    // …and the result names the task it created, so the runner can persist the link.
+    expect(evs[1]).toMatchObject({ type: "tool_result", id: "m1", isError: false, taskId: "task_42" });
+    // Other MCP servers keep the generic line and never grow a task id.
+    const foreign = runFixture("reasoning-mcp-search.jsonl");
+    const mcpTools = byType(foreign, "tool") as Extract<StreamEvent, { type: "tool" }>[];
+    expect(mcpTools.find((t) => t.id === "item_m0")).toMatchObject({ title: "⚙ docs: lookup" });
+    expect(mcpTools.find((t) => t.id === "item_m0")?.suggestion).toBeUndefined();
+    expect((byType(foreign, "tool_result") as Extract<StreamEvent, { type: "tool_result" }>[]).every((r) => r.taskId === undefined)).toBe(true);
+  });
+
   it("maps a command + file_change + message + usage turn", () => {
     const evs = runFixture("command-file-message.jsonl");
 
