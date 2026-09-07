@@ -8,7 +8,8 @@ import { agentLabel } from "./agents";
 import { StatusDot, PriPill, SearchBar, AgentBadge } from "./shared";
 import { TaskCardSkeleton } from "./Layout";
 import { TaskBoard } from "./TaskBoard";
-import { groupSuggestions, showsGroupHeaders, suggestionGroupLabel } from "./suggestions";
+import { countNewSuggestions, groupSuggestions, isNewSuggestion } from "./suggestions";
+import { NewPill, SuggestionGroup, useTrayView } from "./SuggestionGroup";
 
 function TaskCard({ task, agents, selected, running, blockedBy, onSelect }: { task: TaskRow; agents: AgentsBundle; selected: boolean; running: boolean; blockedBy?: string[]; onSelect: () => void }) {
   const sessionCount = task.started ? task.generation : Math.max(0, task.generation - 1);
@@ -89,15 +90,20 @@ function useCollapsed(key: string, def: boolean) {
   return [collapsed, toggle] as const;
 }
 
-export function TasksColumn({ project, agents, tasks, suggested, selTaskId, running, blockedBy, width, loading, view, onSetView, onMoveTask, onSelectTask, onNewTask, onEditContext, onShowSessions, onShowRecap, onEditTask, onStartSuggestion, onAcceptSuggestion, onDismissSuggestion, onOpenParent, onCollapse, mobile, onBack }: {
+export function TasksColumn({ project, agents, tasks, suggested, selTaskId, running, blockedBy, width, loading, view, onSetView, onMoveTask, onSelectTask, onNewTask, onEditContext, onShowSessions, onShowRecap, onEditTask, onStartSuggestion, onAcceptSuggestion, onDismissSuggestion, onDismissSuggestions, onOpenParent, traySeenAt, traySeenReady, onTrayViewed, onCollapse, mobile, onBack }: {
   project: ProjectRow; agents: AgentsBundle; tasks: TaskRow[]; suggested: TaskRow[]; selTaskId: string | null; running: Set<string>; blockedBy: Map<string, string[]>; width: number; loading?: boolean;
   view: TaskView; onSetView: (v: TaskView) => void;
   onMoveTask: (id: string, patch: Partial<Pick<TaskRow, "status" | "suggested">>, orderedIds: string[]) => void;
   onSelectTask: (id: string) => void; onNewTask: () => void; onEditContext: () => void; onShowSessions: () => void; onShowRecap: () => void;
   onEditTask: (id: string) => void; onCollapse: () => void;
   onStartSuggestion: (id: string) => void; onAcceptSuggestion: (id: string) => void; onDismissSuggestion: (id: string) => void;
+  // Bulk dismiss ("Dismiss all" on a stale group) — same hard delete, one call.
+  onDismissSuggestions: (ids: string[]) => void;
   // Jump to the task a suggestion group came from (its header).
   onOpenParent: (id: string) => void;
+  // The project's "last looked at the tray" mark (see useTrayView), whether the
+  // prefs holding it have hydrated yet, and the callback that advances it.
+  traySeenAt: number | undefined; traySeenReady: boolean; onTrayViewed: (projectId: string) => void;
   mobile?: boolean; onBack?: () => void;
 }) {
   const [query, setQuery] = useState("");
@@ -124,7 +130,8 @@ export function TasksColumn({ project, agents, tasks, suggested, selTaskId, runn
   // header must still name its proposer when the proposer itself is filtered out.
   const allTasks = [...tasks, ...suggested];
   const sugGroups = groupSuggestions(shownSuggested, allTasks);
-  const sugHeaders = showsGroupHeaders(sugGroups);
+  const { newSince, trayRef } = useTrayView({ projectId: project.id, seenAt: traySeenAt, ready: traySeenReady, onViewed: onTrayViewed });
+  const newCount = countNewSuggestions(shownSuggested, newSince);
   const canSearch = tasks.length + suggested.length >= SEARCH_MIN;
   const noMatches = q && shown.length === 0 && shownSuggested.length === 0;
   return (
@@ -164,11 +171,12 @@ export function TasksColumn({ project, agents, tasks, suggested, selTaskId, runn
         <div className="board-wrap">
           {noMatches && <div className="search-empty">No tasks match “{query.trim()}”.</div>}
           <TaskBoard
-            tasks={shown} suggested={shownSuggested} allTasks={allTasks} agents={agents} selTaskId={selTaskId}
+            project={project} tasks={shown} suggested={shownSuggested} allTasks={allTasks} agents={agents} selTaskId={selTaskId}
             running={running} blockedBy={blockedBy} canDrag={!q}
             onSelect={onSelectTask} onEditTask={onEditTask} onMove={onMoveTask}
             onStartSuggestion={onStartSuggestion} onAcceptSuggestion={onAcceptSuggestion} onDismissSuggestion={onDismissSuggestion}
-            onOpenParent={onOpenParent}
+            onDismissSuggestions={onDismissSuggestions} onOpenParent={onOpenParent}
+            traySeenAt={traySeenAt} traySeenReady={traySeenReady} onTrayViewed={onTrayViewed}
           />
         </div>
       ) : (
@@ -184,29 +192,19 @@ export function TasksColumn({ project, agents, tasks, suggested, selTaskId, runn
           <TaskGroup label="Cancelled" tasks={groups.x} agents={agents} selTaskId={selTaskId} running={running} blockedBy={blockedBy} onSelect={onSelectTask} collapsible collapsed={cancelledCollapsed && !q} onToggle={toggleCancelled} />
         </div>
         {shownSuggested.length > 0 && (
-          <div className="suggest">
-            <div className="suggest-h">{Icon.spark()} Suggested by agents<span className="sp">{shownSuggested.length}</span></div>
+          <div className="suggest" ref={trayRef}>
+            <div className="suggest-h">
+              {Icon.spark()} Suggested by agents
+              {newCount > 0 && <span className="sh-new">{newCount} new</span>}
+              <span className="sp">{shownSuggested.length}</span>
+            </div>
             {sugGroups.map((g) => (
-              <div key={g.key} className="sug-group">
-                {sugHeaders && (
-                  g.parent ? (
-                    <button className="sug-from" onClick={() => onOpenParent(g.parent!.id)} title={`Open “${g.parent.title}” — the session that suggested these`}>
-                      <span className="sf-txt">{suggestionGroupLabel(g)}</span>
-                      <span className="sf-count">{g.tasks.length}</span>
-                      {Icon.chevRight({ className: "sf-go" })}
-                    </button>
-                  ) : (
-                    <div className="sug-from static" title="No record of which session proposed these">
-                      <span className="sf-txt">Other</span>
-                      <span className="sf-count">{g.tasks.length}</span>
-                    </div>
-                  )
-                )}
+              <SuggestionGroup key={g.key} group={g} variant="list" newSince={newSince} onOpenParent={onOpenParent} onDismissAll={onDismissSuggestions}>
                 {g.tasks.map((s) => (
                   <div key={s.id} className="sug">
                     <StatusDot status="not_started" />
                     <div className="sg-meta">
-                      <div className="sg-name">{s.title}</div>
+                      <div className="sg-name">{isNewSuggestion(s, newSince) && <NewPill />}{s.title}</div>
                       {s.description && <div className="sg-why">{s.description}</div>}
                     </div>
                     <button className="sug-dismiss" title="Edit title & description" onClick={() => onEditTask(s.id)}>{Icon.edit()}</button>
@@ -215,7 +213,7 @@ export function TasksColumn({ project, agents, tasks, suggested, selTaskId, runn
                     <button className="sug-dismiss" title="Dismiss" onClick={() => onDismissSuggestion(s.id)}>{Icon.x()}</button>
                   </div>
                 ))}
-              </div>
+              </SuggestionGroup>
             ))}
           </div>
         )}

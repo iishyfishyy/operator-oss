@@ -7,7 +7,8 @@ import { isAwaiting, relTime } from "./format";
 import { SEARCH_MIN, type ProjectRow, type TaskRow, type AgentsBundle, type TaskView } from "./types";
 import { agentLabel } from "./agents";
 import { StatusDot, PriPill, SearchBar, AgentBadge } from "./shared";
-import { groupSuggestions, showsGroupHeaders, suggestionGroupLabel, type SuggestionGroup } from "./suggestions";
+import { countNewSuggestions, groupSuggestions, isNewSuggestion } from "./suggestions";
+import { NewPill, SuggestionGroup, useTrayView } from "./SuggestionGroup";
 
 // The kanban alternative to the grouped task list (layout from the Claude
 // Design "Operator — Board View" study, rendered with the app's own tokens).
@@ -94,9 +95,9 @@ function dayBucket(ts: number): string {
   return "Earlier";
 }
 
-function BoardCard({ task, agents, selected, running, blockedBy, mini, dragging, canDrag, onSelect, onDragStart, onDragOverCard, onDropOnCard, onDragEnd, actions }: {
+function BoardCard({ task, agents, selected, running, blockedBy, mini, isNew, dragging, canDrag, onSelect, onDragStart, onDragOverCard, onDropOnCard, onDragEnd, actions }: {
   task: TaskRow; agents: AgentsBundle; selected: boolean; running: boolean; blockedBy?: string[];
-  mini?: boolean; dragging: boolean; canDrag: boolean;
+  mini?: boolean; isNew?: boolean; dragging: boolean; canDrag: boolean;
   onSelect: () => void; onDragStart: () => void; onDragOverCard: (e: React.DragEvent) => void;
   onDropOnCard: (e: React.DragEvent) => void; onDragEnd: () => void; actions?: ReactNode;
 }) {
@@ -124,7 +125,7 @@ function BoardCard({ task, agents, selected, running, blockedBy, mini, dragging,
     >
       <div className="bc-top">
         <StatusDot status={task.status} running={running} awaiting={awaiting} />
-        <h3 className="bc-title">{task.title}</h3>
+        <h3 className="bc-title">{isNew && <NewPill />}{task.title}</h3>
         {!mini && <PriPill p={task.priority} />}
       </div>
       <div className="bc-meta">
@@ -152,7 +153,8 @@ function BoardCard({ task, agents, selected, running, blockedBy, mini, dragging,
   );
 }
 
-export function TaskBoard({ tasks, suggested, allTasks, agents, selTaskId, running, blockedBy, canDrag, onSelect, onEditTask, onMove, onStartSuggestion, onAcceptSuggestion, onDismissSuggestion, onOpenParent }: {
+export function TaskBoard({ project, tasks, suggested, allTasks, agents, selTaskId, running, blockedBy, canDrag, onSelect, onEditTask, onMove, onStartSuggestion, onAcceptSuggestion, onDismissSuggestion, onDismissSuggestions, onOpenParent, traySeenAt, traySeenReady, onTrayViewed }: {
+  project: ProjectRow;
   tasks: TaskRow[]; suggested: TaskRow[];
   // The project's UNFILTERED task list, used only to name a suggestion's
   // proposer — a group header must still resolve when a search hides the parent.
@@ -165,11 +167,16 @@ export function TaskBoard({ tasks, suggested, allTasks, agents, selTaskId, runni
   onSelect: (id: string) => void; onEditTask: (id: string) => void;
   onMove: (id: string, patch: Partial<Pick<TaskRow, "status" | "suggested">>, orderedIds: string[]) => void;
   onStartSuggestion: (id: string) => void; onAcceptSuggestion: (id: string) => void; onDismissSuggestion: (id: string) => void;
+  // Bulk dismiss ("Dismiss all" on a stale group) — same hard delete, one call.
+  onDismissSuggestions: (ids: string[]) => void;
   // Jump to the task a suggestion group came from (its header).
   onOpenParent: (id: string) => void;
+  // Tray freshness marker, shared with the list tray (see useTrayView).
+  traySeenAt: number | undefined; traySeenReady: boolean; onTrayViewed: (projectId: string) => void;
 }) {
   const [dragId, setDragId] = useState<string | null>(null);
   const [over, setOver] = useState<{ col: ColKey; index: number } | null>(null);
+  const { newSince, trayRef } = useTrayView({ projectId: project.id, seenAt: traySeenAt, ready: traySeenReady, onViewed: onTrayViewed });
   // Terminal columns past MINI_CAP rows collapse under a veil until expanded.
   const [showAll, setShowAll] = useState<Record<string, boolean>>({});
   const all = [...suggested, ...tasks];
@@ -220,10 +227,7 @@ export function TaskBoard({ tasks, suggested, allTasks, agents, selTaskId, runni
         // below); the column renders group by group rather than in raw position
         // order, so drag indices are resolved against colTasks, not the display.
         const sugGroups = key === "suggested" ? groupSuggestions(colTasks, allTasks) : null;
-        const sugHead = new Map<string, SuggestionGroup>();
-        if (sugGroups && showsGroupHeaders(sugGroups)) {
-          for (const g of sugGroups) if (g.tasks[0]) sugHead.set(g.tasks[0].id, g);
-        }
+        const newCount = sugGroups ? countNewSuggestions(colTasks, newSince) : 0;
         // Terminal columns render newest-first in compact rows; ordering within
         // them is meaningless, so drops append and no insertion line is shown.
         const display = sugGroups ? sugGroups.flatMap((g) => g.tasks) : def.mini ? [...colTasks].sort((a, b) => b.updated_at - a.updated_at) : colTasks;
@@ -234,6 +238,7 @@ export function TaskBoard({ tasks, suggested, allTasks, agents, selTaskId, runni
         return (
           <div
             key={key}
+            ref={key === "suggested" ? trayRef : undefined}
             className={`bcol k-${key} ${accepts && isOver ? "drag-over" : ""} ${reject ? "reject" : ""}`}
             onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = accepts ? "move" : "none"; if (dragId) setOver({ col: key, index: colTasks.length }); }}
             onDragLeave={(e) => { if (isOver && !e.currentTarget.contains(e.relatedTarget as Node)) setOver(null); }}
@@ -241,6 +246,7 @@ export function TaskBoard({ tasks, suggested, allTasks, agents, selTaskId, runni
           >
             <div className="bcol-h">
               <span className={`cn ${def.accent ? "needs-you" : ""}`}>{key === "suggested" && Icon.spark()}{def.label}</span>
+              {newCount > 0 && <span className="sh-new">{newCount} new</span>}
               <span className={`ct ${def.accent ? "needs-you" : ""}`}>{colTasks.length}</span>
               <span className="sp" />
               {def.derived && <span className="derived" title="Reflects agent/session state — drag cards out, not in">derived</span>}
@@ -254,58 +260,61 @@ export function TaskBoard({ tasks, suggested, allTasks, agents, selTaskId, runni
               </div>
             )}
             <div className="bcol-body">
-              {visible.map((t) => {
-                const day = def.mini && key === "done" ? dayBucket(t.updated_at) : null;
-                const divider = day !== null && day !== lastDay ? <div className="b-day" key={`day-${day}`}>{day}<i /></div> : null;
-                lastDay = day;
-                // Drop targets are positions in the COLUMN's own order, which the
-                // grouped Suggested display no longer matches 1:1 — resolve the
-                // card back to its column index (terminal columns just append).
-                const at = def.mini ? colTasks.length : colTasks.indexOf(t);
-                const head = sugHead.get(t.id);
-                return (
-                  <div className="b-slot" key={t.id}>
-                    {divider}
-                    {head && (
-                      head.parent ? (
-                        <button className="b-sugh" onClick={(e) => { e.stopPropagation(); onOpenParent(head.parent!.id); }} title={`Open “${head.parent.title}” — the session that suggested these`}>
-                          <span className="txt">{suggestionGroupLabel(head)}</span>
-                          <span className="n">{head.tasks.length}</span>
-                          {Icon.chevRight({ className: "go" })}
-                        </button>
-                      ) : (
-                        <div className="b-sugh static" title="No record of which session proposed these">
-                          <span className="txt">Other</span>
-                          <span className="n">{head.tasks.length}</span>
-                        </div>
-                      )
-                    )}
-                    {accepts && isOver && !def.mini && over!.index === at && <div className="b-dropline" />}
-                    <BoardCard
-                      task={t}
-                      agents={agents}
-                      selected={t.id === selTaskId}
-                      running={running.has(t.id)}
-                      blockedBy={blockedBy.get(t.id)}
-                      mini={def.mini}
-                      dragging={dragId === t.id}
-                      canDrag={canDrag}
-                      onSelect={() => (t.suggested ? onEditTask(t.id) : onSelect(t.id))}
-                      onDragStart={() => setDragId(t.id)}
-                      onDragOverCard={(e) => { e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = accepts ? "move" : "none"; if (dragId) setOver({ col: key, index: at }); }}
-                      onDropOnCard={(e) => { e.preventDefault(); e.stopPropagation(); drop(key, at); }}
-                      onDragEnd={reset}
-                      actions={t.suggested ? (
-                        <div className="bsug-acts" onClick={(e) => e.stopPropagation()}>
-                          <button className="go" onClick={() => onStartSuggestion(t.id)}>{Icon.play()} Start</button>
-                          <button onClick={() => onAcceptSuggestion(t.id)} title="Add to list to start later">{Icon.plus()} Add</button>
-                          <button className="no" onClick={() => onDismissSuggestion(t.id)} title="Dismiss">{Icon.x()}</button>
-                        </div>
-                      ) : undefined}
-                    />
-                  </div>
-                );
-              })}
+              {/* One card + its drop affordances. `divider` is the Done column's
+                  day rule; drop targets are positions in the COLUMN's own order,
+                  which the grouped Suggested display no longer matches 1:1, so
+                  the card resolves back to its column index (terminal columns
+                  just append). */}
+              {(() => {
+                const slot = (t: TaskRow, divider: ReactNode) => {
+                  const at = def.mini ? colTasks.length : colTasks.indexOf(t);
+                  return (
+                    <div className="b-slot" key={t.id}>
+                      {divider}
+                      {accepts && isOver && !def.mini && over!.index === at && <div className="b-dropline" />}
+                      <BoardCard
+                        task={t}
+                        agents={agents}
+                        selected={t.id === selTaskId}
+                        running={running.has(t.id)}
+                        blockedBy={blockedBy.get(t.id)}
+                        mini={def.mini}
+                        isNew={!!t.suggested && isNewSuggestion(t, newSince)}
+                        dragging={dragId === t.id}
+                        canDrag={canDrag}
+                        onSelect={() => (t.suggested ? onEditTask(t.id) : onSelect(t.id))}
+                        onDragStart={() => setDragId(t.id)}
+                        onDragOverCard={(e) => { e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = accepts ? "move" : "none"; if (dragId) setOver({ col: key, index: at }); }}
+                        onDropOnCard={(e) => { e.preventDefault(); e.stopPropagation(); drop(key, at); }}
+                        onDragEnd={reset}
+                        actions={t.suggested ? (
+                          <div className="bsug-acts" onClick={(e) => e.stopPropagation()}>
+                            <button className="go" onClick={() => onStartSuggestion(t.id)}>{Icon.play()} Start</button>
+                            <button onClick={() => onAcceptSuggestion(t.id)} title="Add to list to start later">{Icon.plus()} Add</button>
+                            <button className="no" onClick={() => onDismissSuggestion(t.id)} title="Dismiss">{Icon.x()}</button>
+                          </div>
+                        ) : undefined}
+                      />
+                    </div>
+                  );
+                };
+                // Suggested nests its cards inside the shared group wrapper (the
+                // same header the list tray draws), so a stale group can collapse
+                // its cards away as one block. Every other column is a flat list.
+                if (sugGroups) {
+                  return sugGroups.map((g) => (
+                    <SuggestionGroup key={g.key} group={g} variant="board" newSince={newSince} onOpenParent={onOpenParent} onDismissAll={onDismissSuggestions}>
+                      {g.tasks.map((t) => slot(t, null))}
+                    </SuggestionGroup>
+                  ));
+                }
+                return visible.map((t) => {
+                  const day = def.mini && key === "done" ? dayBucket(t.updated_at) : null;
+                  const divider = day !== null && day !== lastDay ? <div className="b-day" key={`day-${day}`}>{day}<i /></div> : null;
+                  lastDay = day;
+                  return slot(t, divider);
+                });
+              })()}
               {accepts && isOver && !def.mini && over!.index >= visible.length && visible.length > 0 && <div className="b-dropline" />}
               {hidden > 0 && (
                 <button className="b-showall" onClick={() => setShowAll((s) => ({ ...s, [key]: true }))}>Show all {display.length} →</button>
@@ -327,7 +336,7 @@ export function TaskBoard({ tasks, suggested, allTasks, agents, selTaskId, runni
 // Full-workspace board shell (desktop): owns everything right of the projects
 // sidebar — header with the List/Board toggle, the board, and (via `children`)
 // the slide-over session panel + drawers the composition root mounts on top.
-export function BoardWorkspace({ project, agents, tasks, suggested, selTaskId, running, blockedBy, loading, onSetView, onMoveTask, onSelectTask, onNewTask, onEditContext, onShowSessions, onEditTask, onStartSuggestion, onAcceptSuggestion, onDismissSuggestion, onOpenParent, children }: {
+export function BoardWorkspace({ project, agents, tasks, suggested, selTaskId, running, blockedBy, loading, onSetView, onMoveTask, onSelectTask, onNewTask, onEditContext, onShowSessions, onEditTask, onStartSuggestion, onAcceptSuggestion, onDismissSuggestion, onDismissSuggestions, onOpenParent, traySeenAt, traySeenReady, onTrayViewed, children }: {
   project: ProjectRow; agents: AgentsBundle; tasks: TaskRow[]; suggested: TaskRow[]; selTaskId: string | null;
   running: Set<string>; blockedBy: Map<string, string[]>; loading?: boolean;
   onSetView: (v: TaskView) => void;
@@ -335,7 +344,9 @@ export function BoardWorkspace({ project, agents, tasks, suggested, selTaskId, r
   onSelectTask: (id: string) => void; onNewTask: () => void; onEditContext: () => void; onShowSessions: () => void;
   onEditTask: (id: string) => void;
   onStartSuggestion: (id: string) => void; onAcceptSuggestion: (id: string) => void; onDismissSuggestion: (id: string) => void;
+  onDismissSuggestions: (ids: string[]) => void;
   onOpenParent: (id: string) => void;
+  traySeenAt: number | undefined; traySeenReady: boolean; onTrayViewed: (projectId: string) => void;
   children?: ReactNode;
 }) {
   const [query, setQuery] = useState("");
@@ -376,11 +387,12 @@ export function BoardWorkspace({ project, agents, tasks, suggested, selTaskId, r
         </div>
       ) : (
         <TaskBoard
-          tasks={shown} suggested={shownSuggested} allTasks={allTasks} agents={agents} selTaskId={selTaskId}
+          project={project} tasks={shown} suggested={shownSuggested} allTasks={allTasks} agents={agents} selTaskId={selTaskId}
           running={running} blockedBy={blockedBy} canDrag={!q}
           onSelect={onSelectTask} onEditTask={onEditTask} onMove={onMoveTask}
           onStartSuggestion={onStartSuggestion} onAcceptSuggestion={onAcceptSuggestion} onDismissSuggestion={onDismissSuggestion}
-          onOpenParent={onOpenParent}
+          onDismissSuggestions={onDismissSuggestions} onOpenParent={onOpenParent}
+          traySeenAt={traySeenAt} traySeenReady={traySeenReady} onTrayViewed={onTrayViewed}
         />
       )}
       {children}

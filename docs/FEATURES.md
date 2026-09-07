@@ -73,10 +73,29 @@ task proposed it — and which of that task's sessions (its `/clear` generation)
 tray groups them under a **From: ‹task› · session N** header instead of one flat pile when
 several sessions are planning at once. Suggestions from one planning call stay together
 and in the order they were proposed; clicking a header jumps to the task that made them.
-Anything with no recorded proposer (suggestions created before this shipped, or whose task
-was deleted) collects under **Other**, and a tray where nothing has a proposer shows no
-headers at all. The edit dialog for a suggestion repeats its origin as a
-"↳ suggested by ‹task›" line that opens the proposer.
+Suggestions whose proposer was deleted collect under **From a deleted task**; ones that
+never recorded a proposer (created before this shipped) collect under **Other**. The edit
+dialog for a suggestion repeats its origin as a "↳ suggested by ‹task›" line that opens
+the proposer.
+
+### New vs stale suggestions
+
+A tray only grows, so each group also says how fresh it is. The header carries the age of
+its newest member ("just now", "2h", "3d") and groups sort newest-first, so whatever just
+landed reads first.
+
+Suggestions that arrived since you last looked at that project's tray get a **new** pill,
+and the tray header counts them ("4 new"). Seeing the tray — expanding it or scrolling it
+into view — advances the mark, so next visit those aren't new any more; the pills you're
+currently looking at stay put until you leave the project and come back. The mark is per
+project and lives in the browser, not the database: it's a read marker, so losing it costs
+one round of stale pills, and it never costs a server round trip.
+
+A group goes **stale** when its proposer is done, cancelled (merging a task marks it done)
+or deleted, or when nothing has been added to it in over a week. Stale groups render
+collapsed with a line saying why and a **Dismiss all** — a hard delete of every suggestion
+in the group, with no undo, so it asks once before doing it. The list column and the board's
+Suggested column render the same groups from the same component, so they always agree.
 
 Project recaps help restore your mental context when you return later.
 

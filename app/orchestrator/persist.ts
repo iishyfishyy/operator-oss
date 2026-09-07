@@ -3,7 +3,11 @@ import type { Appearance, Layout, Settings, TaskView } from "./types";
 
 export const LS = "orchestrator_ui_v2";
 
-type Persisted = { selProj?: string; selTask?: string; appearance?: Partial<Appearance>; layout?: Layout; settings?: Settings; taskView?: TaskView };
+// `traySeen` is the per-project "last time I looked at the suggestion tray" mark
+// (ms epoch, keyed by project id). Purely a read-marker for the "new" pills, so
+// it lives here rather than in the DB — losing it costs one round of stale pills,
+// not data, and it must not cost a server round trip on every tray render.
+type Persisted = { selProj?: string; selTask?: string; appearance?: Partial<Appearance>; layout?: Layout; settings?: Settings; taskView?: TaskView; traySeen?: Record<string, number> };
 
 export function loadPersist(): Persisted {
   if (typeof window === "undefined") return {};

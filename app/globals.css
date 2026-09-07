@@ -530,15 +530,11 @@ button{font-family:inherit;color:inherit;cursor:pointer;border:none;background:n
 .bcard.mini .bc-meta{margin-top:5px;}
 .b-day{font-family:var(--mono);font-size:8.5px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-4);display:flex;align-items:center;gap:7px;padding:3px 2px;}
 .b-day i{flex:1;height:1px;background:var(--line-2);}
-/* Suggested column: same per-proposer header as the list tray (see .sug-from). */
-.b-sugh{display:flex;align-items:center;gap:5px;width:100%;text-align:left;margin:2px 0 5px;padding:4px 6px;border-radius:6px;background:var(--accent-soft);font-family:var(--mono);font-size:8.5px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--accent-ink);}
-[data-theme="dark"] .b-sugh{color:#D98C6A;}
-.b-sugh .txt{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-.b-sugh .n{margin-left:auto;font-weight:600;opacity:.75;}
-.b-sugh .go{width:11px;height:11px;flex:0 0 auto;opacity:.6;}
-.b-sugh:not(.static):hover{filter:brightness(1.08);}
-.b-sugh.static{color:var(--ink-3);background:var(--line-2);cursor:default;}
-.b-slot:first-child .b-sugh{margin-top:0;}
+/* Suggested column: the shared group wrapper (see .sug-group / .sug-head), laid
+   out as a stack of cards rather than a bordered tray section. */
+.sg-board{display:flex;flex-direction:column;gap:8px;flex:0 0 auto;}
+.sg-board .sug-head{margin:0;padding:4px 6px;border:0;border-radius:6px;background:var(--accent-soft);font-size:8.5px;letter-spacing:.07em;}
+.sg-board .sh-stale{padding:0 6px 2px;}
 .b-showall{margin:2px 2px 0;border:1px dashed var(--line);border-radius:var(--r);padding:9px;text-align:center;font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3);background:var(--surface-2);cursor:pointer;flex:0 0 auto;}
 .b-showall:hover{color:var(--ink);border-color:var(--line-strong);}
 .bcard.dragging{opacity:.45;border-style:dashed;}
@@ -583,7 +579,9 @@ button{font-family:inherit;color:inherit;cursor:pointer;border:none;background:n
 .suggest{margin:6px 10px 12px;border-radius:var(--r-lg);border:1px dashed var(--accent);background:var(--accent-soft);overflow:hidden;}
 .suggest-h{display:flex;align-items:center;gap:7px;padding:10px 13px 8px;font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--accent-ink);}
 [data-theme="dark"] .suggest-h{color:#D98C6A;}
+.suggest-h .sh-new{margin-left:auto;}
 .suggest-h .sp{margin-left:auto;font-weight:600;}
+.suggest-h .sh-new + .sp{margin-left:0;}
 .sug{display:flex;align-items:center;gap:7px;padding:9px 13px;border-top:1px solid rgba(194,96,60,.18);}
 .sug .sg-meta{flex:1;min-width:0;}
 .sug .sg-name{font-weight:600;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
@@ -595,17 +593,38 @@ button{font-family:inherit;color:inherit;cursor:pointer;border:none;background:n
 .sug-add svg{width:13px;height:13px;}
 .sug-dismiss{flex:0 0 auto;width:22px;height:22px;border-radius:6px;display:grid;place-items:center;color:var(--ink-3);}
 .sug-dismiss:hover{background:rgba(194,96,60,.12);color:var(--accent-ink);}
-/* "From: <parent> · session N" — one header per proposing session, so several
-   sessions planning at once stay readable as separate batches. Clicking jumps
-   to the proposer; the "Other" bucket (unknown proposer) is inert. */
-.sug-from{display:flex;align-items:center;gap:6px;width:100%;text-align:left;padding:6px 13px 5px;border-top:1px solid rgba(194,96,60,.18);background:rgba(194,96,60,.07);font-family:var(--mono);font-size:9.5px;font-weight:700;letter-spacing:.05em;color:var(--accent-ink);}
-[data-theme="dark"] .sug-from{color:#D98C6A;}
-.sug-from .sf-txt{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-.sug-from .sf-count{margin-left:auto;font-weight:600;opacity:.75;}
-.sug-from .sf-go{width:12px;height:12px;flex:0 0 auto;opacity:.6;}
-.sug-from:not(.static):hover{background:rgba(194,96,60,.16);}
-.sug-from.static{color:var(--ink-3);cursor:default;}
-.sug-group:first-child .sug-from{border-top:0;}
+/* One suggestion group: "From: <parent> · session N" plus the freshness signals
+   (age of the newest member, how many are new since you last looked) and, when
+   the group has gone stale, why + a bulk dismiss. Shared verbatim by the list
+   tray and the board's Suggested column — see app/orchestrator/SuggestionGroup.tsx. */
+.sug-head{display:flex;align-items:center;gap:6px;width:100%;padding:6px 13px 5px;border-top:1px solid rgba(194,96,60,.18);background:rgba(194,96,60,.07);font-family:var(--mono);font-size:9.5px;font-weight:700;letter-spacing:.05em;color:var(--accent-ink);}
+[data-theme="dark"] .sug-head{color:#D98C6A;}
+.sug-group:first-child > .sug-head{border-top:0;}
+.sug-head .sh-toggle{flex:0 0 auto;display:grid;place-items:center;width:14px;height:14px;color:inherit;opacity:.7;}
+.sug-head .sh-toggle:hover{opacity:1;}
+.sug-head .sh-chev{width:12px;height:12px;transition:transform .14s;}
+.is-collapsed > .sug-head .sh-chev{transform:rotate(-90deg);}
+.sug-head .sh-txt{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left;color:inherit;font:inherit;letter-spacing:inherit;}
+.sug-head .sh-txt.link{text-decoration:underline;text-decoration-color:transparent;}
+.sug-head .sh-txt.link:hover{text-decoration-color:currentColor;}
+.sug-head .sh-age{flex:0 0 auto;font-weight:600;opacity:.6;}
+.sug-head .sh-count{flex:0 0 auto;font-weight:600;opacity:.75;}
+/* "N new" — on a group header, on the tray header, and on the board column head. */
+.sh-new{flex:0 0 auto;padding:1px 5px;border-radius:99px;background:var(--accent);color:var(--on-accent);font-family:var(--mono);font-size:8.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;}
+/* Per-suggestion "new" pill, inline before the title on both surfaces. Kept
+   deliberately tiny: the list tray's rows are narrow and the title matters more
+   than the marker, so the pill also paints an accent edge on its row for the
+   scan-down read and stays out of the title's way. */
+.sug-new{display:inline-block;vertical-align:1px;margin-right:4px;padding:0 4px;border-radius:99px;background:var(--accent);color:var(--on-accent);font-family:var(--mono);font-size:7.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;}
+.sug:has(.sug-new){box-shadow:inset 2px 0 0 var(--accent);}
+/* A stale group is dimmed and starts collapsed — it's a leftover, not the working set. */
+.sug-group.is-stale > .sug-head{background:var(--line-2);color:var(--ink-3);}
+[data-theme="dark"] .sug-group.is-stale > .sug-head{color:var(--ink-3);}
+.sh-stale{display:flex;align-items:center;gap:8px;padding:4px 13px 6px;background:var(--line-2);font-size:10.5px;color:var(--ink-3);}
+.sh-stale .ss-why{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.sh-stale .ss-drop{flex:0 0 auto;margin-left:auto;padding:2px 7px;border-radius:var(--r-sm);border:1px solid var(--line-strong);font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-3);}
+.sh-stale .ss-drop:hover{border-color:var(--red);color:var(--red);}
+.sh-stale .ss-drop.on{background:var(--red);border-color:var(--red);color:#fff;}
 /* "↳ suggested by <parent>" in the edit dialog — provenance for one suggestion. */
 .from-parent{display:block;width:100%;text-align:left;margin:-4px 0 14px;padding:7px 10px;border-radius:var(--r-sm);border:1px dashed var(--accent);background:var(--accent-soft);font-size:11.5px;color:var(--accent-ink);}
 [data-theme="dark"] .from-parent{color:#D98C6A;}
