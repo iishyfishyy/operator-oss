@@ -1,10 +1,10 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { Status, Priority, ToolData, AskQuestion, AskAnswers } from "@/lib/types";
+import type { Status, Priority, AskQuestion, AskAnswers } from "@/lib/types";
 import { Icon } from "../icons";
 import TaskChanges, { type ResolveResult } from "../TaskChanges";
-import { fmtTokens, fmtCost, fmtJobCost, modelLabel, isAwaiting, buildSessions, usageSplit, costDisplay, usageTooltip } from "./format";
+import { fmtTokens, fmtCost, fmtJobCost, modelLabel, isAwaiting, isThinking, buildSessions, usageSplit, costDisplay, usageTooltip } from "./format";
 import {
   SLABEL, SSUB, AWAIT_LABEL, STATUSES, PLABEL, PRIORITIES,
   modelOptions, reasoningOptions, permissionOptions, RAIL_W,
@@ -202,12 +202,10 @@ export function SessionView({ project, task, agents, messages, running, blockedB
   const multiAgent = agents.agents.length > 1;
   // PR number for the header chip, parsed from the stored URL (…/pull/42).
   const prNum = task.pr_url?.match(/\/pull\/(\d+)/)?.[1];
-  // True while a question card is still unanswered — hides the "thinking" dots,
-  // since Claude is parked on the user, not working.
-  const awaitingAnswer = useMemo(() => messages.some((m) => {
-    if (m.role !== "tool") return false;
-    try { const d = JSON.parse(m.content) as ToolData; return !!d.ask && !d.ask.answers; } catch { return false; }
-  }), [messages]);
+  // "Thinking" dots: live turn, not parked on a question (see isThinking for
+  // why this reads the row flag rather than scanning the transcript for an
+  // unanswered card).
+  const thinking = isThinking(task, running);
 
   // Auto-scroll only while the user is parked at the bottom. If they scroll up to
   // read earlier output, we leave their position alone even as new messages stream
@@ -300,7 +298,7 @@ export function SessionView({ project, task, agents, messages, running, blockedB
               })}
             </div>
           ))}
-          {running && !awaitingAnswer && (
+          {thinking && (
             <div className="msg assistant"><div className="who"><Avatar who="cc" agent={task.agent} /> Agent</div><div className="msg-body"><span className="typing"><i /><i /><i /></span></div></div>
           )}
           {/* Follow-ups queued mid-turn, pinned below the live turn — they

@@ -1,5 +1,4 @@
 // Pure formatting + derivation helpers shared across the orchestrator modules.
-import type { AskQuestion, AskAnswers } from "@/lib/types";
 import type { Msg, TaskRow, AgentCapabilities, AgentInfo } from "./types";
 import type { InternalUsageEstimate } from "./types";
 
@@ -164,15 +163,6 @@ export function modelLabel(id: string | null, caps?: AgentCapabilities): string 
   return hit ? hit.label : id;
 }
 
-// Phrase AskUserQuestion answers as a reply, for the reload fallback where the
-// turn is no longer parked and we resume the session with a normal message.
-export function formatAnswersText(questions: AskQuestion[], answers: AskAnswers): string {
-  const lines = questions.map((q, i) => {
-    const picked = (answers[i] ?? []).filter((s) => s && s.trim());
-    return `- ${q.header || q.question}: ${picked.length ? picked.join(", ") : "(no selection)"}`;
-  });
-  return `Answering your question${questions.length > 1 ? "s" : ""}:\n${lines.join("\n")}`;
-}
 // Absolute wall-clock stamp for a transcript message ("3:42 PM", locale-aware).
 // Messages from an earlier day prefix the date, so a task resumed days later
 // still reads right. Absolute on purpose: MessageView is memoized, so a
@@ -222,6 +212,16 @@ export function duration(start: number, end: number | null): string {
 // parked on the question — that's exactly the case the task list must surface.
 export const isAwaiting = (t: TaskRow) =>
   t.status === "in_progress" && !!t.awaiting_input;
+
+// The agent is actively working: a turn is live and NOT parked on a question
+// (the "thinking" dots under the transcript). Reads the same awaiting_input
+// flag as isAwaiting — set on ask, cleared once every parked ask is answered,
+// mirrored onto the row by both the transcript and the global stream — never
+// the transcript itself: deriving "parked" from "any unanswered card" hid the
+// dots for every later turn of a task once one card was left behind by a Stop
+// or a restart, and after answering that card via the resume path.
+export const isThinking = (t: TaskRow, running: boolean) =>
+  running && !t.awaiting_input;
 
 // The titles of a task's unfinished blockers (dependencies not yet 'done'). A
 // task with any of these is "blocked" and can't be started until they complete.

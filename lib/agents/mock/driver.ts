@@ -12,13 +12,16 @@
 //   e2e:sleep=<ms>                  hold the turn open (Stop / queue tests)
 //   e2e:fail=<message>              end the turn with an error event
 //   e2e:suggest=<title>             create a suggested task + emit "suggested"
+//   e2e:ask=<question>|<opt>|<opt>  park on an AskUserQuestion card until the
+//                                   user answers (a Stop dismisses it), then
+//                                   keep working — mirrors the Claude hook
 // With no directives, the turn appends the prompt to AGENT_NOTES.md — so every
 // plain turn still produces a diff to view and merge.
 
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import type { Project, Task } from "@/lib/types";
+import type { AskQuestion, Project, Task } from "@/lib/types";
 import type {
   AgentAuthStatus,
   AgentDriver,
@@ -27,6 +30,7 @@ import type {
   StreamEvent,
 } from "../types";
 import { createSuggestedTask } from "@/lib/agentTools";
+import { waitForAnswer } from "@/lib/asks";
 import { MOCK_CAPABILITIES } from "./capabilities";
 
 const MOCK_EMAIL = "e2e@example.com";
@@ -73,6 +77,27 @@ export const mockDriver: AgentDriver = {
 
     yield { type: "session", sessionId };
     yield { type: "model", model: "mock-1" };
+
+    // Interactive asks come FIRST, before any sleep/work: the turn parks on the
+    // user exactly like the Claude driver's PreToolUse hook (same registry,
+    // same abort semantics), and once every card is answered the rest of the
+    // directives run — so `e2e:ask=… e2e:sleep=3000` means "ask, then keep
+    // working for 3s after the answer", which is what the resumed-turn UI
+    // (progress dots, spinners) is tested against.
+    let askN = 0;
+    for (const m of instructionText.matchAll(/e2e:ask=(.+?)(?=\s+e2e:|\n|$)/g)) {
+      const [question, ...labels] = m[1].split("|").map((s) => s.trim()).filter(Boolean);
+      const id = `mock-ask-${sessionId}-${Date.now().toString(36)}-${++askN}`;
+      const questions: AskQuestion[] = [{ question: question || "Which?", header: "Mock", options: (labels.length ? labels : ["A", "B"]).map((label) => ({ label })) }];
+      yield { type: "ask", id, questions };
+      let answers;
+      try {
+        answers = await waitForAnswer(task.id, id, questions, signal);
+      } catch {
+        return; // Stop while parked: the turn ends unanswered, no error event
+      }
+      yield { type: "ask_answered", id, answers };
+    }
 
     const sleepMs = instructionText.match(/e2e:sleep=(\d+)/)?.[1];
     if (sleepMs) await sleep(Math.min(Number(sleepMs), 120_000), signal);

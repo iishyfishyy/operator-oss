@@ -38,6 +38,7 @@ npx playwright test e2e/03-views.spec.ts   # one spec (post-01 specs self-onboar
   | `e2e:sleep=<ms>` | hold the turn open (Stop / queueing tests) |
   | `e2e:fail=<message>` | end the turn with an error event |
   | `e2e:suggest=<title>` | create a suggested task + emit the event |
+  | `e2e:ask=<question>\|<opt>\|<opt>` | park on an AskUserQuestion card until answered (a Stop dismisses it), then run the rest — so `e2e:ask=… e2e:sleep=3000` keeps working 3s after the answer |
   | *(none)* | append the prompt to `AGENT_NOTES.md` (so every turn has a diff) |
 
 ## Specs

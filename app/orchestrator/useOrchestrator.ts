@@ -4,7 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Priority, Status, AskQuestion, AskAnswers } from "@/lib/types";
 import type { ResolveResult } from "../TaskChanges";
 import { jget, jsend } from "./api";
-import { isAwaiting, blockerTitles, formatAnswersText } from "./format";
+import { isAwaiting, blockerTitles } from "./format";
+import { formatAnswersReply } from "@/lib/askFormat";
 import { loadPersist, readUrlSel } from "./persist";
 import { DEFAULT_SETTINGS, EMPTY_AGENTS, type AgentsBundle, type OnboardingT, type ProjectRow, type TaskRow } from "./types";
 import { agentLabel } from "./agents";
@@ -323,18 +324,29 @@ export function useOrchestrator() {
 
   // Submit the user's answer to an AskUserQuestion. In the common case the live
   // turn is parked waiting and continues in its existing stream (resolved:true).
-  // If nothing was waiting (e.g. the turn was torn down by a page reload), resume
-  // the session with the answer as a normal reply.
+  // If nothing was waiting (the turn that asked was stopped, or the server
+  // restarted while parked), the ROUTE settles the card in the transcript and
+  // resumes the session with the answer as a normal reply (resumed:true) — the
+  // running/awaiting_input flip is persisted server-side and published like any
+  // other turn start, so every tab and the global stream see the same thing.
   const answerQuestion = useCallback(async (taskId: string, askId: string, questions: AskQuestion[], answers: AskAnswers) => {
     setAnswerOnMsg(taskId, askId, answers); // optimistic — the stream echoes ask_answered
     try {
       // No tool_use id to resolve against — e.g. a question persisted before
-      // ask-id tracking was added, or one whose turn was already torn down. The
-      // /answer route requires a non-empty askId, so skip it and just send the
-      // choices as a normal reply, which resumes the current session.
-      if (!askId) { await runTurn(taskId, formatAnswersText(questions, answers), false); return; }
-      const { resolved } = await jsend<{ resolved: boolean }>(`/api/tasks/${taskId}/answer`, "POST", { askId, answers });
-      if (!resolved) await runTurn(taskId, formatAnswersText(questions, answers), false);
+      // ask-id tracking was added. The /answer route requires a non-empty
+      // askId, so skip it and just send the choices as a normal reply, which
+      // resumes the current session.
+      if (!askId) { await runTurn(taskId, formatAnswersReply(questions, answers), false); return; }
+      const { resolved, resumed } = await jsend<{ resolved: boolean; resumed?: boolean }>(`/api/tasks/${taskId}/answer`, "POST", { askId, answers, questions });
+      if (resolved) return;
+      if (resumed) {
+        // Mirror runTurn's optimistic flip so the dots / spinner don't wait a
+        // roundtrip; the stream's `user` + global turn_started confirm it.
+        setTaskRunning(taskId, true);
+        setTasks((prev) => prev.map((x) => (x.id === taskId ? { ...x, started: 1, status: "in_progress", awaiting_input: 0 } : x)));
+        return;
+      }
+      await runTurn(taskId, formatAnswersReply(questions, answers), false);
     } catch (err) {
       appendMsg(taskId, { id: `e-${Date.now()}`, role: "system", content: err instanceof Error ? err.message : String(err), generation: tasks.find((t) => t.id === taskId)?.generation ?? 1 });
     }

@@ -112,13 +112,13 @@ export function startAskUser(task: Task, questions: AskQuestion[]): { askId: str
       data.ask = { id: askId, questions, answers };
       updateMessage(m.id, JSON.stringify(data));
       updateTask(task.id, { awaiting_input: 0 });
-      publish(task.id, { type: "ask_answered", id: askId, answers, msgId: m.id, generation: task.generation });
+      publish(task.id, { type: "ask_answered", id: askId, answers, msgId: m.id, generation: task.generation, awaiting_input: false });
       settleAsk(task.id, askId, formatAnswers(questions, answers));
     })
     .catch(() => {
       // Turn torn down (Stop) before an answer arrived. The card stays in the
-      // transcript unanswered — answering it later falls back to the /answer
-      // route's resolved:false path (a normal reply into a fresh turn).
+      // transcript unanswered — answering it later takes the /answer route's
+      // resumed path (it settles the card, then a normal reply into a fresh turn).
       settleAsk(task.id, askId, "The user dismissed the question without answering.");
     });
 
