@@ -55,6 +55,8 @@ Full walkthrough: [Bedrock instructions](BEDROCK_INSTRUCTIONS.md).
 Codex supports parallel tasks, diff review and merge, `/clear` lineage, project context,
 interactive questions, and usage tracking. Operator supplies interactive questions through
 its MCP bridge because the upstream non-interactive CLI does not provide that hook itself.
+The task model picker includes GPT-6 Astra; whether a selected model can run still depends
+on its availability for the connected ChatGPT account, workspace, and Codex rollout.
 
 Two upstream differences are visible:
 

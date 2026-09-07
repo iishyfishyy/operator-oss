@@ -179,6 +179,14 @@ describe("codex cost estimation", () => {
     expect(estimateCostUsd("gpt-5.6", usage)).toBeCloseTo(estimateCostUsd("gpt-5.6-sol", usage), 10);
   });
 
+  it("prices GPT-6 Astra at its published API-equivalent rates", () => {
+    // 600k×$10 + 400k×$1 + 100k×$50 per 1M = 6.0 + 0.4 + 5.0.
+    expect(estimateCostUsd("gpt-6-astra", usage)).toBeCloseTo(11.4, 10);
+    // Astra publishes a distinct $12.50/M cache-write rate.
+    const withWrite = { ...usage, input_tokens: 500_000, cache_creation_tokens: 100_000 };
+    expect(estimateCostUsd("gpt-6-astra", withWrite)).toBeCloseTo(11.65, 10);
+  });
+
   it("has a real price row for every model the picker offers", () => {
     // Guards the drift that makes an estimate silently wrong: a new picker entry
     // with no row of its own falls through to the bare "gpt-5" catch-all and
