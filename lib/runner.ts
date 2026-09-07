@@ -312,7 +312,10 @@ async function run(task: Task, project: Project, userText: string, syncNote: str
       } else if (ev.type === "usage") {
         addUsage({ project_id: project.id, task_id: id, generation: gen, agent: task.agent, usage: ev.usage });
         turnUsage = ev.usage;
-        publish(id, ev);
+        // Stamped with the generation so a viewer can credit the turn to the
+        // right window: a /clear can land while an old-generation turn is still
+        // unwinding, and its usage must not bump the fresh session's figure.
+        publish(id, { ...ev, generation: gen });
       } else if (ev.type === "error") {
         // A soft error emitted mid-stream (e.g. "Run ended: …"). Marks the turn
         // failed for analytics and publishes the persisted form, so live viewers

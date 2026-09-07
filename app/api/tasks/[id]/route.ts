@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getTask, getProject, updateTask, deleteTask, listMessages, getTaskUsage, getTaskContext, getTaskDeps, setTaskDeps, countAwaiting } from "@/lib/store";
+import { getTask, getProject, updateTask, deleteTask, listMessages, getTaskUsage, getGenerationUsage, getTaskContext, getTaskDeps, setTaskDeps, countAwaiting } from "@/lib/store";
 import { removeWorktree } from "@/lib/git";
 import { removeTaskUploads } from "@/lib/uploads";
 import { abortTurn } from "@/lib/abort";
@@ -16,6 +16,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const task = getTask(id);
   if (!task) return NextResponse.json({ error: "not found" }, { status: 404 });
   const usage = getTaskUsage(id);
+  const session = getGenerationUsage(id, task.generation);
   const ctx = getTaskContext(id);
   return NextResponse.json({
     ...task,
@@ -25,6 +26,13 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     // "fresh work" from re-read context instead of showing one inflated number.
     cache_read_tokens: usage.cache_read_tokens,
     cache_creation_tokens: usage.cache_creation_tokens,
+    // The current generation's share, so the chip can lead with "this session"
+    // (mirrors listTasks). The client re-reads this row right after /clear —
+    // the new generation has no rows yet, so these come back as zeros.
+    session_cost_usd: session.cost_usd,
+    session_tokens: session.total_tokens,
+    session_cache_read_tokens: session.cache_read_tokens,
+    session_cache_creation_tokens: session.cache_creation_tokens,
     context_tokens: ctx.context_tokens,
     context_pct: ctx.context_pct,
     depends_on: getTaskDeps(id),
