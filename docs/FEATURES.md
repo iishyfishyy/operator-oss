@@ -32,6 +32,16 @@ with a note that the two are one request. A task with no description falls back 
 generic "start working on the task" opener. Both the manual Start and the auto-start
 pipeline send the same opening turn.
 
+A session that opens **after `/clear`** is not that. Generation 2 and up start with a short
+resume turn instead — "you are continuing this task … pick up where it left off" — because
+re-sending the day-one kickoff would tell an agent that already has the previous session's
+handoff summary in its context to start the task over. The handoff summary has exactly one
+home, the system prompt, so the resume turn never repeats it. Anything you type on that
+first send after `/clear` rides along with the resume turn rather than being discarded, so
+you can steer the new session from its very first message. In the transcript the resume
+turn is an ordinary user bubble (no **task** badge) and the session divider under the
+`/clear` summary card is labelled **resumed after /clear**.
+
 ## Review and delivery
 
 Operator puts the task conversation and git diff side by side. From there you can:
@@ -51,7 +61,14 @@ Use a compact list or a full-width kanban board with Suggested, Not started, In 
 Needs input, and Done states. Tasks can depend on other tasks; **Start when unblocked**
 launches an opted-in task as soon as its final blocker is marked done.
 
-Agents can also suggest follow-up tasks while they work. Every suggestion records which
+Agents can also suggest follow-up tasks while they work — but they ask first. When an agent
+notices out-of-scope follow-up work, it lists what it would propose in the chat and waits for
+your go-ahead before anything lands in the tray; asking an agent to plan, break down, scope or
+roadmap work still fills the tray straight away, since that's what you asked for. Settings →
+General → **Suggested tasks** switches this between **Ask me first** (default) and **Add them
+automatically**, the old always-proactive behaviour.
+
+Every suggestion records which
 task proposed it — and which of that task's sessions (its `/clear` generation) — so the
 tray groups them under a **From: ‹task› · session N** header instead of one flat pile when
 several sessions are planning at once. Suggestions from one planning call stay together

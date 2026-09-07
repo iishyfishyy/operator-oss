@@ -9,13 +9,16 @@
 import type { TurnUsage } from "../../types";
 
 // Published API prices in USD per 1M tokens (developers.openai.com/api/docs/
-// pricing). Cached input is OpenAI's standard 90% discount on input. Matched
+// pricing). Cached input is OpenAI's standard 90% discount on input. Cache
+// writes normally use the input rate; a model-specific `cacheWrite` records an
+// explicitly published surcharge. Matched
 // by longest prefix so dated/suffixed model ids ("gpt-5.4-mini-…") hit their
 // family row; keep more-specific prefixes above shorter ones — "gpt-5.4-mini"
 // MUST sit above "gpt-5.4", and the bare "gpt-5" catch-all stays last.
 // Retired models keep their rows: historical turns still price against the
 // model they actually ran on, even once the picker stops offering it.
-const PRICES: { prefix: string; input: number; cachedInput: number; output: number }[] = [
+const PRICES: { prefix: string; input: number; cachedInput: number; cacheWrite?: number; output: number }[] = [
+  { prefix: "gpt-6-astra", input: 10.0, cachedInput: 1.0, cacheWrite: 12.5, output: 50.0 },
   { prefix: "gpt-5.6-sol", input: 5.0, cachedInput: 0.5, output: 30.0 },
   { prefix: "gpt-5.6-terra", input: 2.0, cachedInput: 0.2, output: 12.0 },
   { prefix: "gpt-5.6-luna", input: 0.2, cachedInput: 0.02, output: 1.2 },
@@ -54,8 +57,9 @@ export function resolveCodexModel(taskModel: string | null | undefined): string 
  * Estimate the dollar cost of a turn from its token counts. Takes the buckets in
  * the app's DISJOINT form (the shape lib/agents/codex/events.ts emits, matching
  * Claude's): `input_tokens` is fresh prompt only, cache reads and cache writes
- * are counted separately. Cache writes bill at the plain input rate (OpenAI adds
- * no write surcharge); cache reads at the 90%-off rate. Unknown models price at
+ * are counted separately. Cache writes use a model-specific published rate
+ * when present and otherwise use the plain input rate; cache reads use the
+ * discounted rate. Unknown models price at
  * the CLI-default family so the estimate degrades gracefully instead of silently
  * reporting $0.
  */
@@ -64,6 +68,10 @@ export function estimateCostUsd(
   usage: Pick<TurnUsage, "input_tokens" | "output_tokens" | "cache_read_tokens" | "cache_creation_tokens">
 ): number {
   const p = PRICES.find((r) => model.startsWith(r.prefix)) ?? PRICES.find((r) => DEFAULT_CODEX_MODEL.startsWith(r.prefix))!;
-  const fresh = Math.max(0, usage.input_tokens) + Math.max(0, usage.cache_creation_tokens);
-  return (fresh * p.input + Math.max(0, usage.cache_read_tokens) * p.cachedInput + usage.output_tokens * p.output) / 1_000_000;
+  return (
+    Math.max(0, usage.input_tokens) * p.input
+    + Math.max(0, usage.cache_creation_tokens) * (p.cacheWrite ?? p.input)
+    + Math.max(0, usage.cache_read_tokens) * p.cachedInput
+    + usage.output_tokens * p.output
+  ) / 1_000_000;
 }

@@ -129,7 +129,6 @@ describe("suggest-task bridge endpoint", () => {
 
 // --- tray grouping (pure, so it's unit-testable without the DOM) ---
 
-
 let n = 0;
 function row(over: Partial<TaskRow> & { id?: string }): TaskRow {
   const id = over.id ?? `t${++n}`;
@@ -137,9 +136,8 @@ function row(over: Partial<TaskRow> & { id?: string }): TaskRow {
     id, project_id: "p", title: id, description: "", priority: "med", status: "not_started", suggested: 1,
     agent: "claude", send_context: 1, model: null, resolved_model: null, reasoning: null, permission_mode: null,
     session_id: null, worktree_path: "", pr_url: "", generation: 1, started: 0, running: 0, awaiting_input: 0,
-    created_at: 0, updated_at: 0, cost_usd: 0, total_tokens: 0, cache_read_tokens: 0, cache_creation_tokens: 0,
-    session_cost_usd: 0, session_tokens: 0, session_cache_read_tokens: 0, session_cache_creation_tokens: 0,
-    depends_on: [],
+    created_at: 0, updated_at: 0, cost_usd: 0, session_cost_usd: 0, total_tokens: 0, cache_read_tokens: 0, cache_creation_tokens: 0,
+    session_tokens: 0, session_cache_read_tokens: 0, session_cache_creation_tokens: 0, depends_on: [],
     auto_start: 0, suggested_by_task_id: null, suggested_by_generation: null, context_tokens: 0, context_pct: 0,
     ...over,
   };

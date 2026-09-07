@@ -6,6 +6,7 @@
 
 import type { Project, Task, AskQuestion, AskAnswers, ToolPeek, DiffLine } from "../types";
 import { listSummaries } from "../store";
+import { suggestionPolicy } from "../suggestionPolicy";
 
 // The generic opening turn, used only when a task has no description: a fresh
 // agent session still needs a user turn to begin, and with nothing but a title
@@ -34,6 +35,51 @@ export function buildInitialPrompt(task: Pick<Task, "title" | "description">): s
   return [title ? `# ${title}` : "", description, INITIAL_PROMPT_KICKOFF].filter(Boolean).join("\n\n");
 }
 
+// The opening line of a post-/clear session. Generation N+1 starts with a
+// brand-new context window, so the agent needs to be told it is *continuing*
+// work rather than starting it — otherwise it re-reads the task text as a
+// fresh assignment and redoes what generation N already did.
+export const RESUME_PROMPT_LEAD =
+  "You are continuing this task in a new session — the previous session's context was cleared.";
+
+/**
+ * The opening user turn of a session that resumes an earlier generation (i.e.
+ * the first turn after /clear). Deliberately short: the handoff summary of
+ * every prior generation already rides in the system prompt via
+ * buildProjectContext ("Carried context from previous sessions of this task"),
+ * so repeating it here would spend the fresh context window on a duplicate.
+ * This turn's only jobs are to say "continue, don't restart" and to carry
+ * whatever the user actually typed when they sent after /clear — on the old
+ * initial-turn path that text was silently dropped.
+ *
+ * (The task description isn't repeated either: it's in the system prompt, and
+ * generation 1's kickoff bubble is still visible above the session break.)
+ */
+export function buildResumePrompt(task: Pick<Task, "title">, userText = ""): string {
+  const title = task.title.trim();
+  const lead = [
+    `${RESUME_PROMPT_LEAD} The task is${title ? ` "${title}"` : " described in the task context"}, and the`,
+    `handoff summary from the previous session is in your context. Pick up where it left off —`,
+    `re-read whatever code you need, but don't redo work the summary says is already done.`,
+  ].join("\n");
+  const typed = userText.trim();
+  return typed ? `${lead}\n\n${typed}` : lead;
+}
+
+/**
+ * The opening user turn for a task whose `started` flag is 0 — which means one
+ * of two very different things:
+ *   - generation 1: the task has never run, so the turn IS the task text
+ *     (buildInitialPrompt);
+ *   - generation > 1: /clear reset `started` to 0, so this is the first turn of
+ *     a fresh context window on work already in flight (buildResumePrompt).
+ * Both launchers (POST /api/tasks/[id]/messages and lib/autoStart.ts) go
+ * through here so the distinction can't drift between them.
+ */
+export function buildOpeningPrompt(task: Pick<Task, "title" | "description" | "generation">, userText = ""): string {
+  return task.generation > 1 ? buildResumePrompt(task, userText) : buildInitialPrompt(task);
+}
+
 /**
  * Build the context string that is prepended to every task's session via the
  * agent's system prompt. This is the "write project context once" feature:
@@ -57,7 +103,12 @@ export function buildProjectContext(project: Project, task: Task): string {
     lines.push(`Task details: ${task.description}`);
     // The same text opens the session as its first user message (see
     // buildInitialPrompt) — say so, or the model reads it as two requests.
-    lines.push(`(This task text is also the first user message of the session; it is one request, not two.)`);
+    // Only true of generation 1: a resumed generation opens with the short
+    // continue-from-here prompt instead (buildResumePrompt), so claiming the
+    // task text is the first user message there would be a lie.
+    if (task.generation <= 1) {
+      lines.push(`(This task text is also the first user message of the session; it is one request, not two.)`);
+    }
   }
 
   if (summaries.length > 0) {
@@ -68,15 +119,36 @@ export function buildProjectContext(project: Project, task: Task): string {
     lines.push(`\nContinue this task from where the previous session left off.`);
   }
 
-  lines.push(
+  // The tray is the user's queue, not the agent's scratchpad: under the default
+  // `ask_first` policy an unrequested follow-up has to be confirmed in chat
+  // before it becomes a task. Explicit planning requests are exempt in both
+  // modes — filing the tasks IS the answer there. See lib/suggestionPolicy.ts.
+  const askTool = task.agent && task.agent !== "claude" ? "the `ask_user` tool" : "the AskUserQuestion tool";
+  const intro =
     `\n---\nYou have an "orchestrator" MCP tool \`suggest_task\` that creates a task in ` +
-      `THIS project. New tasks land in the user's "Suggested" tray for them to review and ` +
-      `start later as their own Claude session. Use it two ways:\n` +
-      `1. On request — when the user asks you to plan, break down, scope, or roadmap work, ` +
-      `call \`suggest_task\` once per task you propose (set a sensible priority for each). ` +
-      `Create as many as the plan needs.\n` +
-      `2. Proactively — if you notice follow-up work that is out of scope for the CURRENT ` +
-      `task, don't do it now; propose it with \`suggest_task\` instead.`
+    `THIS project. New tasks land in the user's "Suggested" tray for them to review and ` +
+    `start later as their own session. `;
+  lines.push(
+    suggestionPolicy() === "auto"
+      ? intro +
+          `Use it two ways:\n` +
+          `1. On request — when the user asks you to plan, break down, scope, or roadmap work, ` +
+          `call \`suggest_task\` once per task you propose (set a sensible priority for each). ` +
+          `Create as many as the plan needs.\n` +
+          `2. Proactively — if you notice follow-up work that is out of scope for the CURRENT ` +
+          `task, don't do it now; propose it with \`suggest_task\` instead — no need to ask first. ` +
+          `(This project is set to add suggestions automatically, which overrides the ask-first ` +
+          `note in the \`suggest_task\` tool description.)`
+      : intro +
+          `NEVER file a task the user didn't ask for:\n` +
+          `1. When the user's message explicitly asks you to plan, break down, scope, or roadmap ` +
+          `work, use \`suggest_task\` freely — call it once per task you propose (set a sensible ` +
+          `priority for each), as many as the plan needs.\n` +
+          `2. Otherwise, ASK FIRST. If you notice follow-up work that is out of scope for the ` +
+          `CURRENT task, don't do it and don't file it: list the follow-ups you would propose in ` +
+          `your reply (one short line each) and ask the user whether to add them, using ${askTool}. ` +
+          `Call \`suggest_task\` only after they confirm, and only for the ones they approved. ` +
+          `If they decline or don't answer, leave the tray alone and just mention what you noticed.`
   );
   lines.push(
     `\nYou also have an \`expose_service\` MCP tool. When you start a long-running server ` +

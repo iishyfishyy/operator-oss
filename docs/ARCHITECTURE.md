@@ -37,6 +37,15 @@ stream isn't open. There is no task-list polling.
 condensed to a summary, and generation N+1 starts with a clean context window seeded by all
 prior summaries. The task persists — only the context window resets.
 
+`/clear` resets `tasks.started` to 0, so the next send is an *opening* turn — but not a
+first one. `buildOpeningPrompt()` (`lib/agents/shared.ts`) splits on the generation:
+generation 1 gets the task text (`buildInitialPrompt`), generation > 1 gets the short
+continue-from-here `buildResumePrompt`, carrying whatever the user typed on that send.
+Both launchers — `POST /api/tasks/[id]/messages` and `lib/autoStart.ts` — go through that
+one helper. Only a never-started task takes the route's inline first-turn branch; a resumed
+generation goes through `startResumeTurn()` like any other follow-up (its `session_id` is
+null, so the driver still opens a fresh session).
+
 ## The agent-driver seam (`lib/agents/`)
 
 The app talks to coding agents only through the `AgentDriver` interface.
@@ -139,6 +148,20 @@ outcome — no long-held HTTP request, and the ask survives page reloads because
 lives in the transcript. Both the in-process server and the endpoints call the SAME shared
 logic in **`lib/agentTools.ts`**, and both build their tool defs from the SAME constants in
 **`lib/agentToolDefs.mjs`**, so the two paths can't drift.
+
+Whether an agent may file a task the user never asked for is the `suggestion_policy` setting
+(`ask_first` default, `auto`; `lib/suggestionPolicy.ts`). `buildProjectContext()` reads it and
+swaps the `suggest_task` paragraph: `ask_first` tells the agent to list proposed follow-ups in
+chat and confirm — via AskUserQuestion on Claude, the bridge's `ask_user` elsewhere, picked
+from `task.agent` — before calling the tool, while an explicit "plan/break down/scope/roadmap"
+request stays free to file tasks directly. `auto` restores the old always-proactive wording.
+The tool DESCRIPTION in `lib/agentToolDefs.mjs` states the ask-first rule too, so the tool
+itself says it; those strings are static (the stdio bridge has no DB), so the `auto` branch of
+the prompt says outright that it overrides them. Enforcement stays prompt-based on purpose:
+the confirmation is prose in the transcript, not a tool call, so no server-side check can tell
+an approved suggestion from an unrequested one. Instead `createSuggestedTask()` emits a
+`suggestion_created` analytics event carrying the policy in force, which is what makes drift
+visible — under `ask_first` a rising rate means the prompt has stopped landing.
 
 Every `suggest_task` call is stamped with its **proposer**: `createSuggestedTask()` takes an
 optional `source: { taskId, generation }` and writes it to `tasks.suggested_by_task_id` /

@@ -1004,6 +1004,8 @@ button.tpeek-more:hover{color:var(--accent-ink);}
 .sbreak .card .ct b{color:var(--ink);}
 
 .session-label{display:flex;align-items:center;gap:9px;margin:0 0 20px;font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-4);}
+.session-label .resumed-tag{font-size:9px;letter-spacing:.06em;color:var(--accent-ink);background:var(--accent-soft);border-radius:5px;padding:2px 6px;}
+[data-theme="dark"] .session-label .resumed-tag{color:#D98C6A;}
 .session-label .ln{flex:1;height:1px;background:var(--line);}
 
 /* typing */
