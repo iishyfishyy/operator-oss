@@ -20,6 +20,7 @@
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.3.159",
     "@modelcontextprotocol/sdk": "^1.12.0",
+    "@openai/codex": "^0.153.4",
     "@openai/codex-sdk": "^0.146.0",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/addon-web-links": "^0.11.0",
