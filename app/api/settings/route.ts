@@ -12,7 +12,9 @@ export const dynamic = "force-dynamic";
 // (recaps, context drafts — see lib/agents/oneshots.ts), default "claude".
 // `background_jobs` defaults to "on" and gates unattended agent turns;
 // `recap_mode` defaults to "automatic" (also accepts "on_open" and "off").
-const ALLOWED = /^(background_jobs|recap_mode|default_agent|utility_agent|default_reasoning(:[a-z0-9_-]+)?|default_permission_mode(:[a-z0-9_-]+)?)$/;
+// `suggestion_policy` defaults to "ask_first" (also accepts "auto") and decides
+// whether an agent may file unrequested tasks into the Suggested tray.
+const ALLOWED = /^(background_jobs|recap_mode|suggestion_policy|default_agent|utility_agent|default_reasoning(:[a-z0-9_-]+)?|default_permission_mode(:[a-z0-9_-]+)?)$/;
 
 export async function GET() {
   return NextResponse.json(getSettings());

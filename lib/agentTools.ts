@@ -18,6 +18,8 @@ import { waitForAnswer, settleAsk } from "./asks";
 import { turnSignal } from "./abort";
 import { formatAnswers } from "./agents/shared";
 import { resolveConnectedAgent } from "./agents/connections";
+import { suggestionPolicy } from "./suggestionPolicy";
+import { track } from "./analytics";
 
 /**
  * Resolve `blocked_by` refs against a per-session title→id map: an id passes
@@ -93,6 +95,21 @@ export function createSuggestedTask(project: Project, input: SuggestTaskInput, s
       depNote = ` (Could not set dependencies: ${(e as Error).message}.)`;
     }
   }
+  // Under `ask_first` the agent is supposed to have asked in chat before getting
+  // here, and nothing server-side can verify that (the confirmation is prose in
+  // the transcript, not a tool call — see lib/suggestionPolicy.ts). Emitting the
+  // policy in force with every created suggestion is what makes drift visible:
+  // a healthy `ask_first` fleet still files tasks, but a spike is the signal
+  // that the prompt has stopped landing.
+  track("suggestion_created", {
+    policy: suggestionPolicy(),
+    project_id: project.id,
+    task_id: task.id,
+    proposer_task_id: task.suggested_by_task_id ?? null,
+    priority: task.priority,
+    blocked_by: input.blocked_by?.length ?? 0,
+    agent: task.agent ?? null,
+  });
   return {
     task,
     text: `Suggested task "${input.title}" added to the project tray (id: ${task.id}).${depNote}`,

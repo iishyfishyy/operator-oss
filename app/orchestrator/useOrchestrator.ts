@@ -616,7 +616,13 @@ export function useOrchestrator() {
   const resetSettings = () => {
     setSettings(DEFAULT_SETTINGS);
     for (const key of Object.keys(appDefaults)) {
-      if (key.startsWith("default_") || key === "utility_agent" || key === "background_jobs" || key === "recap_mode") {
+      if (
+        key.startsWith("default_") ||
+        key === "utility_agent" ||
+        key === "background_jobs" ||
+        key === "recap_mode" ||
+        key === "suggestion_policy"
+      ) {
         void setAppDefault(key, null);
       }
     }

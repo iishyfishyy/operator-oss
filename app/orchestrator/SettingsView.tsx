@@ -190,6 +190,9 @@ export function SettingsView({ settings, setSetting, appDefaults, setAppDefault,
   const recapMode = appDefaults.recap_mode === "on_open" || appDefaults.recap_mode === "off"
     ? appDefaults.recap_mode
     : "automatic";
+  // Whether agents may file unrequested follow-ups straight into the Suggested
+  // tray. Default "ask_first" — see lib/suggestionPolicy.ts.
+  const suggestionPolicy = appDefaults.suggestion_policy === "auto" ? "auto" : "ask_first";
   const [jobUsage, setJobUsage] = useState<Record<string, { runs: number; cost_usd: number }> | null>(null);
   useEffect(() => {
     if (section !== "background" || jobUsage !== null) return;
@@ -238,33 +241,58 @@ export function SettingsView({ settings, setSetting, appDefaults, setAppDefault,
         <div className="scroll">
           <div className="settings-body">
             {section === "general" && (
-              <div className="field">
-                <div className="lab">{Icon.clear()} /clear recommendation threshold</div>
-                <div className="hlp" style={{ marginTop: 0, marginBottom: 10 }}>
-                  When a session&apos;s context window crosses either limit, the app nudges you to run <code>/clear</code> to start fresh. Whichever is hit first wins.
-                </div>
-                <div style={{ display: "flex", gap: 14, maxWidth: 420 }}>
-                  <div className="field" style={{ flex: 1, marginBottom: 0 }}>
-                    <div className="lab">Percent of window <span className="opt">— %</span></div>
-                    <input
-                      type="number" min={1} max={100} value={settings.clearThresholdPct}
-                      onChange={(e) => setSetting("clearThresholdPct", Number(e.target.value) || 0)}
-                      onBlur={(e) => setSetting("clearThresholdPct", clampPct(Number(e.target.value) || DEFAULT_SETTINGS.clearThresholdPct))}
-                    />
+              <>
+                <div className="field">
+                  <div className="lab">{Icon.clear()} /clear recommendation threshold</div>
+                  <div className="hlp" style={{ marginTop: 0, marginBottom: 10 }}>
+                    When a session&apos;s context window crosses either limit, the app nudges you to run <code>/clear</code> to start fresh. Whichever is hit first wins.
                   </div>
-                  <div className="field" style={{ flex: 1, marginBottom: 0 }}>
-                    <div className="lab">Absolute tokens <span className="opt">— count</span></div>
-                    <input
-                      type="number" min={1000} step={1000} value={settings.clearThresholdTokens}
-                      onChange={(e) => setSetting("clearThresholdTokens", Number(e.target.value) || 0)}
-                      onBlur={(e) => setSetting("clearThresholdTokens", clampTokens(Number(e.target.value) || DEFAULT_SETTINGS.clearThresholdTokens))}
-                    />
+                  <div style={{ display: "flex", gap: 14, maxWidth: 420 }}>
+                    <div className="field" style={{ flex: 1, marginBottom: 0 }}>
+                      <div className="lab">Percent of window <span className="opt">— %</span></div>
+                      <input
+                        type="number" min={1} max={100} value={settings.clearThresholdPct}
+                        onChange={(e) => setSetting("clearThresholdPct", Number(e.target.value) || 0)}
+                        onBlur={(e) => setSetting("clearThresholdPct", clampPct(Number(e.target.value) || DEFAULT_SETTINGS.clearThresholdPct))}
+                      />
+                    </div>
+                    <div className="field" style={{ flex: 1, marginBottom: 0 }}>
+                      <div className="lab">Absolute tokens <span className="opt">— count</span></div>
+                      <input
+                        type="number" min={1000} step={1000} value={settings.clearThresholdTokens}
+                        onChange={(e) => setSetting("clearThresholdTokens", Number(e.target.value) || 0)}
+                        onBlur={(e) => setSetting("clearThresholdTokens", clampTokens(Number(e.target.value) || DEFAULT_SETTINGS.clearThresholdTokens))}
+                      />
+                    </div>
+                  </div>
+                  <div className="hlp" style={{ marginTop: 8 }}>
+                    Defaults: {DEFAULT_SETTINGS.clearThresholdPct}% or {DEFAULT_SETTINGS.clearThresholdTokens.toLocaleString()} tokens.
                   </div>
                 </div>
-                <div className="hlp" style={{ marginTop: 8 }}>
-                  Defaults: {DEFAULT_SETTINGS.clearThresholdPct}% or {DEFAULT_SETTINGS.clearThresholdTokens.toLocaleString()} tokens.
+                <div className="field">
+                  <div className="lab">{Icon.spark()} Suggested tasks</div>
+                  <div className="hlp" style={{ marginTop: 0, marginBottom: 10 }}>
+                    What an agent does when it spots follow-up work you didn&apos;t ask about. Either way, asking an agent to plan or break down work still fills the tray straight away.
+                  </div>
+                  <div className="seg" style={{ flexWrap: "wrap", maxWidth: 620 }}>
+                    {([
+                      ["ask_first", "Ask me first"],
+                      ["auto", "Add them automatically"],
+                    ] as const).map(([value, label]) => (
+                      <button
+                        key={value}
+                        className={suggestionPolicy === value ? "on" : ""}
+                        onClick={() => setAppDefault("suggestion_policy", value === "ask_first" ? null : value)}
+                      >{label}</button>
+                    ))}
+                  </div>
+                  <div className="hlp" style={{ marginTop: 10 }}>
+                    {suggestionPolicy === "ask_first"
+                      ? "Agents list what they'd propose in the chat and wait for your go-ahead before anything lands in the Suggested tray."
+                      : "Agents add follow-ups to the Suggested tray as they notice them, without asking."}
+                  </div>
                 </div>
-              </div>
+              </>
             )}
             {section === "background" && (
               <>
