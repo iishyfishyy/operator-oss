@@ -23,6 +23,15 @@ A task is a lineage of agent sessions. `/clear` summarizes the current conversat
 starts a clean context window with that history, allowing long-running work to continue
 without turning into one unbounded prompt.
 
+A session opens with the task itself. The first user message in the transcript is the
+task title as a heading followed by its description and a short "Begin working on this
+task" line, marked with a small **task** badge, so anyone reading the session can see
+what it was asked to do without opening the task. The system prompt still carries the
+title and details alongside the project context, dependencies, and carried summaries,
+with a note that the two are one request. A task with no description falls back to a
+generic "start working on the task" opener. Both the manual Start and the auto-start
+pipeline send the same opening turn.
+
 ## Review and delivery
 
 Operator puts the task conversation and git diff side by side. From there you can:

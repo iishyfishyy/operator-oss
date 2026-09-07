@@ -4,7 +4,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import type { Status, Priority, AskQuestion, AskAnswers } from "@/lib/types";
 import { Icon } from "../icons";
 import TaskChanges, { type ResolveResult } from "../TaskChanges";
-import { fmtTokens, fmtCost, fmtJobCost, modelLabel, isAwaiting, isThinking, buildSessions, usageSplit, costDisplay, usageTooltip } from "./format";
+import { fmtTokens, fmtCost, fmtJobCost, modelLabel, isAwaiting, isThinking, buildSessions, usageSplit, sessionUsageSplit, costDisplay, usageTooltip } from "./format";
 import {
   SLABEL, SSUB, AWAIT_LABEL, STATUSES, PLABEL, PRIORITIES,
   modelOptions, reasoningOptions, permissionOptions, RAIL_W,
@@ -197,7 +197,12 @@ export function SessionView({ project, task, agents, messages, running, blockedB
   // presentation follows how this agent is signed in — a subscription login's
   // figure is an API-price equivalent covered by plan quota, not a bill. Both
   // derivations live in ./format so the wording has one home.
-  const usage = usageSplit(task);
+  // The chip leads with the CURRENT session (generation): after a /clear the
+  // fresh window starts from zero, while the lifetime figure — what the project
+  // column sums — moves into the tooltip alongside the session count.
+  const usage = sessionUsageSplit(task);
+  const lifetime = { split: usageSplit(task), costUsd: task.cost_usd, generation: task.generation };
+  const multiSession = task.generation > 1;
   const cost = costDisplay(findAgent(agents, task.agent));
   const multiAgent = agents.agents.length > 1;
   // PR number for the header chip, parsed from the stored URL (…/pull/42).
@@ -348,10 +353,11 @@ export function SessionView({ project, task, agents, messages, running, blockedB
             )}
             <AgentBadge label={agentLabel(agents, task.agent)} multi={multiAgent} />
             {(task.cost_usd > 0 || task.total_tokens > 0) && (
-              <span className="usage-chip" title={usageTooltip(usage, task.cost_usd, cost)}>
+              <span className="usage-chip" title={usageTooltip(usage, task.session_cost_usd ?? 0, cost, lifetime)}>
+                {multiSession && <><span className="usage-scope">this session</span> <span className="usage-dot">·</span> </>}
                 {fmtTokens(usage.fresh)} tok
                 {usage.cacheRead > 0 && <> <span className="usage-dot">·</span> <span className="usage-cached">{fmtTokens(usage.cacheRead)} cached</span></>}
-                {cost.show && <> <span className="usage-dot">·</span> {cost.approx && "~"}{fmtCost(task.cost_usd)}</>}
+                {cost.show && <> <span className="usage-dot">·</span> {cost.approx && "~"}{fmtCost(task.session_cost_usd ?? 0)}</>}
               </span>
             )}
             {mobile && hasSession && (

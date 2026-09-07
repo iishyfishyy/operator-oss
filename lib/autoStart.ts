@@ -26,7 +26,7 @@ import { claimTurn, unregisterTurn } from "@/lib/abort";
 import { withTaskLock } from "@/lib/taskLock";
 import { publish } from "@/lib/events";
 import { ensureWorktree } from "@/lib/git";
-import { INITIAL_TASK_PROMPT } from "@/lib/agents/shared";
+import { buildInitialPrompt } from "@/lib/agents/shared";
 import type { Task } from "@/lib/types";
 
 // Is this dependency still blocking? Mirrors the client's blockerTitles():
@@ -91,7 +91,8 @@ async function launchInitialTurn(taskId: string, doneTitle: string): Promise<voi
       const fresh = getTask(taskId);
       if (!fresh || fresh.started || fresh.suggested || fresh.status !== "not_started" || !fresh.auto_start) return;
       if (getTaskDeps(taskId).some(blocks)) return;
-      const userText = INITIAL_TASK_PROMPT;
+      // Same opening turn the POST route sends: the task text itself.
+      const userText = buildInitialPrompt(fresh);
 
       // Give the task its own worktree + branch (self-heals a pruned one),
       // falling back to repo_path on any git hiccup — same as the route.

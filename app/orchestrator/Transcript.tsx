@@ -292,7 +292,7 @@ export const MessageView = memo(function MessageView({ m, initial, hideWho, runn
         <div className="who">
           <Avatar who={isUser ? "user" : "cc"} agent={agent} />
           {isUser ? "You" : "Agent"}
-          {initial && <span className="badge">initial prompt</span>}
+          {initial && <span className="badge">task</span>}
           {m.ts != null && <span className="msg-time">{clockTime(m.ts)}</span>}
         </div>
       )}

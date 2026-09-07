@@ -7,10 +7,32 @@
 import type { Project, Task, AskQuestion, AskAnswers, ToolPeek, DiffLine } from "../types";
 import { listSummaries } from "../store";
 
-// A fresh agent session still needs a user turn to begin, but task metadata is
-// already supplied by buildProjectContext(). Keep this prompt deliberately
-// generic so the title and details have one canonical representation.
+// The generic opening turn, used only when a task has no description: a fresh
+// agent session still needs a user turn to begin, and with nothing but a title
+// (already in the task list and the system prompt) there's nothing to show.
 export const INITIAL_TASK_PROMPT = "Start working on the task described in the task context.";
+
+// The closing line of a task-text kickoff — what turns a pasted description
+// into an instruction.
+export const INITIAL_PROMPT_KICKOFF = "Begin working on this task.";
+
+/**
+ * The opening user turn of a fresh session, rendered as the task itself: the
+ * title as a heading, the description body, and a short kickoff line. This is
+ * what the transcript shows as the session's first message, so the user can
+ * read what the session was asked to do without opening the task editor. The
+ * system prompt (buildProjectContext) still carries the same title/details
+ * alongside deps and carried summaries; it notes that the task text is also
+ * the first user message so the model doesn't treat the two as separate asks.
+ *
+ * A task with an empty description falls back to INITIAL_TASK_PROMPT.
+ */
+export function buildInitialPrompt(task: Pick<Task, "title" | "description">): string {
+  const description = (task.description ?? "").trim();
+  if (!description) return INITIAL_TASK_PROMPT;
+  const title = task.title.trim();
+  return [title ? `# ${title}` : "", description, INITIAL_PROMPT_KICKOFF].filter(Boolean).join("\n\n");
+}
 
 /**
  * Build the context string that is prepended to every task's session via the
@@ -31,7 +53,12 @@ export function buildProjectContext(project: Project, task: Task): string {
   if (ctx && task.send_context !== 0) lines.push(`\nWhat we're building (project context):\n${ctx}`);
   if (project.branch) lines.push(`\nGit branch: ${project.branch}`);
   lines.push(`\n---\nThe current task is: "${task.title}"`);
-  if (task.description) lines.push(`Task details: ${task.description}`);
+  if (task.description) {
+    lines.push(`Task details: ${task.description}`);
+    // The same text opens the session as its first user message (see
+    // buildInitialPrompt) — say so, or the model reads it as two requests.
+    lines.push(`(This task text is also the first user message of the session; it is one request, not two.)`);
+  }
 
   if (summaries.length > 0) {
     lines.push(`\n--- Carried context from previous sessions of this task ---`);

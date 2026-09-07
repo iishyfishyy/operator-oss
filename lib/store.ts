@@ -212,6 +212,11 @@ export function setProjectRefresh(
 // misleading: in real sessions most of it is prompt-cache READS (context re-sent
 // every turn, billed at ~10% of the input rate), so the UI splits the total into
 // fresh work vs cached re-reads rather than showing one scary number.
+// The `session_*` twins are the same figures restricted to the CURRENT
+// generation (rows WHERE generation = t.generation): /clear starts a fresh
+// context window, and the chat header leads with what THAT window has spent
+// so far, keeping the lifetime figure for the tooltip (and for the project-
+// level sum in listProjects, which must never lose spend to a /clear).
 // `context_tokens`/`context_pct` are the LIVE context-window gauge — the
 // latest turn's input-side tokens, NOT a cumulative sum (see getTaskContext).
 // `depends_on` lists the task ids this task is blocked by (see task_dependencies).
@@ -220,6 +225,10 @@ export type TaskWithUsage = Task & {
   total_tokens: number;
   cache_read_tokens: number;
   cache_creation_tokens: number;
+  session_cost_usd: number;
+  session_tokens: number;
+  session_cache_read_tokens: number;
+  session_cache_creation_tokens: number;
   context_tokens: number;
   context_pct: number;
   depends_on: string[];
@@ -235,6 +244,11 @@ export function listTasks(projectId: string): TaskWithUsage[] {
                    FROM task_usage u WHERE u.task_id = t.id), 0) AS total_tokens,
          COALESCE((SELECT SUM(u.cache_read_tokens) FROM task_usage u WHERE u.task_id = t.id), 0) AS cache_read_tokens,
          COALESCE((SELECT SUM(u.cache_creation_tokens) FROM task_usage u WHERE u.task_id = t.id), 0) AS cache_creation_tokens,
+         COALESCE((SELECT SUM(u.cost_usd) FROM task_usage u WHERE u.task_id = t.id AND u.generation = t.generation), 0) AS session_cost_usd,
+         COALESCE((SELECT SUM(u.input_tokens + u.output_tokens + u.cache_read_tokens + u.cache_creation_tokens)
+                   FROM task_usage u WHERE u.task_id = t.id AND u.generation = t.generation), 0) AS session_tokens,
+         COALESCE((SELECT SUM(u.cache_read_tokens) FROM task_usage u WHERE u.task_id = t.id AND u.generation = t.generation), 0) AS session_cache_read_tokens,
+         COALESCE((SELECT SUM(u.cache_creation_tokens) FROM task_usage u WHERE u.task_id = t.id AND u.generation = t.generation), 0) AS session_cache_creation_tokens,
          COALESCE((SELECT u.input_tokens + u.cache_read_tokens + u.cache_creation_tokens
                    FROM task_usage u WHERE u.task_id = t.id
                    ORDER BY u.created_at DESC, u.rowid DESC LIMIT 1), 0) AS context_tokens
@@ -246,6 +260,10 @@ export function listTasks(projectId: string): TaskWithUsage[] {
     total_tokens: number;
     cache_read_tokens: number;
     cache_creation_tokens: number;
+    session_cost_usd: number;
+    session_tokens: number;
+    session_cache_read_tokens: number;
+    session_cache_creation_tokens: number;
     context_tokens: number;
   })[];
   // Attach each task's dependency edges in one query (project-scoped via join).
@@ -707,7 +725,7 @@ const ZERO_USAGE: UsageTotals = {
 };
 
 // Sum a usage query into cumulative totals (NULLs → 0 when no rows exist yet).
-function sumUsage(where: string, param: string): UsageTotals {
+function sumUsage(where: string, ...params: (string | number)[]): UsageTotals {
   const row = getDb()
     .prepare(
       `SELECT
@@ -719,7 +737,7 @@ function sumUsage(where: string, param: string): UsageTotals {
          COUNT(*) AS turns
        FROM task_usage WHERE ${where}`
     )
-    .get(param) as Omit<UsageTotals, "total_tokens"> | undefined;
+    .get(...params) as Omit<UsageTotals, "total_tokens"> | undefined;
   if (!row) return { ...ZERO_USAGE };
   return {
     ...row,
@@ -729,6 +747,13 @@ function sumUsage(where: string, param: string): UsageTotals {
 
 export function getTaskUsage(taskId: string): UsageTotals {
   return sumUsage("task_id = ?", taskId);
+}
+
+// One generation's share of a task's spend — the "this session" figure the chat
+// header leads with. Pass the task's current generation for the live window;
+// right after /clear it sums nothing, which is the point (see TaskWithUsage).
+export function getGenerationUsage(taskId: string, generation: number): UsageTotals {
+  return sumUsage("task_id = ? AND generation = ?", taskId, generation);
 }
 
 // ---------- context-window occupancy ----------

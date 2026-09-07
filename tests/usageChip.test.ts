@@ -5,11 +5,11 @@
 // re-sent every turn at ~10% of the input rate, not work), and a dollar figure
 // is only presented as money when the agent is signed in with an API key.
 import { describe, it, expect } from "vitest";
-import { usageSplit, costDisplay, usageTooltip, fmtJobCost } from "@/app/orchestrator/format";
+import { usageSplit, sessionUsageSplit, costDisplay, usageTooltip, fmtJobCost } from "@/app/orchestrator/format";
 import type { AgentInfo, TaskRow } from "@/app/orchestrator/types";
 import { CLAUDE_CAPABILITIES } from "@/lib/agents/claude/capabilities";
 import { CODEX_CAPABILITIES } from "@/lib/agents/codex/capabilities";
-import { addUsage, createProject, createTask, listTasks } from "@/lib/store";
+import { addUsage, createProject, createTask, listTasks, updateTask, getTaskUsage, getGenerationUsage } from "@/lib/store";
 import { tmpDir } from "./helpers";
 
 // The shape from the investigation: 13k in/out, 240k cache writes, 3.5M reads.
@@ -66,6 +66,49 @@ describe("listTasks", () => {
     expect(row.cache_creation_tokens).toBe(800);
     expect(usageSplit(row).fresh).toBe(1_100);
   });
+
+  // /clear ends generation N and starts N+1 with a fresh context window. The
+  // chip leads with what THAT window has spent, so the row carries the current
+  // generation's share beside the lifetime total — and the lifetime must keep
+  // every earlier generation (it's what the project column sums).
+  it("splits the current generation's spend from the task's lifetime spend", () => {
+    const project = createProject({ name: `p-${Math.random().toString(36).slice(2, 8)}`, repo_path: tmpDir() });
+    const task = createTask({ project_id: project.id, title: "t", description: "" });
+    const gen1 = { cost_usd: 2, input_tokens: 1_000, output_tokens: 500, cache_read_tokens: 20_000, cache_creation_tokens: 3_000 };
+    const gen2 = { cost_usd: 0.5, input_tokens: 100, output_tokens: 50, cache_read_tokens: 1_000, cache_creation_tokens: 200 };
+    addUsage({ project_id: project.id, task_id: task.id, generation: 1, usage: gen1 });
+    addUsage({ project_id: project.id, task_id: task.id, generation: 1, usage: gen1 });
+
+    // Right after /clear: generation bumped, nothing spent in the new window yet.
+    updateTask(task.id, { generation: 2 });
+    let row = listTasks(project.id).find((t) => t.id === task.id)!;
+    expect(row.generation).toBe(2);
+    expect(row.cost_usd).toBe(4);
+    expect(row.total_tokens).toBe(49_000);
+    expect(row.session_cost_usd).toBe(0);
+    expect(row.session_tokens).toBe(0);
+    expect(row.session_cache_read_tokens).toBe(0);
+    expect(row.session_cache_creation_tokens).toBe(0);
+    expect(sessionUsageSplit(row).fresh).toBe(0);
+
+    // The new window's first turn lands: session = that turn, lifetime = all three.
+    addUsage({ project_id: project.id, task_id: task.id, generation: 2, usage: gen2 });
+    row = listTasks(project.id).find((t) => t.id === task.id)!;
+    expect(row.session_cost_usd).toBe(0.5);
+    expect(row.session_tokens).toBe(1_350);
+    expect(row.session_cache_read_tokens).toBe(1_000);
+    expect(row.session_cache_creation_tokens).toBe(200);
+    expect(sessionUsageSplit(row).fresh).toBe(350);
+    expect(row.cost_usd).toBe(4.5);
+    expect(row.total_tokens).toBe(50_350);
+    expect(row.cache_read_tokens).toBe(41_000);
+    expect(usageSplit(row).fresh).toBe(9_350);
+
+    // GET /api/tasks/[id] builds the same pair from these two helpers.
+    expect(getTaskUsage(task.id)).toMatchObject({ cost_usd: 4.5, total_tokens: 50_350, turns: 3 });
+    expect(getGenerationUsage(task.id, 2)).toMatchObject({ cost_usd: 0.5, total_tokens: 1_350, turns: 1 });
+    expect(getGenerationUsage(task.id, 1)).toMatchObject({ cost_usd: 4, total_tokens: 49_000, turns: 2 });
+  });
 });
 
 describe("costDisplay", () => {
@@ -119,5 +162,22 @@ describe("usageTooltip", () => {
   it("drops the cache lines when nothing was cached", () => {
     const text = usageTooltip(usageSplit({ total_tokens: 900, cache_read_tokens: 0, cache_creation_tokens: 0 }), 0, costDisplay(undefined));
     expect(text).toBe("900 new tokens this task: 900 in/out · 0 written to cache");
+  });
+
+  it("says 'this task' while there is one session, and adds lifetime once there are more", () => {
+    const api = costDisplay(agent({ account: { email: null, plan: "API", method: "api_key" } }));
+    const session = usageSplit({ total_tokens: 1_350, cache_read_tokens: 1_000, cache_creation_tokens: 200 });
+    // Single generation: session == lifetime, so no second section.
+    const one = usageTooltip(session, 0.5, api, { split: session, costUsd: 0.5, generation: 1 });
+    expect(one).toContain("350 new tokens this task");
+    expect(one).not.toContain("Lifetime");
+    // After a /clear: the chip's figures are the current window, lifetime follows.
+    const two = usageTooltip(session, 0.5, api, { split: usageSplit(real), costUsd: 4.7, generation: 2 });
+    expect(two).toContain("350 new tokens this session (2 of 2)");
+    expect(two).toContain("$0.500 billed");
+    expect(two).toContain("Lifetime across 2 sessions");
+    expect(two).toContain("253,000 new tokens");
+    expect(two).toContain("3,753,000 tokens total");
+    expect(two).toContain("$4.70 billed");
   });
 });
