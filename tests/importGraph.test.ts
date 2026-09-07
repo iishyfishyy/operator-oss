@@ -30,6 +30,7 @@ const PINNED = [
   "lib/agents/capabilities.ts", // the whole point of the module
   "lib/agents/connections.ts", // connection state is ID lookups only — no driving
   "lib/agentTools.ts", //        behind the internal agent-tools routes (stdio bridge)
+  "lib/askFormat.ts", //         pure text; imported by the client bundle AND the /answer route
   "app/api/services/grant/route.ts",
   "app/api/instance/services-restore/route.ts",
 ];

@@ -226,8 +226,13 @@ export type StreamEvent =
 // queue too, so a reload mid-run re-renders the queued bubbles.
 // `ts` mirrors the persisted row's created_at (ms epoch) so a live-tail bubble
 // carries the same clock a reconnect's snapshot row would.
+// `awaiting_input` rides on ask_answered only: whether the task is STILL parked
+// (another ask from the same assistant message is unanswered). It's the value
+// the publisher just persisted on the row, so the client applies it verbatim
+// instead of guessing from its own open-ask bookkeeping — which, rebuilt from a
+// reloaded transcript, can count a stale card from an earlier turn as open.
 export type TaskStreamEvent =
-  | (StreamEvent & { msgId?: string; generation?: number; ts?: number })
+  | (StreamEvent & { msgId?: string; generation?: number; ts?: number; awaiting_input?: boolean })
   | { type: "user"; content: string; msgId: string; generation: number; ts?: number }
   | { type: "queued"; msgId: string; content: string; generation: number; ts?: number }
   | { type: "dequeued"; msgId: string }

@@ -6,7 +6,7 @@ import { getDb } from "./db";
 // break sync route entries at runtime (see the note in that file).
 import { modelContextWindow } from "./agents/capabilities";
 import { SERVICE_PORT_BASE } from "./config";
-import type { Project, Task, Message, PendingMessage, Summary, Session, Priority, Status, MsgRole, TurnUsage, UsageTotals } from "./types";
+import type { Project, Task, Message, PendingMessage, Summary, Session, Priority, Status, MsgRole, TurnUsage, UsageTotals, ToolData, AskQuestion, AskAnswers } from "./types";
 export { addInternalUsage, type InternalJob } from "./internalUsage";
 
 // ---------- projects ----------
@@ -501,6 +501,32 @@ export function addMessage(taskId: string, generation: number, role: MsgRole, co
 
 export function updateMessage(id: string, content: string) {
   getDb().prepare("UPDATE messages SET content = ? WHERE id = ?").run(content, id);
+}
+
+// Write the user's answers onto a persisted AskUserQuestion card, matched by
+// the ask id embedded in its content. The runner does this itself for a live
+// turn (it holds the row id); this is for the /answer route's fallback, when
+// the turn that asked is gone and the answer can't be delivered in-process —
+// the card must still settle in the transcript, or it reads as an open
+// question on every reload. Returns the updated row plus the questions it
+// carried (the reply that resumes the session is phrased from them);
+// undefined when no card carries that id.
+export function answerAskMessage(taskId: string, askId: string, answers: AskAnswers): { message: Message; questions: AskQuestion[] } | undefined {
+  for (const m of listMessages(taskId)) {
+    if (m.role !== "tool") continue;
+    let data: ToolData;
+    try {
+      data = JSON.parse(m.content) as ToolData;
+    } catch {
+      continue;
+    }
+    if (!data.ask || data.ask.id !== askId) continue;
+    data.ask = { ...data.ask, answers };
+    const content = JSON.stringify(data);
+    updateMessage(m.id, content);
+    return { message: { ...m, content }, questions: data.ask.questions };
+  }
+  return undefined;
 }
 
 // ---------- pending (queued) messages ----------

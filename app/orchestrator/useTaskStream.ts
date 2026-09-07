@@ -123,10 +123,16 @@ export function useTaskStream({ selTask, selProjRef, agentsRef, setTaskRunning, 
       setTasks((prev) => prev.map((x) => (x.id === taskId ? { ...x, awaiting_input: 1 } : x)));
     } else if (ev.type === "ask_answered") {
       setAnswerOnMsg(taskId, ev.id, ev.answers);
-      // Only drop the flag once every parked ask on this task is answered.
+      // Only drop the flag once every parked ask on this task is answered. The
+      // publisher persisted that verdict on the row before publishing and
+      // sends it along; the local open-ask set is only a fallback for an
+      // event without it, since a set rebuilt from a reloaded transcript can
+      // still hold a stale card (Stop / restart while parked) that would
+      // otherwise keep the flag — and hide the progress dots — forever.
       const open = openAsksRef.current[taskId];
       open?.delete(ev.id);
-      if (!open || open.size === 0) {
+      const stillParked = ev.awaiting_input ?? (!!open && open.size > 0);
+      if (!stillParked) {
         setTasks((prev) => prev.map((x) => (x.id === taskId ? { ...x, awaiting_input: 0 } : x)));
       }
     } else if (ev.type === "usage") {

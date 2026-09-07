@@ -77,9 +77,10 @@ export function waitForAnswer(
 
 /**
  * Resolve a parked ask with the user's answers. Returns false when nothing is
- * waiting under that id (e.g. the turn was torn down by a page reload) — the
- * caller then falls back to resuming the session with the answer as a normal
- * reply.
+ * waiting under that id (the turn that asked was stopped, or the process
+ * restarted while parked — a page reload never tears a turn down) — the
+ * /answer route then settles the persisted card itself and resumes the
+ * session with the answer as a normal reply.
  */
 export function submitAnswer(taskId: string, id: string, answers: AskAnswers): boolean {
   const pending = remove(taskId, id);

@@ -307,7 +307,7 @@ async function run(task: Task, project: Project, userText: string, syncNote: str
           // later turn-end re-flags it via the finally block.)
           openAsks.delete(ev.id);
           if (openAsks.size === 0) updateTask(id, { awaiting_input: 0 });
-          publish(id, { ...ev, msgId: t.dbId, generation: gen });
+          publish(id, { ...ev, msgId: t.dbId, generation: gen, awaiting_input: openAsks.size > 0 });
         }
       } else if (ev.type === "usage") {
         addUsage({ project_id: project.id, task_id: id, generation: gen, agent: task.agent, usage: ev.usage });
