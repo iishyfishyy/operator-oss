@@ -26,7 +26,7 @@ import { claimTurn, unregisterTurn } from "@/lib/abort";
 import { withTaskLock } from "@/lib/taskLock";
 import { publish } from "@/lib/events";
 import { ensureWorktree } from "@/lib/git";
-import { buildInitialPrompt } from "@/lib/agents/shared";
+import { buildOpeningPrompt } from "@/lib/agents/shared";
 import type { Task } from "@/lib/types";
 
 // Is this dependency still blocking? Mirrors the client's blockerTitles():
@@ -91,8 +91,11 @@ async function launchInitialTurn(taskId: string, doneTitle: string): Promise<voi
       const fresh = getTask(taskId);
       if (!fresh || fresh.started || fresh.suggested || fresh.status !== "not_started" || !fresh.auto_start) return;
       if (getTaskDeps(taskId).some(blocks)) return;
-      // Same opening turn the POST route sends: the task text itself.
-      const userText = buildInitialPrompt(fresh);
+      // Same opening turn the POST route sends. In practice that's always the
+      // task text — a /clear'd task is in_progress and so never reaches here —
+      // but route through the same helper so the two launchers can't drift on
+      // the generation-1-vs-resumed distinction.
+      const userText = buildOpeningPrompt(fresh);
 
       // Give the task its own worktree + branch (self-heals a pruned one),
       // falling back to repo_path on any git hiccup — same as the route.
