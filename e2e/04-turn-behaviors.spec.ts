@@ -114,6 +114,66 @@ test("agent suggestions land in the Suggested tray", async ({ page, request }) =
   await expect(page.locator(".sg-name").filter({ hasText: "Refactor the widget factory" })).toBeVisible();
   // …under a header naming the task (and session) whose turn proposed it.
   await expect(page.locator(".sug-head").filter({ hasText: "From: Suggesting · session 1" })).toBeVisible();
+
+  // The persisted suggest_task card links to the task it created (the driver
+  // lifts the id off the tool result; the runner persists it on the row).
+  const parent = await getTask(request, task.id);
+  const card = parent.messages.find((m: { role: string; content: string }) => m.role === "tool" && m.content.includes('"suggestion"'));
+  expect(JSON.parse(card.content).suggestion).toEqual({ title: "Refactor the widget factory", taskId: suggestion.id });
+
+  // In the proposer's transcript that card is a LIVE chip: rename it inline and
+  // the tray follows, dismiss it and the chip greys out as "dismissed".
+  // `exact` keeps the tray's "From: Suggesting · session 1" header out of it.
+  await page.getByText("Suggesting", { exact: true }).first().click();
+  const chip = page.locator(".sug-chip").filter({ hasText: "Refactor the widget factory" });
+  await expect(chip).toBeVisible();
+  await chip.locator(".sug-chip-title").click();
+  // While editing, the chip's text is the input's VALUE (not text content), so
+  // the hasText filter above can't see it — find the field by its label.
+  const field = page.getByRole("textbox", { name: "Task title" });
+  await field.fill("Refactor the widget factory, gently");
+  await field.press("Enter");
+  await expect(page.locator(".sg-name").filter({ hasText: "Refactor the widget factory, gently" })).toBeVisible();
+  await expect.poll(async () => (await getTask(request, suggestion.id)).title).toBe("Refactor the widget factory, gently");
+
+  await chip.getByRole("button", { name: "Dismiss suggestion" }).click();
+  await expect(chip).toHaveClass(/is-gone/);
+  await expect(chip).toContainText("dismissed");
+  await expect(page.locator(".sg-name").filter({ hasText: "Refactor the widget factory" })).toHaveCount(0);
+  expect((await request.get(`/api/tasks/${suggestion.id}`)).status()).toBe(404);
+});
+
+test("a turn that files several suggestions gets a 'Suggested this session' block", async ({ page, request }) => {
+  const task = await createTask(request, {
+    projectId,
+    title: "Batching",
+    description: "e2e:suggest=Batch alpha\ne2e:suggest=Batch beta",
+  });
+  await sendMessage(request, task.id);
+  await waitForIdle(request, task.id);
+
+  await gotoApp(page);
+  await page.getByText(PROJECT).first().click();
+  await page.getByText("Batching", { exact: true }).first().click();
+  // One compact block at the end of the turn, holding both chips.
+  const batch = page.locator(".sug-batch");
+  await expect(batch).toBeVisible();
+  await expect(batch).toContainText("Suggested this session");
+  await expect(batch).toContainText("2 tasks");
+  await expect(batch.locator(".sug-chip")).toHaveCount(2);
+
+  // Add from the block: the chip flips to "added" (with Open), the tray drops
+  // it, and it appears in the task list as a real task.
+  const alpha = batch.locator(".sug-chip").filter({ hasText: "Batch alpha" });
+  await alpha.getByRole("button", { name: "Add" }).click();
+  await expect(alpha).toContainText("added");
+  await expect(alpha.getByRole("button", { name: "Open" })).toBeVisible();
+  await expect(page.locator(".sg-name").filter({ hasText: "Batch alpha" })).toHaveCount(0);
+  await expect(page.locator(".sg-name").filter({ hasText: "Batch beta" })).toBeVisible();
+  // Collapsing hides the chips; the header stays.
+  await batch.locator(".sug-batch-h").click();
+  await expect(batch.locator(".sug-chip")).toHaveCount(0);
+  await expect(batch).toContainText("2 tasks");
 });
 
 test("a second turn resumes the same session", async ({ request }) => {

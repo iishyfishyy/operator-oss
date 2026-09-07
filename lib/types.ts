@@ -204,8 +204,11 @@ export type StreamEvent =
   | { type: "session"; sessionId: string }
   | { type: "model"; model: string }
   | { type: "assistant"; content: string }
-  | { type: "tool"; id: string; title: string; detail: string; peek?: ToolPeek; diff?: DiffLine[] }
-  | { type: "tool_result"; id: string; content: string; isError: boolean; peek?: ToolPeek }
+  | { type: "tool"; id: string; title: string; detail: string; peek?: ToolPeek; diff?: DiffLine[]; suggestion?: ToolSuggestion }
+  // `taskId` rides on the result of a suggest_task call: the task it created, parsed
+  // from the tool's own confirmation text (the id doesn't exist yet when the
+  // tool_use is emitted). The runner merges it into the persisted ToolData.
+  | { type: "tool_result"; id: string; content: string; isError: boolean; peek?: ToolPeek; taskId?: string }
   | { type: "ask"; id: string; questions: AskQuestion[] }
   | { type: "ask_answered"; id: string; answers: AskAnswers }
   | { type: "suggested"; title: string }
@@ -278,6 +281,17 @@ export type GlobalTaskEvent = {
 // every project at once, so there's nothing task-shaped to hang it off.
 export type GlobalEvent = GlobalTaskEvent | AgentAuthEvent;
 
+// A suggest_task call as seen from the transcript: the title as the agent
+// proposed it (the durable fallback once the task is renamed or deleted) and,
+// once the call returned, the id of the task it created. The Transcript renders
+// a tool message carrying this as a live suggestion chip — current title, inline
+// rename, Add / Start / Dismiss — keyed by `taskId` against the project's task
+// list. `taskId` stays absent when the call failed (project deleted mid-turn).
+export interface ToolSuggestion {
+  title: string;
+  taskId?: string;
+}
+
 // How a tool call is stored (JSON) in a "tool" message's content.
 export interface ToolData {
   title: string;
@@ -296,4 +310,8 @@ export interface ToolData {
   // tool_use id (stored here so it survives a reload — there's no DB column for
   // it). `answers` is absent while awaiting the user, set once answered.
   ask?: { id: string; questions: AskQuestion[]; answers?: AskAnswers };
+  // Present when this "tool" message is a suggest_task call (see ToolSuggestion).
+  // Persisted so the chip survives a reload; `taskId` is filled in from the
+  // tool_result, or set with the tool event by drivers that create first.
+  suggestion?: ToolSuggestion;
 }

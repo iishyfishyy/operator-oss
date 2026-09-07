@@ -9,6 +9,7 @@ import { ProjectsColumn } from "./orchestrator/ProjectsColumn";
 import { TasksColumn } from "./orchestrator/TasksColumn";
 import { BoardWorkspace } from "./orchestrator/TaskBoard";
 import { SessionView } from "./orchestrator/SessionView";
+import { SuggestionContext, useSuggestionActions } from "./orchestrator/Transcript";
 import { ProjectLanding } from "./orchestrator/ProjectLanding";
 import { SettingsView } from "./orchestrator/SettingsView";
 import { InsightsView } from "./orchestrator/InsightsView";
@@ -212,6 +213,18 @@ export default function Orchestrator() {
     />
   );
 
+  // What the transcript's suggestion chips read and act on: the selected
+  // project's task list (a chip's title is the task's CURRENT title, and a
+  // missing task means it was dismissed) plus the same handlers the tray uses.
+  const suggestionActions = useSuggestionActions(o.tasks, !o.tasksLoading, {
+    onRename: o.renameTask,
+    onEdit: o.setEditId,
+    onAccept: o.acceptSuggestion,
+    onStart: o.startSuggestion,
+    onDismiss: o.dismissSuggestion,
+    onOpen: (id) => { if (project) o.goToTask(project.id, id); },
+  });
+
   const sessionColumn = (
     <div className="col col-session">
       {project?.seeded === 1 && !isMobile && <WelcomeCoach />}
@@ -384,6 +397,7 @@ export default function Orchestrator() {
   );
 
   return (
+    <SuggestionContext.Provider value={suggestionActions}>
     <div className={`app${isMobile ? " mobile" : ""}`}>
       <div className="titlebar">
         <div className="tb-left">
@@ -625,5 +639,6 @@ export default function Orchestrator() {
         />
       )}
     </div>
+    </SuggestionContext.Provider>
   );
 }

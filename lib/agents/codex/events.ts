@@ -11,7 +11,7 @@
 // update the same row in place (matching the Claude driver's tool/tool_result
 // pairing).
 
-import type { StreamEvent, ToolPeek } from "../../types";
+import type { StreamEvent, ToolPeek, ToolSuggestion } from "../../types";
 import type {
   ThreadEvent,
   ThreadItem,
@@ -25,7 +25,7 @@ import type {
 // The SDK's Usage, with every counter optional: the app reads a `codex` binary
 // the user installed, which may be older or newer than the SDK types.
 type TurnCompletedUsage = Partial<Usage>;
-import { clip, summarizeResult, resultText } from "../shared";
+import { clip, summarizeResult, resultText, describeToolUse, isSuggestTool, parseSuggestedTaskId } from "../shared";
 import { DEFAULT_CODEX_MODEL } from "./pricing";
 import { codexUsage } from "./usage";
 
@@ -162,11 +162,11 @@ function mapItem(phase: ItemPhase, item: ThreadItem, state: CodexMapState): Stre
 function toolOnce(
   state: CodexMapState,
   id: string,
-  fields: { title: string; detail: string; peek?: ToolPeek }
+  fields: { title: string; detail: string; peek?: ToolPeek; suggestion?: ToolSuggestion }
 ): StreamEvent {
   if (state.emittedTool.has(id)) return EMPTY;
   state.emittedTool.add(id);
-  return { type: "tool", id, title: fields.title, detail: fields.detail, peek: fields.peek };
+  return { type: "tool", id, title: fields.title, detail: fields.detail, peek: fields.peek, suggestion: fields.suggestion };
 }
 
 // A "no event" marker used by toolOnce; filtered by nonEmpty(). Kept as a typed
@@ -229,17 +229,27 @@ function mapMcp(phase: ItemPhase, item: McpToolCallItem, state: CodexMapState): 
   // driver skipping AskUserQuestion tool_use blocks).
   if (item.server === "orchestrator" && item.tool === "ask_user") return [];
   const out: StreamEvent[] = [];
-  const tool = toolOnce(state, item.id, { title: `⚙ ${item.server}: ${item.tool}`, detail: clip(item.arguments) });
+  // The orchestrator's own tools render exactly as they do on Claude — same
+  // title, and for suggest_task the same `suggestion` payload the transcript
+  // turns into a live chip. Any other MCP server gets the generic line.
+  const ours = item.server === "orchestrator";
+  const desc = ours ? describeToolUse(item.tool, (item.arguments ?? {}) as Record<string, unknown>) : null;
+  const tool = toolOnce(state, item.id, desc
+    ? { title: desc.title, detail: desc.detail, suggestion: desc.suggestion }
+    : { title: `⚙ ${item.server}: ${item.tool}`, detail: clip(item.arguments) });
   if (nonEmpty(tool)) out.push(tool);
   if (phase === "completed") {
     const isError = item.status === "failed" || !!item.error;
     const content = item.error ? item.error.message : resultText(item.result?.content);
+    // suggest_task's confirmation names the task it created (see shared.ts).
+    const taskId = ours && isSuggestTool(item.tool) && !isError ? parseSuggestedTaskId(content) : undefined;
     out.push({
       type: "tool_result",
       id: item.id,
       content: clip(content, 6000),
       isError,
       peek: isError ? undefined : summarizeResult("output", content),
+      taskId,
     });
   }
   return out;

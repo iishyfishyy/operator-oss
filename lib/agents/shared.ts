@@ -4,7 +4,7 @@
 // knows which agent is running — drivers reuse these to emit the normalized
 // StreamEvent contract (see lib/agents/types.ts).
 
-import type { Project, Task, AskQuestion, AskAnswers, ToolPeek, DiffLine } from "../types";
+import type { Project, Task, AskQuestion, AskAnswers, ToolPeek, DiffLine, ToolSuggestion } from "../types";
 import { listSummaries } from "../store";
 import { suggestionPolicy } from "../suggestionPolicy";
 
@@ -257,6 +257,32 @@ export function summarizeResult(kind: ResultKind, raw: string): ToolPeek {
   }
 }
 
+// The orchestrator's suggest_task tool, by whatever name a driver surfaces it
+// under (Claude prefixes MCP tools as mcp__orchestrator__suggest_task; Codex
+// reports server + tool separately and passes the bare name here).
+export function isSuggestTool(name: string): boolean {
+  return name.includes("suggest_task");
+}
+
+// The confirmation text suggest_task hands back to the agent, and its inverse.
+// Both ends live here on purpose: the tool result is the ONLY channel that
+// carries the created task's id back to the driver (the MCP handler can't see
+// the tool_use id it's answering, so it can't tag the event directly), and every
+// driver parses it the same way — lib/agentTools.ts formats, the Claude driver,
+// the Codex normalizer and the mock driver parse.
+// The parse is anchored to the fixed phrase and takes the LAST occurrence: the
+// agent's own title precedes the id in the text, so a title that happens to
+// contain "(id: …)" can't be mistaken for the real one.
+const SUGGESTED_ID_RE = /added to the project tray \(id: ([A-Za-z0-9_-]+)\)\./g;
+export function formatSuggestedTaskText(title: string, taskId: string): string {
+  return `Suggested task "${title}" added to the project tray (id: ${taskId}).`;
+}
+export function parseSuggestedTaskId(resultText: string): string | undefined {
+  let id: string | undefined;
+  for (const m of resultText.matchAll(SUGGESTED_ID_RE)) id = m[1];
+  return id;
+}
+
 // Returns a one-line title, an expandable detail of the tool input, an optional
 // always-visible peek, and (for result-derived peeks) the kind to summarize the
 // eventual output with. Mirrors what Claude Code reveals per tool; the names
@@ -265,7 +291,7 @@ export function summarizeResult(kind: ResultKind, raw: string): ToolPeek {
 export function describeToolUse(
   name: string,
   input: Record<string, unknown>
-): { title: string; detail: string; peek?: ToolPeek; diff?: DiffLine[]; resultKind?: ResultKind } {
+): { title: string; detail: string; peek?: ToolPeek; diff?: DiffLine[]; resultKind?: ResultKind; suggestion?: ToolSuggestion } {
   const file = (input?.file_path || input?.path || input?.notebook_path) as string | undefined;
   const base = file ? file.split("/").slice(-1)[0] : undefined;
   switch (name) {
@@ -303,7 +329,10 @@ export function describeToolUse(
     case "Task":
       return { title: `🤖 Subagent: ${String(input?.description ?? "task")}`, detail: clip(input?.prompt) };
     default:
-      if (name.includes("suggest_task")) return { title: `✦ Suggested a task`, detail: clip(input) };
+      if (isSuggestTool(name)) {
+        const title = typeof input?.title === "string" ? input.title : "";
+        return { title: `✦ Suggested a task`, detail: clip(input), suggestion: { title } };
+      }
       if (name.includes("expose_service")) return { title: `🔌 Exposed ${String(input?.name ?? "service")} :${String(input?.port ?? "")}`, detail: clip(input) };
       return { title: `⚙ ${name}`, detail: clip(input) };
   }

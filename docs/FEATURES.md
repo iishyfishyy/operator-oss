@@ -78,6 +78,23 @@ never recorded a proposer (created before this shipped) collect under **Other**.
 dialog for a suggestion repeats its origin as a "↳ suggested by ‹task›" line that opens
 the proposer.
 
+### Curating suggestions from the session that proposed them
+
+The link runs the other way too. In the proposing task's transcript, every `suggest_task`
+call is a live **suggestion chip** rather than a frozen tool line: it shows the task's
+*current* title (a rename made in the tray or the edit dialog shows here as well), and it
+carries the tray's own controls — click the title to rename it inline (Enter saves, Esc
+cancels), the pencil opens the full edit dialog, and **Add** / **Start** / **Dismiss** do
+exactly what they do in the tray. Once a suggestion has been added or started the chip
+shows its status and an **Open** that jumps to it; a dismissed one stays in the transcript
+greyed out and marked **dismissed**, so the record of what was proposed survives the
+decision.
+
+A turn that files two or more suggestions also gets a **Suggested this session** block after
+its last message: one collapsible unit listing all of that turn's chips, so a planning turn
+that proposed five tasks can have its titles fixed in one place instead of five cards
+scattered among the tool calls that produced them.
+
 ### New vs stale suggestions
 
 A tray only grows, so each group also says how fresh it is. The header carries the age of

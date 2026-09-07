@@ -21,6 +21,7 @@ import { hasApiKey, looksLikeApiKey, setApiKey, clearApiKey } from "../../anthro
 import {
   buildProjectContext,
   describeToolUse,
+  parseSuggestedTaskId,
   summarizeResult,
   formatAnswers,
   makeQueue,
@@ -139,6 +140,8 @@ async function* runTurn(
   let askSeq = 0;
   // tool_use id -> how to summarize its eventual result into a peek.
   const resultKinds = new Map<string, ResultKind>();
+  // suggest_task tool_use ids, so their results get the created task id parsed out.
+  const suggestIds = new Set<string>();
   const queue = makeQueue<StreamEvent>();
   // Latest usage-limit reset time the SDK reported this turn (rate_limit_event,
   // for claude.ai subscription users). When the turn then dies on a usage-limit
@@ -269,9 +272,10 @@ async function* runTurn(
             } else if (block.type === "tool_use") {
               // AskUserQuestion is rendered as an interactive card by the hook.
               if (block.name === "AskUserQuestion") continue;
-              const { title, detail, peek, diff, resultKind } = describeToolUse(block.name, block.input as Record<string, unknown>);
+              const { title, detail, peek, diff, resultKind, suggestion } = describeToolUse(block.name, block.input as Record<string, unknown>);
               if (resultKind) resultKinds.set(block.id, resultKind);
-              queue.push({ type: "tool", id: block.id, title, detail, peek, diff });
+              if (suggestion) suggestIds.add(block.id);
+              queue.push({ type: "tool", id: block.id, title, detail, peek, diff, suggestion });
             }
           }
         } else if (message.type === "user") {
@@ -287,7 +291,10 @@ async function* runTurn(
                 const kind = resultKinds.get(b.tool_use_id);
                 // Summarize from the raw (pre-clip) output so counts are exact.
                 const peek = kind && !b.is_error ? summarizeResult(kind, raw) : undefined;
-                queue.push({ type: "tool_result", id: b.tool_use_id, content: clip(raw, 6000), isError: !!b.is_error, peek });
+                // A suggest_task result names the task it created — lift the id
+                // out so the persisted card can find its task (and vice versa).
+                const taskId = suggestIds.has(b.tool_use_id) && !b.is_error ? parseSuggestedTaskId(raw) : undefined;
+                queue.push({ type: "tool_result", id: b.tool_use_id, content: clip(raw, 6000), isError: !!b.is_error, peek, taskId });
               }
             }
           }
