@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type MutableRefObject } from "react";
+import { useCallback, useEffect, useRef, useState, type MutableRefObject } from "react";
 import { LS, loadPersist } from "./persist";
 import { reconcileHistory, closeOneLevel, type NavSel } from "./navHistory";
 import {
@@ -31,6 +31,10 @@ export function usePrefs({ selProj, selTask, urlSelRef, setSelProj, setSelTask }
   const [appearance, setAppearance] = useState<Appearance>(DEFAULT_APPEARANCE);
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [layout, setLayout] = useState<Layout>(DEFAULT_LAYOUT);
+  // Per-project "last time I looked at the suggestion tray" marks (ms epoch).
+  // Suggestions created after a project's mark render as "new"; seeing the tray
+  // advances it (see useTrayView in SuggestionGroup.tsx).
+  const [traySeen, setTraySeen] = useState<Record<string, number>>({});
   const [hydrated, setHydrated] = useState(false);
 
   // Latest selection, read by the once-attached popstate handler without
@@ -45,6 +49,7 @@ export function usePrefs({ selProj, selTask, urlSelRef, setSelProj, setSelTask }
     if (p.settings) setSettings({ ...DEFAULT_SETTINGS, ...p.settings });
     if (p.layout) setLayout({ ...DEFAULT_LAYOUT, ...p.layout });
     if (p.taskView === "board") setTaskView("board");
+    if (p.traySeen) setTraySeen(p.traySeen);
     const urlView = urlSelRef.current?.view;
     if (urlView === "settings" || urlView === "insights") setView(urlView);
     setHydrated(true);
@@ -55,14 +60,14 @@ export function usePrefs({ selProj, selTask, urlSelRef, setSelProj, setSelTask }
     if (!hydrated) return;
     document.documentElement.setAttribute("data-theme", appearance.theme);
     document.documentElement.style.setProperty("--density", appearance.density);
-    localStorage.setItem(LS, JSON.stringify({ selProj, selTask, appearance, settings, layout, taskView }));
+    localStorage.setItem(LS, JSON.stringify({ selProj, selTask, appearance, settings, layout, taskView, traySeen }));
 
     // Mirror the open project/task + active view into the URL (refresh-restore)
     // and, on mobile, keep a single Back-trap entry on top while a pane is open
     // so the device Back button steps session → tasks → projects. (See navHistory.)
     const armTrap = window.matchMedia(MOBILE_QUERY).matches;
     reconcileHistory(window.history, window.location.pathname, { proj: selProj, task: selTask, view }, armTrap);
-  }, [appearance, settings, layout, taskView, selProj, selTask, view, hydrated]);
+  }, [appearance, settings, layout, taskView, traySeen, selProj, selTask, view, hydrated]);
 
   // Back button: consume the trap and close exactly one pane level. The setState
   // calls re-run the persist effect, which re-arms the trap if a pane is still
@@ -80,8 +85,15 @@ export function usePrefs({ selProj, selTask, urlSelRef, setSelProj, setSelTask }
     return () => window.removeEventListener("popstate", onPop);
   }, [setSelProj, setSelTask]);
 
+  // Record that the project's tray has been seen. No-ops when the mark wouldn't
+  // move forward, so a repeat call can't churn state (or clobber a later mark
+  // written by another tab's tray).
+  const markTrayViewed = useCallback((projectId: string, at: number = Date.now()) => {
+    setTraySeen((prev) => (prev[projectId] >= at ? prev : { ...prev, [projectId]: at }));
+  }, []);
+
   const setAppearanceKey = (k: keyof Appearance, v: string) => setAppearance((a) => ({ ...a, [k]: v }));
   const setSetting = <K extends keyof Settings>(k: K, v: Settings[K]) => setSettings((s) => ({ ...s, [k]: v }));
 
-  return { view, setView, taskView, setTaskView, appearance, setAppearance: setAppearanceKey, settings, setSetting, setSettings, layout, setLayout, hydrated };
+  return { view, setView, taskView, setTaskView, appearance, setAppearance: setAppearanceKey, settings, setSetting, setSettings, layout, setLayout, traySeen, markTrayViewed, hydrated };
 }

@@ -113,7 +113,7 @@ test("agent suggestions land in the Suggested tray", async ({ page, request }) =
   // contains the same words, so a bare text match is ambiguous.
   await expect(page.locator(".sg-name").filter({ hasText: "Refactor the widget factory" })).toBeVisible();
   // …under a header naming the task (and session) whose turn proposed it.
-  await expect(page.locator(".sug-from").filter({ hasText: "From: Suggesting · session 1" })).toBeVisible();
+  await expect(page.locator(".sug-head").filter({ hasText: "From: Suggesting · session 1" })).toBeVisible();
 });
 
 test("a second turn resumes the same session", async ({ request }) => {

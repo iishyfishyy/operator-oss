@@ -71,9 +71,14 @@ export const mockDriver: AgentDriver = {
     const signal = abort?.signal;
     const cwd = task.worktree_path || project.repo_path;
     const sessionId = task.session_id || `mock-${task.id}-g${task.generation}`;
+    // Fresh session: the directives can live in the task metadata (which the real
+    // drivers deliver through the project context) as well as in the message. The
+    // first turn's userText is buildInitialPrompt(), which ALREADY embeds the
+    // title + description — appending them again made every directive fire twice
+    // (two suggestions, two asks, two writes), so only add parts userText lacks.
     const instructionText = task.session_id
       ? userText
-      : [task.title, task.description, userText].filter(Boolean).join("\n");
+      : [task.title, task.description].filter((p) => p && !userText.includes(p)).concat(userText).join("\n");
 
     yield { type: "session", sessionId };
     yield { type: "model", model: "mock-1" };

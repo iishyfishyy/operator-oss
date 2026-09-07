@@ -61,6 +61,7 @@ export interface TaskRow {
   auto_start: number; // 1 = start automatically when the last unfinished blocker is marked done
   suggested_by_task_id: string | null; // task whose session proposed this suggestion (null = user-created / proposer deleted)
   suggested_by_generation: number | null; // the proposer's session number (/clear generation) at the time
+  created_at: number; // ms epoch the row was created — the tray's freshness/"new" signal
   context_tokens: number; // latest turn's input-side tokens ≈ current context-window occupancy
   context_pct: number; // context_tokens as a percent (0–100) of the model's window
 }

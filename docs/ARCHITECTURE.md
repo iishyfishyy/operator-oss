@@ -146,10 +146,23 @@ optional `source: { taskId, generation }` and writes it to `tasks.suggested_by_t
 the running task — the Claude driver's MCP server closes over it, and the bridge posts the
 `ORCH_TASK_ID` it uses for `ask_user`, from which the endpoint re-reads the live generation.
 The id is a self-referential FOREIGN KEY with `ON DELETE SET NULL`, so deleting the
-proposing task orphans its suggestions into the tray's "Other" bucket rather than taking
-them with it; a source whose task has vanished mid-turn is dropped at insert time for the
-same reason the project is re-read there. Provenance is write-once — `updateTask()`
-deliberately doesn't carry those columns.
+proposing task orphans its suggestions rather than taking them with it; a source whose task
+has vanished mid-turn is dropped at insert time for the same reason the project is re-read
+there. Provenance is write-once — `updateTask()` deliberately doesn't carry those columns.
+
+`suggested_by_generation` has no FK, so it SURVIVES that `SET NULL` — and the tray leans on
+the asymmetry: a null id next to a non-null generation is durable evidence the proposer was
+hard-deleted ("From a deleted task", rendered stale), while both-null is a row that never
+recorded a proposer at all ("Other", which says nothing about staleness). `tests/
+suggestionSource.test.ts` pins the invariant against the real delete path.
+
+Everything the tray derives from those columns lives in **`app/orchestrator/suggestions.ts`**
+(pure: grouping, newest-first ordering, the 7-day staleness threshold, the new-since counts)
+and is rendered by the one **`SuggestionGroup`** component, which both tray surfaces — the
+list column and the board's Suggested column — mount. The "new since you last looked" mark
+is a per-project timestamp in the localStorage prefs blob (`usePrefs`), advanced by an
+IntersectionObserver on the tray container and frozen for the life of the mounted tray so
+the pills don't vanish out from under the eye that's reading them.
 
 ### Adding a third agent (e.g. Gemini, Cursor)
 

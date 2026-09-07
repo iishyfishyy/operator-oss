@@ -216,6 +216,10 @@ export function relTime(ts: number): string {
   if (h < 24) return `${h}h ago`;
   return `${Math.floor(h / 24)}d ago`;
 }
+// The same age as a compact chip: "just now" / "12m" / "2h" / "3d". Used where
+// the surrounding row already says what the timestamp means (the suggestion
+// tray's per-group age), so the trailing "ago" is dead width.
+export const shortAge = (ts: number) => relTime(ts).replace(/ ago$/, "");
 // How long a task has been waiting on the user, spelled out for the "need you"
 // dropdown ("waiting for 3 hours"). Coarser and more verbose than relTime — this
 // is the only subline a row gets, so it reads as prose rather than a chip.

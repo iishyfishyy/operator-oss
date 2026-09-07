@@ -165,7 +165,7 @@ export function useOrchestrator() {
   const tasksLoading = !!project && tasksFor !== project.id;
 
   // ---------- prefs (appearance/settings/layout/view) + persistence ----------
-  const { view, setView, taskView, setTaskView, appearance, setAppearance, settings, setSetting, setSettings, layout, setLayout, hydrated } =
+  const { view, setView, taskView, setTaskView, appearance, setAppearance, settings, setSetting, setSettings, layout, setLayout, traySeen, markTrayViewed, hydrated } =
     usePrefs({ selProj, selTask, urlSelRef, setSelProj, setSelTask });
 
   // ---------- project recaps + landing decision ----------
@@ -564,6 +564,13 @@ export function useOrchestrator() {
     await jsend(`/api/tasks/${id}`, "DELETE");
     if (selProj) await loadTasks(selProj, false);
   };
+  // "Dismiss all" on a stale tray group. Sequential, not Promise.all: each
+  // delete tears down a git worktree server-side, and one failure shouldn't
+  // leave the rest in flight. One reload at the end covers the whole batch.
+  const dismissSuggestions = async (ids: string[]) => {
+    for (const id of ids) await jsend(`/api/tasks/${id}`, "DELETE");
+    if (selProj) await loadTasks(selProj, false);
+  };
 
   const saveContext = async (patch: { name: string; context: string; send_context: number; repo_path: string; branch: string; dev_command: string; setup_command: string; test_command: string }) => {
     if (!project) return;
@@ -641,13 +648,17 @@ export function useOrchestrator() {
     settings, setSetting, appDefaults, setAppDefault, agents, refreshAgents, brokenAgents,
     onboarding, wizardOpen, finishWizard, rerunOnboarding, nudge, setNudge, onMerged, onPrCreated,
     layout, setLayout, accessEmail, recaps,
+    // Suggestion-tray read marks: the per-project "last looked" timestamps, the
+    // callback that advances one, and whether the prefs holding them have
+    // hydrated yet (before that, nothing can honestly be called "new").
+    traySeen, markTrayViewed, prefsHydrated: hydrated,
     termOpen, setTermOpen, termMounted, setTermMounted, termHeight, setTermHeight,
     servicesOpen, setServicesOpen, servicesMounted, setServicesMounted, servicesHeight, setServicesHeight,
     // actions
     setSelTask, fetchRecap, runTurn, answerQuestion, stopTurn, cancelQueued, resolveConflictsWithAI,
     selectProject, jumpToNeedsYou, goToTask, clearSession, setStatus, setPriority, setModel,
     setReasoning, setPermission, setSendContext, createTask, saveTask, removeTask, moveTask, startSuggestion, acceptSuggestion,
-    dismissSuggestion, saveContext, createProject, reorderProjects, removeProject, setDeprecated,
+    dismissSuggestion, dismissSuggestions, saveContext, createProject, reorderProjects, removeProject, setDeprecated,
     resetSettings, setProjectDefaultAgent,
   };
 }
