@@ -29,10 +29,10 @@ export const CODEX_CAPABILITIES: AgentCapabilities = {
   //     account type refuses models the API tier still serves.
   // So verify empirically, on a ChatGPT login:
   //   codex exec --model <slug> "reply with the single word ok"
-  // Checked that way against codex-cli 0.146.0: gpt-5.2 and gpt-5.3-codex now
-  // 400 with "not supported when using Codex with a ChatGPT account" (both were
-  // listed here before), while gpt-5.4 / gpt-5.4-mini still run despite the
-  // embedded catalog flagging them for migration to Terra / Luna.
+  // Checked against codex-cli 0.153.4: Astra initializes successfully, while
+  // gpt-5.2 and gpt-5.3-codex are no longer supported with ChatGPT accounts.
+  // gpt-5.4 / gpt-5.4-mini still run despite the embedded catalog flagging
+  // them for migration to Terra / Luna.
   models: [
     { value: "gpt-6-astra", label: "GPT-6 Astra", sub: "most capable for the hardest end-to-end work", contextWindow: CTX, group: "Latest" },
     { value: "gpt-5.6-sol", label: "GPT-5.6 Sol", sub: "latest frontier agentic coding model (default)", contextWindow: CTX, group: "Latest" },
