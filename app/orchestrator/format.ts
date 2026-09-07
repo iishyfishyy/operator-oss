@@ -94,20 +94,54 @@ export function costDisplay(agent: AgentInfo | undefined): CostDisplay {
   return { show, approx: subscription || bedrock || estimated, note };
 }
 
+// The chip leads with the CURRENT generation's spend (a /clear opens a fresh
+// context window, and "what has this window used" is the question the header
+// answers), so the split is built from the session_* twins of the lifetime
+// fields. Same defensive ?? 0s: rows from before the split have no session_*.
+export function sessionUsageSplit(
+  t: Pick<TaskRow, "session_tokens" | "session_cache_read_tokens" | "session_cache_creation_tokens">
+): UsageSplit {
+  return usageSplit({
+    total_tokens: t.session_tokens ?? 0,
+    cache_read_tokens: t.session_cache_read_tokens ?? 0,
+    cache_creation_tokens: t.session_cache_creation_tokens ?? 0,
+  });
+}
+
+// Lifetime spend + how many generations produced it, for the tooltip's second
+// section. Only meaningful once the task has been /clear-ed at least once —
+// before that the session IS the lifetime and repeating it would be noise.
+export interface LifetimeUsage {
+  split: UsageSplit;
+  costUsd: number;
+  generation: number; // the task's current generation = number of sessions so far
+}
+
 // The usage chip's tooltip: the full breakdown the compact chip can't fit, one
 // fact per line. Exact counts here (the chip rounds) — this is the view someone
-// opens precisely because the rounded number surprised them.
-export function usageTooltip(split: UsageSplit, costUsd: number, cost: CostDisplay): string {
+// opens precisely because the rounded number surprised them. `lifetime` adds a
+// second section (task-wide totals across every generation) when the task has
+// more than one session; with a single generation it's omitted as redundant.
+export function usageTooltip(split: UsageSplit, costUsd: number, cost: CostDisplay, lifetime?: LifetimeUsage): string {
   const n = (v: number) => v.toLocaleString();
+  const money = (usd: number) => `${cost.approx ? "~" : ""}${fmtCost(usd)}${cost.note ? ` ${cost.note}` : " billed"}`;
+  const multi = !!lifetime && lifetime.generation > 1;
+  const scope = multi ? `this session (${lifetime.generation} of ${lifetime.generation})` : "this task";
   const lines = [
-    `${n(split.fresh)} new tokens this task: ${n(split.inOut)} in/out · ${n(split.cacheWrite)} written to cache`,
+    `${n(split.fresh)} new tokens ${scope}: ${n(split.inOut)} in/out · ${n(split.cacheWrite)} written to cache`,
   ];
   if (split.cacheRead > 0) {
     lines.push(`${n(split.cacheRead)} cache reads (context re-read each turn, billed at ~10% of the input rate)`);
     lines.push(`${n(split.total)} tokens total`);
   }
-  if (cost.show && costUsd > 0) {
-    lines.push(`${cost.approx ? "~" : ""}${fmtCost(costUsd)}${cost.note ? ` ${cost.note}` : " billed"}`);
+  if (cost.show && costUsd > 0) lines.push(money(costUsd));
+  if (multi) {
+    const l = lifetime.split;
+    lines.push("");
+    lines.push(`Lifetime across ${lifetime.generation} sessions (/clear starts a new one; the task keeps every session's spend):`);
+    lines.push(`${n(l.fresh)} new tokens: ${n(l.inOut)} in/out · ${n(l.cacheWrite)} written to cache`);
+    if (l.cacheRead > 0) lines.push(`${n(l.cacheRead)} cache reads · ${n(l.total)} tokens total`);
+    if (cost.show && lifetime.costUsd > 0) lines.push(money(lifetime.costUsd));
   }
   return lines.join("\n");
 }

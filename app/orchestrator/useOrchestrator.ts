@@ -421,6 +421,12 @@ export function useOrchestrator() {
     try {
       const { summary } = await jsend<{ summary: string }>(`/api/tasks/${taskId}/clear`, "POST");
       appendMsg(taskId, { id: `sb-${Date.now()}`, role: "session_break", content: summary, generation: t.generation });
+      // The generation just rolled over: the fresh window has spent nothing yet,
+      // so zero the "this session" figures now (the lifetime ones keep every
+      // prior generation). The re-read below confirms it from the DB.
+      setTasks((prev) => prev.map((x) => (x.id === taskId
+        ? { ...x, generation: x.generation + 1, session_cost_usd: 0, session_tokens: 0, session_cache_read_tokens: 0, session_cache_creation_tokens: 0 }
+        : x)));
       const fresh = await jget<TaskRow>(`/api/tasks/${taskId}`);
       setTasks((prev) => prev.map((x) => (x.id === taskId ? { ...x, ...fresh } : x)));
     } finally {

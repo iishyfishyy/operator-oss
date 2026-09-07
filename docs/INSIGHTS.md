@@ -17,6 +17,18 @@ A task may show a chip such as `250k tok · 3.5M cached · ~$4.20`.
 Cache reads can dominate the raw count in a long task but are not millions of tokens of new
 work. Hover the chip for exact counts and the full breakdown.
 
+### This session versus the task's lifetime
+
+`/clear` ends the current session and starts the next one in a fresh context window. Once a
+task has more than one session, the chip reads `this session · 12k tok · 1.2M cached · ~$0.40`
+and counts only the current window, starting from zero the moment `/clear` finishes. The
+tooltip then adds a **Lifetime** section: the totals across every session, plus how many
+sessions there have been. Nothing is discarded on `/clear`: the project column's cost figure
+and the Insights charts always sum the task's full lifetime.
+
+While a task is still on its first session the chip carries no `this session` label, because
+the session and the lifetime are the same numbers.
+
 ## Cost versus price equivalent
 
 On a Max, Pro, or ChatGPT subscription login, turns consume plan quota. The displayed dollar

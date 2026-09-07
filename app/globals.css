@@ -684,6 +684,7 @@ button{font-family:inherit;color:inherit;cursor:pointer;border:none;background:n
 .usage-chip .usage-dot{color:var(--ink-4,var(--ink-3));opacity:.6;}
 /* Cache reads are secondary by design — the headline is fresh tokens. */
 .usage-chip .usage-cached{opacity:.62;font-weight:500;}
+.usage-chip .usage-scope{opacity:.62;font-weight:500;}
 .psub-cost{color:var(--ink-2);}
 
 /* status control */

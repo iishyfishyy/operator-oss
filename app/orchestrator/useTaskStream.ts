@@ -136,14 +136,28 @@ export function useTaskStream({ selTask, selProjRef, agentsRef, setTaskRunning, 
       const u = ev.usage;
       const turnTokens = u.input_tokens + u.output_tokens + u.cache_read_tokens + u.cache_creation_tokens;
       const ctxTokens = u.input_tokens + u.cache_read_tokens + u.cache_creation_tokens;
-      setTasks((prev) => prev.map((x) => (x.id === taskId
-        ? { ...x, cost_usd: (x.cost_usd ?? 0) + u.cost_usd, total_tokens: (x.total_tokens ?? 0) + turnTokens,
-            // Cache buckets accumulate alongside the total so the usage chip's
-            // fresh-vs-cached split stays right mid-turn, not just after a reload.
-            cache_read_tokens: (x.cache_read_tokens ?? 0) + u.cache_read_tokens,
-            cache_creation_tokens: (x.cache_creation_tokens ?? 0) + u.cache_creation_tokens,
-            context_tokens: ctxTokens, context_pct: contextPct(ctxTokens, x.model, capsFor(agentsRef.current, x.agent)) }
-        : x)));
+      setTasks((prev) => prev.map((x) => {
+        if (x.id !== taskId) return x;
+        // The "this session" figures only take turns from the CURRENT generation:
+        // a /clear can land while an old turn is still unwinding, and its usage
+        // belongs to the window that was just closed (lifetime still counts it).
+        // An unstamped event (older server) is credited to the current window.
+        const thisGen = !("generation" in ev) || ev.generation === undefined || ev.generation === x.generation;
+        return {
+          ...x, cost_usd: (x.cost_usd ?? 0) + u.cost_usd, total_tokens: (x.total_tokens ?? 0) + turnTokens,
+          // Cache buckets accumulate alongside the total so the usage chip's
+          // fresh-vs-cached split stays right mid-turn, not just after a reload.
+          cache_read_tokens: (x.cache_read_tokens ?? 0) + u.cache_read_tokens,
+          cache_creation_tokens: (x.cache_creation_tokens ?? 0) + u.cache_creation_tokens,
+          ...(thisGen ? {
+            session_cost_usd: (x.session_cost_usd ?? 0) + u.cost_usd,
+            session_tokens: (x.session_tokens ?? 0) + turnTokens,
+            session_cache_read_tokens: (x.session_cache_read_tokens ?? 0) + u.cache_read_tokens,
+            session_cache_creation_tokens: (x.session_cache_creation_tokens ?? 0) + u.cache_creation_tokens,
+          } : {}),
+          context_tokens: ctxTokens, context_pct: contextPct(ctxTokens, x.model, capsFor(agentsRef.current, x.agent)),
+        };
+      }));
     } else if (ev.type === "notice") upsertMsg(taskId, { id: ev.msgId ?? `n-${Date.now()}`, role: "system", content: ev.content, generation: gen });
     else if (ev.type === "error") upsertMsg(taskId, { id: ev.msgId ?? `e-${Date.now()}`, role: "system", content: ev.content, generation: gen });
     else if (ev.type === "suggested") { if (selProjRef.current) loadTasks(selProjRef.current, false); }

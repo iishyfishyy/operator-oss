@@ -53,6 +53,10 @@ export interface TaskRow {
   total_tokens: number; // cumulative tokens (input+output+cache) across all turns
   cache_read_tokens: number; // of that total, context re-read from the prompt cache (~10% of input price)
   cache_creation_tokens: number; // of that total, context written INTO the cache (fresh work)
+  session_cost_usd: number; // the same spend, restricted to the CURRENT generation (resets on /clear)
+  session_tokens: number; // current generation's tokens (input+output+cache)
+  session_cache_read_tokens: number; // of that, prompt-cache reads
+  session_cache_creation_tokens: number; // of that, cache writes
   depends_on: string[]; // task ids this task is blocked by until they're done
   auto_start: number; // 1 = start automatically when the last unfinished blocker is marked done
   context_tokens: number; // latest turn's input-side tokens ≈ current context-window occupancy
