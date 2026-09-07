@@ -25,6 +25,7 @@ describe("modelLabel", () => {
   });
 
   it("falls back to capability labels for ids with no version shape", () => {
+    expect(modelLabel("gpt-6-astra", CODEX_CAPABILITIES)).toBe("GPT-6 Astra");
     expect(modelLabel("gpt-5.5", CODEX_CAPABILITIES)).toBe("GPT-5.5");
     expect(modelLabel("gpt-5.6-sol", CODEX_CAPABILITIES)).toBe("GPT-5.6 Sol");
     // "gpt-5.6-terra" also contains "gpt-5.6" — longest-first matching must not
@@ -67,5 +68,15 @@ describe("claude model list", () => {
     expect(contextWindowOf("arn:aws:bedrock:us-east-1:123:application-inference-profile/sonnet-prod", claude)).toBe(200_000);
     expect(contextWindowOf("us.anthropic.claude-opus-4-8[1m]", claude)).toBe(1_000_000);
     expect(contextWindowOf("anthropic.claude-sonnet-5", claude)).toBe(1_000_000);
+  });
+});
+
+describe("codex model list", () => {
+  it("offers Astra as the first latest model", () => {
+    expect(CODEX_CAPABILITIES.models[0]).toMatchObject({
+      value: "gpt-6-astra",
+      label: "GPT-6 Astra",
+      group: "Latest",
+    });
   });
 });
