@@ -50,6 +50,19 @@ WebSocket upgrade** (`server.js`, in front of the `/pty` terminal proxy). No val
 assertion → 403. [`lib/cf-access.mjs`](../lib/cf-access.mjs) is the single shared
 verifier; the titlebar shows the authenticated email.
 
+The JWT proves *who* is calling, not that they meant to call. `CF_Authorization` is
+`SameSite=None` by default, so a hostile page can make a logged-in user's browser issue
+a request to your instance and the edge will attach a perfectly valid assertion to it —
+ordinary CSRF, which the JWT alone does not stop. So Access-mode requests get a
+**second** check: if the browser sends an `Origin`, it must match the `Host` the request
+was aimed at. Browsers skip the CORS preflight for form and `text/plain` bodies, and
+several mutating routes act on the URL path alone, so this is the check that closes
+them. The `Origin` only has to match when it is *sent* — an ordinary cross-site link to
+your instance from an email or a wiki still opens normally, as do `curl` and health
+probes. `PUBLIC_BASE_URL` is **not** required for this; the check compares the request's
+own two headers. Set it only if your proxy rewrites `Host` (Cloudflare Tunnel's
+`httpHostHeader`), which would otherwise make the two disagree.
+
 Unset (the local default), the app has no login, but it still enforces a browser-origin
 boundary: loopback hosts are accepted, cross-site requests are rejected, and `/pty`
 WebSocket upgrades require a matching browser `Origin`. This prevents an unrelated
