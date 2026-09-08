@@ -208,7 +208,7 @@ export default function Orchestrator() {
       onSelectTask={o.setSelTask} onNewTask={() => o.setModal("task")} onEditContext={() => o.setModal("context")}
       onShowSessions={() => o.setModal("sessions")} onShowRecap={() => o.setSelTask(null)} onEditTask={o.setEditId}
       onStartSuggestion={o.startSuggestion} onAcceptSuggestion={o.acceptSuggestion} onDismissSuggestion={o.dismissSuggestion}
-      onDismissSuggestions={o.dismissSuggestions} onOpenParent={(id) => o.goToTask(project.id, id)}
+      onAcceptSuggestions={o.acceptSuggestions} onDismissSuggestions={o.dismissSuggestions} onOpenParent={(id) => o.goToTask(project.id, id)}
       traySeenAt={o.traySeen[project.id]} traySeenReady={o.prefsHydrated} onTrayViewed={o.markTrayViewed}
     />
   );
@@ -308,7 +308,7 @@ export default function Orchestrator() {
       onSelectTask={openBoardTask} onNewTask={() => o.setModal("task")} onEditContext={() => o.setModal("context")}
       onShowSessions={() => o.setModal("sessions")} onEditTask={o.setEditId}
       onStartSuggestion={o.startSuggestion} onAcceptSuggestion={o.acceptSuggestion} onDismissSuggestion={o.dismissSuggestion}
-      onDismissSuggestions={o.dismissSuggestions} onOpenParent={(id) => openBoardTask(id)}
+      onAcceptSuggestions={o.acceptSuggestions} onDismissSuggestions={o.dismissSuggestions} onOpenParent={(id) => openBoardTask(id)}
       traySeenAt={o.traySeen[project.id]} traySeenReady={o.prefsHydrated} onTrayViewed={o.markTrayViewed}
     >
       {task && boardPanel && (
