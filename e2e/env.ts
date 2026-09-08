@@ -69,6 +69,7 @@ export const SERVER_ENV: Record<string, string> = {
   // Registers the deterministic mock agent (lib/agents/mock/driver.ts) so
   // onboarding and turns run without any real agent CLI or login.
   ORCH_E2E_MOCK_AGENT: "1",
+  ORCH_FEATURE_OMNI_SEARCH: "1",
   // Never phone analytics home from a test run.
   POSTHOG_KEY: "",
   ...GIT_ENV,

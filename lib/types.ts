@@ -315,3 +315,13 @@ export interface ToolData {
   // tool_result, or set with the tool event by drivers that create first.
   suggestion?: ToolSuggestion;
 }
+
+export interface CustomCommand {
+  id: string;
+  project_id: string | null;
+  name: string;
+  description: string;
+  body: string;
+  created_at: number;
+  updated_at: number;
+}

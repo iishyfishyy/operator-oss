@@ -972,6 +972,35 @@ export function setProjectRecap(id: string, recap: string, coversAt: number): vo
     .run(recap, Date.now(), coversAt, id);
 }
 
+// ---------- reusable prompt commands ----------
+export function listCommands(projectId?: string): import("./types").CustomCommand[] {
+  return getDb().prepare(projectId === undefined
+    ? "SELECT * FROM commands WHERE project_id IS NULL ORDER BY name"
+    : "SELECT * FROM commands WHERE project_id IS NULL OR project_id = ? ORDER BY name, project_id")
+    .all(...(projectId === undefined ? [] : [projectId])) as import("./types").CustomCommand[];
+}
+
+export function getCommand(id: string): import("./types").CustomCommand | undefined {
+  return getDb().prepare("SELECT * FROM commands WHERE id = ?").get(id) as import("./types").CustomCommand | undefined;
+}
+
+type CommandInput = Pick<import("./types").CustomCommand, "project_id" | "name" | "description" | "body">;
+export function createCommand(input: CommandInput) {
+  const id = nanoid();
+  const now = Date.now();
+  getDb().prepare("INSERT INTO commands (id, project_id, name, description, body, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
+    .run(id, input.project_id, input.name, input.description, input.body, now, now);
+  return getCommand(id)!;
+}
+export function updateCommand(id: string, input: CommandInput) {
+  getDb().prepare("UPDATE commands SET project_id = ?, name = ?, description = ?, body = ?, updated_at = ? WHERE id = ?")
+    .run(input.project_id, input.name, input.description, input.body, Date.now(), id);
+  return getCommand(id);
+}
+export function deleteCommand(id: string) {
+  return getDb().prepare("DELETE FROM commands WHERE id = ?").run(id).changes > 0;
+}
+
 /** Accept a reviewed batch in one transaction; any stale member rejects all. */
 export function acceptSuggestedBatch(ids: string[], startChain: boolean, confirmedRoots = false) {
   return getDb().transaction(() => {

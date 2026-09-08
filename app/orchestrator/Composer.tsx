@@ -4,6 +4,9 @@ import { useEffect, useRef, useState } from "react";
 import { Icon } from "../icons";
 import { attachmentMarker, fileAttachmentMarker } from "./format";
 import { PASTE_ATTACH_THRESHOLD } from "@/lib/promptLimits";
+import { effectiveCommands, expandCommand } from "@/lib/commands";
+import { useCommands, type CommandDraft } from "./useCommands";
+import { CommandsModal } from "./CommandsModal";
 import type { TaskRow } from "./types";
 
 // Drafts persist per-task in localStorage so switching tasks, opening Settings,
@@ -39,8 +42,12 @@ type Attachment = {
   error?: string;
 };
 
-export function Composer({ task, agentLabel, disabled, running, onSend, onStop, onClear }: { task: TaskRow; agentLabel: string; disabled: boolean; running: boolean; onSend: (t: string) => void; onStop: () => void; onClear: () => void }) {
+export function Composer({ commandDraft, onCommandDraftUsed, task, agentLabel, disabled, running, onSend, onStop, onClear }: { commandDraft?: CommandDraft | null; onCommandDraftUsed?: () => void; task: TaskRow; agentLabel: string; disabled: boolean; running: boolean; onSend: (t: string) => void; onStop: () => void; onClear: () => void }) {
   const [val, setVal] = useState(() => loadDraft(task.id));
+  const { commands, loading: commandsLoading, error: commandsError } = useCommands(task.project_id);
+  const [manage, setManage] = useState(false);
+  const [active, setActive] = useState(0);
+  const [sendError, setSendError] = useState("");
   const [slash, setSlash] = useState(false);
   const [stopping, setStopping] = useState(false);
   const [atts, setAtts] = useState<Attachment[]>([]);
@@ -62,6 +69,17 @@ export function Composer({ task, agentLabel, disabled, running, onSend, onStop, 
     setSlash(val.trim().startsWith("/"));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [task.id]);
+
+  const consumedDraft = useRef<CommandDraft | null>(null);
+  useEffect(() => {
+    if (commandDraft?.taskId !== task.id || consumedDraft.current === commandDraft) return;
+    consumedDraft.current = commandDraft;
+    setVal((current) => `/${commandDraft.name} ${current}`);
+    setSlash(false);
+    ref.current?.focus();
+    onCommandDraftUsed?.();
+  }, [commandDraft, task.id, onCommandDraftUsed]);
+  useEffect(() => { if (ref.current) autosize(ref.current); }, [val]);
 
   const addFiles = (files: File[]) => {
     if (disabled) return;
@@ -100,7 +118,8 @@ export function Composer({ task, agentLabel, disabled, running, onSend, onStop, 
   const ready = atts.filter((a) => a.status === "ready");
   const uploading = atts.some((a) => a.status === "uploading");
   const cmds = [
-    { cmd: "/clear", desc: "save summary · fresh session", run: () => { onClear(); setVal(""); setSlash(false); } },
+    ...(!running && !uploading && !disabled && atts.length === 0 ? [{ cmd: "/clear", desc: "save summary · fresh session", run: () => { onClear(); setVal(""); setSlash(false); } }] : []),
+    ...effectiveCommands(commands).map((c) => ({ cmd: `/${c.name}`, desc: c.description, run: () => { setVal(`/${c.name} `); setSlash(false); ref.current?.focus(); } })),
   ];
   const submit = () => {
     const v = val.trim();
@@ -108,22 +127,29 @@ export function Composer({ task, agentLabel, disabled, running, onSend, onStop, 
     // /clear can't run mid-turn (it would collide with the live session) — while
     // running, everything you type is queued as a follow-up instead.
     if (v === "/clear" && !running && ready.length === 0) { onClear(); setVal(""); setSlash(false); if (ref.current) ref.current.style.height = "auto"; return; }
+    if (v.startsWith("/") && (commandsLoading || commandsError)) { setSendError(commandsError || "Commands are loading. Try again shortly."); return; }
+    const expanded = expandCommand(v, commands, task);
+    if (!expanded.trim() && ready.length === 0) { setSendError("This command expands to an empty prompt. Add arguments or edit its template."); return; }
+    setSendError("");
     // Attachments ride along as marker lines after the typed text — an image or
     // file marker depending on the attachment kind.
-    onSend([v, ...ready.map((a) => (a.kind === "image" ? attachmentMarker(a.path) : fileAttachmentMarker(a.path)))].filter(Boolean).join("\n\n"));
+    onSend([expanded, ...ready.map((a) => (a.kind === "image" ? attachmentMarker(a.path) : fileAttachmentMarker(a.path)))].filter(Boolean).join("\n\n"));
     atts.forEach((a) => { if (a.preview) URL.revokeObjectURL(a.preview); });
     setAtts([]); setVal(""); setSlash(false);
     if (ref.current) ref.current.style.height = "auto";
   };
   const canSend = (!!val.trim() || ready.length > 0) && !uploading;
-  const filtered = cmds.filter((c) => c.cmd.startsWith(val.trim()));
+  const filtered = [...cmds.filter((c) => c.cmd.startsWith(val.trim())), { cmd: "Manage commands…", desc: "create · edit · delete", run: () => { setManage(true); setSlash(false); } }];
+  const menuOpen = slash && !disabled && (filtered.length > 1 || val.trim() === "/") && /^\/[^\s]*$/.test(val.trimStart());
   return (
     <div className="composer">
+      {manage && <CommandsModal projectId={task.project_id} onClose={() => setManage(false)} />}
+      {sendError && <div role="alert">{sendError}</div>}
       <div className="composer-inner">
-        {slash && !running && filtered.length > 0 && (
-          <div className="slash">
-            {filtered.map((c) => (
-              <div key={c.cmd} className="slash-item" onMouseDown={(e) => { e.preventDefault(); c.run(); }}>
+        {menuOpen && (
+          <div className="slash" role="listbox" aria-label="Slash commands" style={{ maxHeight: 280, overflowY: "auto" }}>
+            {filtered.map((c, i) => (
+              <div key={c.cmd} role="option" aria-selected={i === active} ref={(el) => { if (i === active) el?.scrollIntoView({ block: "nearest" }); }} className={`slash-item${i === active ? " act" : ""}`} onMouseEnter={() => setActive(i)} onMouseDown={(e) => { e.preventDefault(); c.run(); }}>
                 <span className="cmd">{c.cmd}</span><span className="cd">{c.desc}</span>
               </div>
             ))}
@@ -157,8 +183,13 @@ export function Composer({ task, agentLabel, disabled, running, onSend, onStop, 
             <textarea
               ref={ref} rows={1} value={val} disabled={disabled}
               placeholder={disabled ? "Start the session to reply…" : running ? "Queue a follow-up… (sent when this turn ends)" : `Reply to ${agentLabel} in “${task.title}”…  (try /clear, drop an image)`}
-              onChange={(e) => { setVal(e.target.value); autosize(e.target); setSlash(e.target.value.trim().startsWith("/")); }}
-              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); } if (e.key === "Escape") setSlash(false); }}
+              onChange={(e) => { setVal(e.target.value); setActive(0); setSendError(""); autosize(e.target); setSlash(e.target.value.trim().startsWith("/")); }}
+              onKeyDown={(e) => {
+                if (e.nativeEvent.isComposing) return;
+                if (e.key === "Escape") { if (menuOpen) e.stopPropagation(); setSlash(false); return; }
+                if (menuOpen && (e.key === "ArrowDown" || e.key === "ArrowUp")) { e.preventDefault(); setActive((a) => (a + (e.key === "ArrowDown" ? 1 : filtered.length - 1)) % filtered.length); return; }
+                if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (menuOpen) filtered[Math.min(active, filtered.length - 1)].run(); else submit(); }
+              }}
               onPaste={(e) => {
                 const imgs = Array.from(e.clipboardData?.files ?? []).filter((f) => f.type.startsWith("image/"));
                 if (imgs.length) { e.preventDefault(); addFiles(imgs); return; }
@@ -186,7 +217,7 @@ export function Composer({ task, agentLabel, disabled, running, onSend, onStop, 
           <div className="comp-foot">
             <span className="hint"><span className="kbd">⏎</span> send</span>
             <span className="hint"><span className="kbd">⇧⏎</span> newline</span>
-            <span className="hint"><span className="kbd">/</span> commands</span>
+            <button className="hint" onClick={() => setManage(true)}><span className="kbd">/</span> commands</button>
             <span className="spacer" />
             <input
               ref={fileRef} type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple hidden

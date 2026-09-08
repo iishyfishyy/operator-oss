@@ -4,6 +4,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "../icons";
 import { jget } from "./api";
 import type { PaletteTaskRow, ProjectRow } from "./types";
+import { useCommands } from "./useCommands";
+import { effectiveCommands } from "@/lib/commands";
 import { StatusDot } from "./shared";
 
 // One executable command surfaced by the palette. Callers pass only the
@@ -63,13 +65,21 @@ const QUERY_LIMITS = { project: 6, task: 10 };
 // centered top sheet over a scrim — Esc or an outside click dismisses, ↑/↓
 // move, ⏎ runs the active row. Every color comes from theme vars, so it works
 // in both themes for free.
-export function CommandPalette({ projects, commands, onPickProject, onPickTask, onClose }: {
+export function CommandPalette({ projectId, canInsertCommand, onInsertCommand, projects, commands: builtins, onPickProject, onPickTask, onClose }: {
+  projectId?: string;
+  canInsertCommand?: boolean;
+  onInsertCommand?: (name: string) => void;
   projects: ProjectRow[];
   commands: PaletteCommand[];
   onPickProject: (projectId: string) => void;
   onPickTask: (projectId: string, taskId: string) => void;
   onClose: () => void;
 }) {
+  const { commands: presets } = useCommands(projectId);
+  const commands = useMemo(() => [...builtins, ...(canInsertCommand ? effectiveCommands(presets).map((c): PaletteCommand => ({
+    id: `preset:${c.id}`, label: `/${c.name}`, hint: c.description || "insert prompt command", keywords: c.description,
+    icon: Icon.bolt(), run: () => onInsertCommand?.(c.name),
+  })) : [])], [builtins, presets, canInsertCommand, onInsertCommand]);
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
   const [tasks, setTasks] = useState<PaletteTaskRow[]>([]);
