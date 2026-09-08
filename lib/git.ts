@@ -996,6 +996,7 @@ export async function abortWorktreeMerge(worktreePath: string): Promise<void> {
 // work piles more changes on top of stale code.
 
 export interface SyncStatus {
+  mergeInProgress?: boolean;
   behind: number; // commits on the base branch not yet in the work branch
   ahead: number; // divergent commits on the work branch not in the base branch
   isDirty: boolean; // uncommitted changes in the worktree
@@ -1029,6 +1030,11 @@ export async function worktreeSyncStatus(input: {
     countOf(`${baseBranch}..${workBranch}`),
     git(worktreePath, ["status", "--porcelain"]).catch(() => "").then((s) => s.trim().length > 0),
   ]);
+
+  const merge = await worktreeMergeStatus(worktreePath);
+  if (merge.mergeInProgress) {
+    return { behind, ahead, isDirty, canFastForward: false, clean: merge.unresolved.length === 0, conflicts: merge.unresolved, baseTip, mergeInProgress: true };
+  }
 
   // Already up to date — nothing to sync; skip the (relatively costly) conflict probe.
   if (behind === 0) return { behind, ahead, isDirty, canFastForward: false, clean: true, conflicts: [], baseTip };

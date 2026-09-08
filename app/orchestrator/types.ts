@@ -128,6 +128,7 @@ export interface RecapInfo {
 
 // Divergence status for the reopened-task sync banner (GET /api/tasks/:id/sync).
 export interface SyncStatusResp {
+  mergeInProgress?: boolean;
   isolated: boolean;
   baseBranch?: string;
   behind?: number;

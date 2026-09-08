@@ -33,7 +33,8 @@ deployed workspace is available from your computer, tablet, or phone.
 - **Keep context alive.** Save project knowledge once, persist transcripts across reloads,
   and use `/clear` to start a fresh context window without losing the task lineage.
 - **Review before you ship.** Inspect the diff beside the conversation, sync the branch,
-  resolve conflicts, merge, or open a pull request.
+  resolve conflicts, merge, or open a pull request. Conflict banners track the live
+  resolution and disappear when no conflicts remain; accepting the merge stays explicit.
 
 ## Chain tasks into pipelines
 
