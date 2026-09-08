@@ -7,6 +7,7 @@ import { PASTE_ATTACH_THRESHOLD } from "@/lib/promptLimits";
 import { effectiveCommands, expandCommand } from "@/lib/commands";
 import { useCommands, type CommandDraft } from "./useCommands";
 import { CommandsModal } from "./CommandsModal";
+import { ErrNote } from "./shared";
 import type { TaskRow } from "./types";
 
 // Drafts persist per-task in localStorage so switching tasks, opening Settings,
@@ -144,7 +145,7 @@ export function Composer({ commandDraft, onCommandDraftUsed, task, agentLabel, d
   return (
     <div className="composer">
       {manage && <CommandsModal projectId={task.project_id} onClose={() => setManage(false)} />}
-      {sendError && <div role="alert">{sendError}</div>}
+      {sendError && <ErrNote style={{ margin: "0 0 8px" }}>{sendError}</ErrNote>}
       <div className="composer-inner">
         {menuOpen && (
           <div className="slash" role="listbox" aria-label="Slash commands" style={{ maxHeight: 280, overflowY: "auto" }}>
