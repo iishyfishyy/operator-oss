@@ -92,7 +92,7 @@ export function groupSuggestions(suggested: TaskRow[], all: TaskRow[], now: numb
     return g;
   };
 
-  for (const t of suggested) {
+  for (const t of all.filter((t) => t.suggested)) {
     const parent = t.suggested_by_task_id ? byId.get(t.suggested_by_task_id) : undefined;
     // Any surviving provenance trace with no resolvable proposer means the
     // proposer is gone: either the FK nulled the id (durable) or this client's
@@ -107,6 +107,30 @@ export function groupSuggestions(suggested: TaskRow[], all: TaskRow[], now: numb
     const at = t.created_at ?? 0;
     if (at > g.newestAt) g.newestAt = at;
     if (at < g.oldestAt) g.oldestAt = at;
+  }
+
+  // Dependency links connect provenance buckets in either direction. Merge to
+  // a fixed point so a bridge also pulls in all of its provenance siblings.
+  for (let i = 0; i < drafts.length; i++) {
+    for (let j = i + 1; j < drafts.length; j++) {
+      const a = drafts[i], b = drafts[j];
+      const aIds = new Set(a.tasks.map((t) => t.id));
+      const bIds = new Set(b.tasks.map((t) => t.id));
+      if (!a.tasks.some((t) => t.depends_on?.some((id) => bIds.has(id))) &&
+          !b.tasks.some((t) => t.depends_on?.some((id) => aIds.has(id)))) continue;
+      a.tasks.push(...b.tasks);
+      a.newestAt = Math.max(a.newestAt, b.newestAt);
+      a.oldestAt = Math.min(a.oldestAt, b.oldestAt);
+      drafts.splice(j, 1);
+      i = -1;
+      break;
+    }
+  }
+  const visible = new Set(suggested.map((t) => t.id));
+  // Searching selects whole groups, never a silently partial chain.
+  for (let i = drafts.length - 1; i >= 0; i--) {
+    if (!drafts[i].tasks.some((t) => visible.has(t.id))) drafts.splice(i, 1);
+    else drafts[i].tasks = orderSuggestionChain(drafts[i].tasks);
   }
 
   // Newest-first, with the two unattributed buckets trailing every named group
@@ -185,4 +209,16 @@ export function suggestionBatches(messages: Msg[]): Map<string, SuggestionCard[]
   }
   flush();
   return out;
+}
+
+/** Stable topological order, ignoring blockers outside this suggested group. */
+export function orderSuggestionChain(tasks: TaskRow[]): TaskRow[] {
+  const remaining = new Map(tasks.map((t) => [t.id, t]));
+  const ordered: TaskRow[] = [];
+  while (remaining.size) {
+    const ready = [...remaining.values()].filter((t) => !t.depends_on?.some((id) => remaining.has(id)));
+    if (!ready.length) { ordered.push(...remaining.values()); break; }
+    for (const t of ready) { ordered.push(t); remaining.delete(t.id); }
+  }
+  return ordered;
 }

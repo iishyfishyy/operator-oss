@@ -74,18 +74,29 @@ export function NewPill({ title }: { title?: string }) {
  * the default is to keep them out of the way with one line saying why and a
  * bulk dismiss, rather than to make you close them one at a time.
  */
-export function SuggestionGroup({ group, variant, newSince, onOpenParent, onDismissAll, children }: {
+export function SuggestionGroup({ group, variant, newSince, onOpenParent, onDismissAll, onAcceptAll, blockedBy, children }: {
   group: Group;
   variant: "list" | "board";
   newSince: number;
   onOpenParent: (id: string) => void;
   onDismissAll: (ids: string[]) => void;
+  onAcceptAll: (ids: string[], start: boolean) => Promise<void>;
+  blockedBy: Map<string, string[]>;
   children: ReactNode;
 }) {
   const [open, setOpen] = useState(!group.stale);
   // Hard delete, no undo (see CLAUDE.md) — so "Dismiss all" arms first and
   // deletes on the second click, the same one-step confirm the edit modal uses.
   const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const submit = async (start: boolean) => {
+    if (busy) return;
+    setBusy(true); setError("");
+    try { await onAcceptAll(group.tasks.map((t) => t.id), start); }
+    catch (err) { setError(err instanceof Error ? err.message : String(err)); }
+    finally { setBusy(false); }
+  };
   const n = group.tasks.length;
   const newCount = countNewSuggestions(group.tasks, newSince);
   const label = suggestionGroupLabel(group);
@@ -114,6 +125,17 @@ export function SuggestionGroup({ group, variant, newSince, onOpenParent, onDism
         {newCount > 0 && <span className="sh-new">{newCount} new</span>}
         <span className="sh-count">{n}</span>
       </div>
+      <div className="sh-actions">
+        <button disabled={busy} onClick={() => void submit(false)}>Accept all ({n})</button>
+        <button disabled={busy} onClick={() => void submit(true)}>Start chain</button>
+      </div>
+      {error && <div role="alert" className="sh-chain">{error}</div>}
+      {open && <ol className="sh-chain" aria-label="Chain order">
+        {group.tasks.map((t) => <li key={t.id}>
+          {t.title}
+          {!!blockedBy.get(t.id)?.length && <span> ← blocked by {blockedBy.get(t.id)!.join(", ")}</span>}
+        </li>)}
+      </ol>}
       {group.stale && (
         <div className="sh-stale">
           <span className="ss-why" title={`Stale — ${group.staleReason}`}>Stale — {group.staleReason}</span>

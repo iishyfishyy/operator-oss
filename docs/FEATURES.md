@@ -78,6 +78,26 @@ never recorded a proposer (created before this shipped) collect under **Other**.
 dialog for a suggestion repeats its origin as a "↳ suggested by ‹task›" line that opens
 the proposer.
 
+### Accepting and starting a suggested chain
+
+Both the list tray and board group suggestions by proposing task and session, then
+join groups connected by dependencies between suggestions. Search shows the whole
+matching group. A numbered chain preview puts blockers before dependents; arrows
+name unfinished blockers, including accepted tasks outside the group.
+
+**Accept all (N)** moves the whole group into your task list in one transaction.
+**Start chain** also enables auto-start on every member with unfinished blockers
+and starts each ready root in its own worktree through the normal turn-slot guard.
+More than three roots requires confirmation before acceptance. Dependents start
+when their last blocker is marked done; completing an agent turn alone does not
+mark a task done. A group with no ready roots waits for its external blockers.
+
+`POST /api/tasks/accept-batch` accepts `{ ids, start_chain?: boolean,
+confirmed_roots?: boolean }` and returns fresh `tasks`, `root_ids`, and
+`confirmation_required`. Missing, changed, or cross-project members reject the
+entire batch. Acceptance is atomic; root launches are separate requests, so a
+failed launch remains accepted and can be retried from the task's session.
+
 ### Curating suggestions from the session that proposed them
 
 The link runs the other way too. In the proposing task's transcript, every `suggest_task`

@@ -127,6 +127,24 @@ describe("maybeAutoStartDependents (the launch)", () => {
     expect(fresh.started).toBe(0);
   });
 
+  it("cascades through a three-task chain one completion at a time", async () => {
+    const { project, a, b } = makeChain();
+    const c = createTask({ project_id: project.id, title: "C" });
+    setTaskDeps(c.id, [b.id]);
+    updateTask(c.id, { auto_start: 1 });
+    updateTask(a.id, { status: "done" });
+    maybeAutoStartDependents(a.id);
+    await vi.waitFor(() => expect(startTurnMock).toHaveBeenCalledTimes(1), { timeout: 10_000 });
+    expect(startTurnMock.mock.calls[0][0].id).toBe(b.id);
+    expect(hasTurn(c.id)).toBe(false);
+    updateTask(b.id, { started: 1, running: 0, status: "done" });
+    maybeAutoStartDependents(b.id);
+    await vi.waitFor(() => expect(startTurnMock).toHaveBeenCalledTimes(2), { timeout: 10_000 });
+    expect(startTurnMock.mock.calls[1][0].id).toBe(c.id);
+    maybeAutoStartDependents(b.id);
+    expect(startTurnMock).toHaveBeenCalledTimes(2);
+  });
+
   it("toggle off preserves today's behavior: nothing launches", () => {
     const { a, b } = makeChain(false);
     updateTask(a.id, { status: "done" });

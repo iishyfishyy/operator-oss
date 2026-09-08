@@ -971,3 +971,28 @@ export function setProjectRecap(id: string, recap: string, coversAt: number): vo
     .prepare("UPDATE projects SET recap = ?, recap_at = ?, recap_covers_at = ? WHERE id = ?")
     .run(recap, Date.now(), coversAt, id);
 }
+
+/** Accept a reviewed batch in one transaction; any stale member rejects all. */
+export function acceptSuggestedBatch(ids: string[], startChain: boolean, confirmedRoots = false) {
+  return getDb().transaction(() => {
+    const tasks = ids.map((id) => getTask(id));
+    if (tasks.some((t) => !t)) throw new Error("One or more suggestions no longer exist");
+    const rows = tasks as Task[];
+    if (new Set(rows.map((t) => t.project_id)).size !== 1)
+      throw new Error("Suggestions must belong to one project");
+    if (rows.some((t) => !t.suggested || t.started || t.running || t.status !== "not_started"))
+      throw new Error("One or more suggestions have changed; refresh and try again");
+    const blocked = (t: Task) => getTaskDeps(t.id).some((id) => {
+      const dep = getTask(id);
+      return dep && dep.status !== "done" && dep.status !== "cancelled";
+    });
+    const roots = rows.filter((t) => !blocked(t)).map((t) => t.id);
+    if (startChain && roots.length > 3 && !confirmedRoots)
+      return { confirmation_required: true as const, root_ids: roots, tasks: [] };
+    const fresh = rows.map((t) => ({
+      ...updateTask(t.id, { suggested: 0, ...(startChain && blocked(t) ? { auto_start: 1 } : {}) })!,
+      depends_on: getTaskDeps(t.id),
+    }));
+    return { confirmation_required: false as const, tasks: fresh, root_ids: roots };
+  })();
+}
