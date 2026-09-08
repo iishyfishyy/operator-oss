@@ -88,6 +88,8 @@ Operator also includes list and kanban views, agent-suggested follow-up tasks, p
 and per-task terminals, managed services with live logs, project recaps, and transparent
 token and usage insights.
 
+Reusable [custom slash commands](docs/COMMANDS.md) let you save app-wide or project prompts, insert them from the composer or command palette, and expand task details and arguments before sending.
+
 [Explore all features](docs/FEATURES.md) · [Compare agent support](docs/AGENTS.md) · [Read the architecture](docs/ARCHITECTURE.md)
 
 ## Community

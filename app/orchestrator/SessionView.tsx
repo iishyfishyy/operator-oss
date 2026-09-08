@@ -155,8 +155,9 @@ function useStableHandler<A extends unknown[]>(fn?: (...args: A) => void): (...a
   return useCallback((...args: A) => { ref.current?.(...args); }, []);
 }
 
-export function SessionView({ project, task, agents, messages, running, blockedBy, transcriptLoading, onSend, onStart, onStop, onClear, clearConfirming, onConfirmClear, onCancelClear, onEdit, onReconnect, onSetStatus, onSetPriority, onSetModel, onSetReasoning, onSetPermission, onSetSendContext, onResolveWithAI, onMerged, onPrCreated, onAnswer, onCancelQueued, onBack, mobile, railW, onRailWidth, onRailReset, railCollapsed, onRailCollapse, onRailExpand }: {
+export function SessionView({ commandDraft, onCommandDraftUsed, project, task, agents, messages, running, blockedBy, transcriptLoading, onSend, onStart, onStop, onClear, clearConfirming, onConfirmClear, onCancelClear, onEdit, onReconnect, onSetStatus, onSetPriority, onSetModel, onSetReasoning, onSetPermission, onSetSendContext, onResolveWithAI, onMerged, onPrCreated, onAnswer, onCancelQueued, onBack, mobile, railW, onRailWidth, onRailReset, railCollapsed, onRailCollapse, onRailExpand }: {
   project: ProjectRow; task: TaskRow; agents: AgentsBundle; messages: Msg[]; running: boolean; blockedBy?: string[]; transcriptLoading?: boolean;
+  commandDraft?: import("./useCommands").CommandDraft | null; onCommandDraftUsed?: () => void;
   onSend: (t: string) => void; onStart: () => void; onStop: () => void; onClear: () => void; onEdit: () => void;
   clearConfirming?: boolean; onConfirmClear?: () => void; onCancelClear?: () => void;
   // Deep-link to Settings → Agents, for the transcript's "your login died" recovery button.
@@ -180,6 +181,7 @@ export function SessionView({ project, task, agents, messages, running, blockedB
   const [customModel, setCustomModel] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [view, setView] = useState<"chat" | "changes">("chat");
+  useEffect(() => { if (commandDraft?.taskId === task.id) setView("chat"); }, [commandDraft, task.id]);
   const [clearEstimate, setClearEstimate] = useState<InternalUsageEstimate | null>(null);
   const sessions = useMemo(() => buildSessions(messages), [messages]);
   // Turn-end summaries for turns that filed several suggestions, keyed by the
@@ -371,7 +373,7 @@ export function SessionView({ project, task, agents, messages, running, blockedB
         )}
       </div>
       </div>
-      <Composer task={task} agentLabel={agentLabel(agents, task.agent)} disabled={task.started !== 1} running={running} onSend={onSend} onStop={onStop} onClear={onClear} />
+      <Composer commandDraft={commandDraft} onCommandDraftUsed={onCommandDraftUsed} task={task} agentLabel={agentLabel(agents, task.agent)} disabled={task.started !== 1} running={running} onSend={onSend} onStop={onStop} onClear={onClear} />
     </>
   );
 

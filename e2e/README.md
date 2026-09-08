@@ -52,6 +52,10 @@ npx playwright test e2e/03-views.spec.ts   # one spec (post-01 specs self-onboar
 | `05-api-smoke.spec.ts` | REST contracts: diff/sync shapes, `/clear` generation lineage, agent registry, hard deletes |
 | `06-conflict-banner.spec.ts` | live conflict banner clears after unstaged manual resolution or a completed mock chat turn, survives reload, and allows the resolved work to merge |
 
+`07-commands.spec.ts` covers preset creation/edit/deletion, slash-menu keyboard navigation,
+expanded transcript messages, and command-palette insertion. The test environment enables
+the optional command palette.
+
 The suite runs serially (one shared app instance + SQLite DB). Every spec after
 01 calls `ensureOnboarded()` in `beforeAll` and creates its own uniquely-named
 project, so they're independently runnable.

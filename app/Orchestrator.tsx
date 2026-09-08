@@ -22,6 +22,8 @@ import { OnboardingWizard } from "./orchestrator/OnboardingWizard";
 import { AgentNudge, AgentAuthBanner } from "./orchestrator/AgentConnect";
 import { WelcomeCoach, WelcomeNudge } from "./orchestrator/Welcome";
 import { NeedsYouMenu } from "./orchestrator/NeedsYouMenu";
+import { CommandsModal } from "./orchestrator/CommandsModal";
+import type { CommandDraft } from "./orchestrator/useCommands";
 import { CommandPalette, type PaletteCommand } from "./orchestrator/CommandPalette";
 
 // Below this width the three columns can't coexist, so the workspace collapses to
@@ -109,6 +111,8 @@ export default function Orchestrator() {
   // ⌘K / Ctrl-K command palette. Same flag as the top-bar omni button, so
   // re-enabling the feature turns on both the visual affordance and the shortcut.
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [manageCommands, setManageCommands] = useState(false);
+  const [commandDraft, setCommandDraft] = useState<CommandDraft | null>(null);
   const [clearRequest, setClearRequest] = useState<string | null>(null);
   useEffect(() => setClearRequest(null), [selTask]);
   const requestClear = (taskId: string) => setClearRequest(taskId);
@@ -231,6 +235,7 @@ export default function Orchestrator() {
       <div className="session-body">
         {task && project ? (
           <SessionView
+            commandDraft={commandDraft} onCommandDraftUsed={() => setCommandDraft(null)}
             key={task.id}
             mobile={isMobile}
             onBack={isMobile ? () => window.history.back() : undefined}
@@ -323,6 +328,7 @@ export default function Orchestrator() {
             </div>
             <div className="session-body">
               <SessionView
+                commandDraft={commandDraft} onCommandDraftUsed={() => setCommandDraft(null)}
                 key={task.id}
                 project={project} task={task} agents={o.agents} messages={o.messages} running={o.running.has(task.id)} blockedBy={o.blockedBy.get(task.id)}
                 transcriptLoading={o.transcriptLoading}
@@ -588,10 +594,15 @@ export default function Orchestrator() {
       {/* ⌘K palette. Commands are assembled here (not inside the palette) so each
           row can close over the same handlers the top bar and rails use; rows that
           need a project/task are simply omitted when there isn't one. */}
+      {manageCommands && <CommandsModal key={project?.id ?? "global"} projectId={project?.id} onClose={() => setManageCommands(false)} />}
       {paletteOpen && (
         <CommandPalette
+          projectId={project?.id}
+          canInsertCommand={task?.started === 1}
+          onInsertCommand={(name) => { if (task) { setCommandDraft({ taskId: task.id, name }); o.setView("workspace"); setBoardPanel(true); } }}
           projects={o.activeProjects}
           commands={([
+            { id: "manage-commands", label: "Manage commands…", keywords: "slash presets prompts", icon: Icon.sliders(), run: () => setManageCommands(true) },
             { id: "new-project", label: "New project", keywords: "create add repo", icon: Icon.plus(), run: () => o.setModal("project") },
             project && { id: "new-task", label: "New task", hint: `in ${project.name}`, keywords: "new session create start", icon: Icon.plus(), run: () => o.setModal("task") },
             project && { id: "toggle-task-view", label: o.taskView === "board" ? "Show tasks as list" : "Show tasks as board", hint: "⌘⇧B", keywords: "kanban board list columns view", icon: o.taskView === "board" ? Icon.list() : Icon.board(), run: () => setTaskView(o.taskView === "board" ? "list" : "board") },

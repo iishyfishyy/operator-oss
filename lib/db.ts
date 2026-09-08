@@ -51,6 +51,18 @@ export function init(db: Database.Database) {
       created_at  INTEGER NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS commands (
+      id TEXT PRIMARY KEY,
+      project_id TEXT REFERENCES projects(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
+      body TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS commands_global_name ON commands(name) WHERE project_id IS NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS commands_project_name ON commands(project_id, name) WHERE project_id IS NOT NULL;
+
     CREATE TABLE IF NOT EXISTS tasks (
       id          TEXT PRIMARY KEY,
       project_id  TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
