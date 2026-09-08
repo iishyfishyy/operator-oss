@@ -50,6 +50,7 @@ npx playwright test e2e/03-views.spec.ts   # one spec (post-01 specs self-onboar
 | `03-views.spec.ts` | list ⇄ board (kanban) toggle, status columns, card placement |
 | `04-turn-behaviors.spec.ts` | mid-turn queueing, Stop, failed-turn notices, suggestions tray + the transcript's suggestion chips (rename / dismiss / Add, the "Suggested this session" block), session resume |
 | `05-api-smoke.spec.ts` | REST contracts: diff/sync shapes, `/clear` generation lineage, agent registry, hard deletes |
+| `06-conflict-banner.spec.ts` | live conflict banner clears after unstaged manual resolution or a completed mock chat turn, survives reload, and allows the resolved work to merge |
 
 The suite runs serially (one shared app instance + SQLite DB). Every spec after
 01 calls `ensureOnboarded()` in `beforeAll` and creates its own uniquely-named

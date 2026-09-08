@@ -1,8 +1,38 @@
 import { describe, expect, it } from "vitest";
-import { ensureWorktree, fastForwardWorktree, worktreeSyncStatus } from "../lib/git";
+import { abortWorktreeMerge, ensureWorktree, fastForwardWorktree, prepareWorktreeMerge, worktreeSyncStatus } from "../lib/git";
 import { commitFile, git, makeRepoWithWorktree, tmpDir, writeFile } from "./helpers";
 
 describe("worktreeSyncStatus", () => {
+  it("tracks actual conflicts through partial resolution, staging, and abort", async () => {
+    const { repo, wt } = await makeRepoWithWorktree(ensureWorktree);
+    await commitFile(wt.path, "file.txt", "task version\n", "task edit");
+    await commitFile(wt.path, "other.txt", "task version\n", "task addition");
+    await commitFile(repo, "file.txt", "main version\n", "main edit");
+    await commitFile(repo, "other.txt", "main version\n", "main addition");
+    const input = { repoPath: repo, worktreePath: wt.path, workBranch: wt.branch, baseBranch: "main" };
+    const prep = await prepareWorktreeMerge({ ...input, message: "prepare resolution" });
+    expect(prep.ok).toBe(true);
+    expect(prep.clean).toBe(false);
+    expect(await worktreeSyncStatus(input)).toMatchObject({ mergeInProgress: true, clean: false, conflicts: ["file.txt", "other.txt"] });
+
+    writeFile(wt.path, "file.txt", "resolved version\n");
+    expect(await worktreeSyncStatus(input)).toMatchObject({ mergeInProgress: true, clean: false, conflicts: ["other.txt"] });
+    writeFile(wt.path, "other.txt", "resolved version\n");
+    expect(await worktreeSyncStatus(input)).toMatchObject({ mergeInProgress: true, behind: 2, clean: true, conflicts: [], canFastForward: false });
+    await git(wt.path, "add", ".");
+    expect(await worktreeSyncStatus(input)).toMatchObject({ mergeInProgress: true, clean: true, conflicts: [] });
+
+    await abortWorktreeMerge(wt.path);
+    expect(await worktreeSyncStatus(input)).toMatchObject({ clean: false, conflicts: ["file.txt", "other.txt"] });
+
+    await prepareWorktreeMerge({ ...input, message: "prepare again" });
+    writeFile(wt.path, "file.txt", "resolved version\n");
+    writeFile(wt.path, "other.txt", "resolved version\n");
+    await git(wt.path, "add", ".");
+    await git(wt.path, "commit", "-m", "resolve merge");
+    expect(await worktreeSyncStatus(input)).toMatchObject({ behind: 0, clean: true, conflicts: [] });
+  });
+
   it("reports an up-to-date branch with nothing to do", async () => {
     const { repo, wt } = await makeRepoWithWorktree(ensureWorktree);
     const s = await worktreeSyncStatus({ repoPath: repo, worktreePath: wt.path, workBranch: wt.branch, baseBranch: "main" });

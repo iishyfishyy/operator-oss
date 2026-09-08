@@ -31,20 +31,42 @@ function SyncBanner({ taskId, running, onResolveWithAI, onSwitchToChat }: {
 }) {
   const [st, setSt] = useState<SyncStatusResp | null>(null);
   const [busy, setBusy] = useState(false);
+  const requestId = useRef(0);
 
   const load = useCallback(async () => {
-    try { const r = await fetch(`/api/tasks/${taskId}/sync`, { cache: "no-store" }); setSt(await r.json()); }
-    catch { setSt(null); }
+    const currentRequest = ++requestId.current;
+    try {
+      const r = await fetch(`/api/tasks/${taskId}/sync`, { cache: "no-store" });
+      const status = await r.json();
+      if (currentRequest === requestId.current) setSt(status);
+    } catch { if (currentRequest === requestId.current) setSt(null); }
   }, [taskId]);
 
   // Recompute on open and whenever a turn finishes (a turn may have fast-forwarded
   // or otherwise moved the branch). Skip while running to avoid mid-merge reads.
-  useEffect(() => { if (!running) load(); }, [running, load]);
+  useEffect(() => {
+    setSt(null);
+    if (!running) {
+      load();
+      window.addEventListener("focus", load);
+    }
+    return () => {
+      requestId.current++;
+      window.removeEventListener("focus", load);
+    };
+  }, [running, load]);
 
-  if (!st || !st.isolated || !st.behind) return null;
+  useEffect(() => {
+    if (running || !st?.mergeInProgress) return;
+    const timer = window.setInterval(load, 5000);
+    return () => window.clearInterval(timer);
+  }, [running, st?.mergeInProgress, load]);
+
+  if (running || !st || !st.isolated || !st.behind) return null;
   if (st.canFastForward) return null; // resolves silently on the next message
 
   const conflicts = st.conflicts?.length ?? 0;
+  if (st.mergeInProgress && conflicts === 0) return null;
 
   const doSync = async () => {
     setBusy(true);
