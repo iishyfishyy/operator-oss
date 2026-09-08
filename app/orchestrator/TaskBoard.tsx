@@ -153,7 +153,7 @@ function BoardCard({ task, agents, selected, running, blockedBy, mini, isNew, dr
   );
 }
 
-export function TaskBoard({ project, tasks, suggested, allTasks, agents, selTaskId, running, blockedBy, canDrag, onSelect, onEditTask, onMove, onStartSuggestion, onAcceptSuggestion, onDismissSuggestion, onDismissSuggestions, onOpenParent, traySeenAt, traySeenReady, onTrayViewed }: {
+export function TaskBoard({ project, tasks, suggested, allTasks, agents, selTaskId, running, blockedBy, canDrag, onSelect, onEditTask, onMove, onStartSuggestion, onAcceptSuggestion, onDismissSuggestion, onDismissSuggestions, onAcceptSuggestions, onOpenParent, traySeenAt, traySeenReady, onTrayViewed }: {
   project: ProjectRow;
   tasks: TaskRow[]; suggested: TaskRow[];
   // The project's UNFILTERED task list, used only to name a suggestion's
@@ -168,6 +168,7 @@ export function TaskBoard({ project, tasks, suggested, allTasks, agents, selTask
   onMove: (id: string, patch: Partial<Pick<TaskRow, "status" | "suggested">>, orderedIds: string[]) => void;
   onStartSuggestion: (id: string) => void; onAcceptSuggestion: (id: string) => void; onDismissSuggestion: (id: string) => void;
   // Bulk dismiss ("Dismiss all" on a stale group) — same hard delete, one call.
+  onAcceptSuggestions: (ids: string[], start: boolean) => Promise<void>;
   onDismissSuggestions: (ids: string[]) => void;
   // Jump to the task a suggestion group came from (its header).
   onOpenParent: (id: string) => void;
@@ -303,7 +304,7 @@ export function TaskBoard({ project, tasks, suggested, allTasks, agents, selTask
                 // its cards away as one block. Every other column is a flat list.
                 if (sugGroups) {
                   return sugGroups.map((g) => (
-                    <SuggestionGroup key={g.key} group={g} variant="board" newSince={newSince} onOpenParent={onOpenParent} onDismissAll={onDismissSuggestions}>
+                    <SuggestionGroup key={g.key} group={g} variant="board" newSince={newSince} onOpenParent={onOpenParent} onDismissAll={onDismissSuggestions} onAcceptAll={onAcceptSuggestions} blockedBy={blockedBy}>
                       {g.tasks.map((t) => slot(t, null))}
                     </SuggestionGroup>
                   ));
@@ -336,7 +337,7 @@ export function TaskBoard({ project, tasks, suggested, allTasks, agents, selTask
 // Full-workspace board shell (desktop): owns everything right of the projects
 // sidebar — header with the List/Board toggle, the board, and (via `children`)
 // the slide-over session panel + drawers the composition root mounts on top.
-export function BoardWorkspace({ project, agents, tasks, suggested, selTaskId, running, blockedBy, loading, onSetView, onMoveTask, onSelectTask, onNewTask, onEditContext, onShowSessions, onEditTask, onStartSuggestion, onAcceptSuggestion, onDismissSuggestion, onDismissSuggestions, onOpenParent, traySeenAt, traySeenReady, onTrayViewed, children }: {
+export function BoardWorkspace({ project, agents, tasks, suggested, selTaskId, running, blockedBy, loading, onSetView, onMoveTask, onSelectTask, onNewTask, onEditContext, onShowSessions, onEditTask, onStartSuggestion, onAcceptSuggestion, onDismissSuggestion, onDismissSuggestions, onAcceptSuggestions, onOpenParent, traySeenAt, traySeenReady, onTrayViewed, children }: {
   project: ProjectRow; agents: AgentsBundle; tasks: TaskRow[]; suggested: TaskRow[]; selTaskId: string | null;
   running: Set<string>; blockedBy: Map<string, string[]>; loading?: boolean;
   onSetView: (v: TaskView) => void;
@@ -344,6 +345,7 @@ export function BoardWorkspace({ project, agents, tasks, suggested, selTaskId, r
   onSelectTask: (id: string) => void; onNewTask: () => void; onEditContext: () => void; onShowSessions: () => void;
   onEditTask: (id: string) => void;
   onStartSuggestion: (id: string) => void; onAcceptSuggestion: (id: string) => void; onDismissSuggestion: (id: string) => void;
+  onAcceptSuggestions: (ids: string[], start: boolean) => Promise<void>;
   onDismissSuggestions: (ids: string[]) => void;
   onOpenParent: (id: string) => void;
   traySeenAt: number | undefined; traySeenReady: boolean; onTrayViewed: (projectId: string) => void;
@@ -391,7 +393,7 @@ export function BoardWorkspace({ project, agents, tasks, suggested, selTaskId, r
           running={running} blockedBy={blockedBy} canDrag={!q}
           onSelect={onSelectTask} onEditTask={onEditTask} onMove={onMoveTask}
           onStartSuggestion={onStartSuggestion} onAcceptSuggestion={onAcceptSuggestion} onDismissSuggestion={onDismissSuggestion}
-          onDismissSuggestions={onDismissSuggestions} onOpenParent={onOpenParent}
+          onAcceptSuggestions={onAcceptSuggestions} onDismissSuggestions={onDismissSuggestions} onOpenParent={onOpenParent}
           traySeenAt={traySeenAt} traySeenReady={traySeenReady} onTrayViewed={onTrayViewed}
         />
       )}

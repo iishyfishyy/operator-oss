@@ -575,6 +575,20 @@ export function useOrchestrator() {
     await jsend<TaskRow>(`/api/tasks/${id}`, "PATCH", { suggested: 0 });
     if (selProj) await loadTasks(selProj, false);
   };
+  const acceptSuggestions = async (ids: string[], start: boolean) => {
+    type Batch = { tasks: TaskRow[]; root_ids: string[]; confirmation_required: boolean };
+    let result = await jsend<Batch>("/api/tasks/accept-batch", "POST", { ids, start_chain: start });
+    if (result.confirmation_required) {
+      if (!window.confirm(`Start ${result.root_ids.length} root sessions in parallel? Each runs in its own worktree.`)) return;
+      result = await jsend<Batch>("/api/tasks/accept-batch", "POST", { ids, start_chain: start, confirmed_roots: true });
+    }
+    const fresh = new Map(result.tasks.map((t) => [t.id, t]));
+    setTasks((prev) => prev.map((t) => fresh.has(t.id) ? { ...t, ...fresh.get(t.id)! } : t));
+    if (start) {
+      // Each POST claims its own server-side turn slot; roots can run together.
+      await Promise.all(result.root_ids.map((id) => runTurn(id, "", true)));
+    }
+  };
   const dismissSuggestion = async (id: string) => {
     await jsend(`/api/tasks/${id}`, "DELETE");
     if (selProj) await loadTasks(selProj, false);
@@ -678,7 +692,7 @@ export function useOrchestrator() {
     // actions
     setSelTask, fetchRecap, runTurn, answerQuestion, stopTurn, cancelQueued, resolveConflictsWithAI,
     selectProject, jumpToNeedsYou, goToTask, clearSession, setStatus, setPriority, setModel,
-    setReasoning, setPermission, setSendContext, createTask, saveTask, renameTask, removeTask, moveTask, startSuggestion, acceptSuggestion,
+    setReasoning, setPermission, setSendContext, createTask, saveTask, renameTask, removeTask, moveTask, startSuggestion, acceptSuggestion, acceptSuggestions,
     dismissSuggestion, dismissSuggestions, saveContext, createProject, reorderProjects, removeProject, setDeprecated,
     resetSettings, setProjectDefaultAgent,
   };

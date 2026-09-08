@@ -90,7 +90,7 @@ function useCollapsed(key: string, def: boolean) {
   return [collapsed, toggle] as const;
 }
 
-export function TasksColumn({ project, agents, tasks, suggested, selTaskId, running, blockedBy, width, loading, view, onSetView, onMoveTask, onSelectTask, onNewTask, onEditContext, onShowSessions, onShowRecap, onEditTask, onStartSuggestion, onAcceptSuggestion, onDismissSuggestion, onDismissSuggestions, onOpenParent, traySeenAt, traySeenReady, onTrayViewed, onCollapse, mobile, onBack }: {
+export function TasksColumn({ project, agents, tasks, suggested, selTaskId, running, blockedBy, width, loading, view, onSetView, onMoveTask, onSelectTask, onNewTask, onEditContext, onShowSessions, onShowRecap, onEditTask, onStartSuggestion, onAcceptSuggestion, onDismissSuggestion, onDismissSuggestions, onAcceptSuggestions, onOpenParent, traySeenAt, traySeenReady, onTrayViewed, onCollapse, mobile, onBack }: {
   project: ProjectRow; agents: AgentsBundle; tasks: TaskRow[]; suggested: TaskRow[]; selTaskId: string | null; running: Set<string>; blockedBy: Map<string, string[]>; width: number; loading?: boolean;
   view: TaskView; onSetView: (v: TaskView) => void;
   onMoveTask: (id: string, patch: Partial<Pick<TaskRow, "status" | "suggested">>, orderedIds: string[]) => void;
@@ -98,6 +98,7 @@ export function TasksColumn({ project, agents, tasks, suggested, selTaskId, runn
   onEditTask: (id: string) => void; onCollapse: () => void;
   onStartSuggestion: (id: string) => void; onAcceptSuggestion: (id: string) => void; onDismissSuggestion: (id: string) => void;
   // Bulk dismiss ("Dismiss all" on a stale group) — same hard delete, one call.
+  onAcceptSuggestions: (ids: string[], start: boolean) => Promise<void>;
   onDismissSuggestions: (ids: string[]) => void;
   // Jump to the task a suggestion group came from (its header).
   onOpenParent: (id: string) => void;
@@ -175,7 +176,7 @@ export function TasksColumn({ project, agents, tasks, suggested, selTaskId, runn
             running={running} blockedBy={blockedBy} canDrag={!q}
             onSelect={onSelectTask} onEditTask={onEditTask} onMove={onMoveTask}
             onStartSuggestion={onStartSuggestion} onAcceptSuggestion={onAcceptSuggestion} onDismissSuggestion={onDismissSuggestion}
-            onDismissSuggestions={onDismissSuggestions} onOpenParent={onOpenParent}
+            onAcceptSuggestions={onAcceptSuggestions} onDismissSuggestions={onDismissSuggestions} onOpenParent={onOpenParent}
             traySeenAt={traySeenAt} traySeenReady={traySeenReady} onTrayViewed={onTrayViewed}
           />
         </div>
@@ -199,7 +200,7 @@ export function TasksColumn({ project, agents, tasks, suggested, selTaskId, runn
               <span className="sp">{shownSuggested.length}</span>
             </div>
             {sugGroups.map((g) => (
-              <SuggestionGroup key={g.key} group={g} variant="list" newSince={newSince} onOpenParent={onOpenParent} onDismissAll={onDismissSuggestions}>
+              <SuggestionGroup key={g.key} group={g} variant="list" newSince={newSince} onOpenParent={onOpenParent} onDismissAll={onDismissSuggestions} onAcceptAll={onAcceptSuggestions} blockedBy={blockedBy}>
                 {g.tasks.map((s) => (
                   <div key={s.id} className="sug">
                     <StatusDot status="not_started" />

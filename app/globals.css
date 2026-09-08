@@ -1596,3 +1596,9 @@ button.tpeek-more:hover{color:var(--accent-ink);}
   .in-head{margin-bottom:16px;}
   .in-dd{min-width:0;flex:1;}
 }
+
+.sh-actions{display:flex;gap:8px;padding:6px 12px;flex-wrap:wrap;}
+.sh-actions button{padding:4px 8px;border:1px solid var(--line-strong);border-radius:var(--r-sm);font-size:11px;}
+.sh-actions button:disabled{opacity:.5;cursor:wait;}
+.sh-chain{margin:4px 12px 8px;padding-left:20px;font-size:11px;overflow-wrap:anywhere;}
+.sh-chain span{color:var(--ink-3);}

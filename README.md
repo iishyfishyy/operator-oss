@@ -44,6 +44,10 @@ each task as soon as its last dependency finishes.
 
 **Create tasks → connect dependencies → agents work in isolated branches → review and merge**
 
+Suggested groups offer **Accept all** and **Start chain** in both list and board
+views, with a numbered dependency preview. Start chain launches ready roots and
+arms blocked tasks to start when their blockers are done.
+
 ![Operator board showing branching tasks and automatic starts](docs/images/pipeline.png)
 
 ## Run it your way
