@@ -1164,10 +1164,21 @@ button.tpeek-more:hover{color:var(--accent-ink);}
 .field input:focus,.field textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft);}
 .field .ctx-mono{font-family:var(--mono);font-size:12.5px;}
 .field .hlp{font-size:11.5px;color:var(--ink-3);margin-top:7px;line-height:1.45;}
+.field .hlp .ctx-mono{font-size:11.5px;color:var(--ink-2);}
+
+/* Manage-commands editor: the saved-command picker (one chip per definition,
+   mono trigger + scope tag) above the form that edits the selected one. */
+.cmd-picker{display:flex;align-items:center;flex-wrap:wrap;gap:8px;}
+.cmd-chip .nm{font-family:var(--mono);font-weight:700;}
+.cmd-chip .sc{font-family:var(--mono);font-size:10px;font-weight:600;color:var(--ink-4);}
+.cmd-chip.on .sc{color:var(--accent-ink);opacity:.8;}
+.cmd-form{border:0;padding:0;margin:0;min-width:0;}
+.field textarea.cmd-body{font-family:var(--mono);font-size:12.5px;}
 
 .seg{display:flex;gap:6px;}
 .seg button{flex:1;display:flex;align-items:center;justify-content:center;gap:7px;height:40px;border-radius:var(--r);border:1px solid var(--line-strong);background:var(--raise);font-size:13px;font-weight:600;color:var(--ink-2);transition:all .12s;}
 .seg button:hover{border-color:var(--line-strong);background:var(--surface-2);}
+.seg button:disabled,.seg button:disabled:hover{opacity:.45;cursor:default;background:var(--raise);}
 .seg button.on{border-color:var(--accent);background:var(--accent-soft);color:var(--accent-ink);}
 .seg button svg{width:14px;height:14px;}
 [data-theme="dark"] .seg button.on{color:#E0A07F;}
