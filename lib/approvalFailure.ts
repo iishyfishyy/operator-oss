@@ -59,6 +59,9 @@ const APPROVAL_BLOCKED_RES = [
  *  downgrade warning, or exec mode failing to service an approval) rather than
  *  a work failure. */
 export function isApprovalBlocked(msg: string | null | undefined): boolean {
+  // Full access has its own recovery guidance; do not append the automatic
+  // on-request retry notice (that mode explicitly requests never on every turn).
+  if (msg?.includes(CODEX_FULL_ACCESS_BLOCKED_NOTICE)) return false;
   return !!msg && APPROVAL_BLOCKED_RES.some((re) => re.test(msg));
 }
 
@@ -75,3 +78,14 @@ export const APPROVAL_BLOCKED_NOTICE =
   "policy for its Codex sessions, so retrying the message should go through. (Running with " +
   "CODEX_APPROVAL_POLICY=inherit? Set an exec-compatible approval_policy, e.g. \"on-request\", in " +
   "~/.codex/config.toml instead.)";
+
+/** Managed sandbox rejection, including CLI fallback warnings. */
+export function isSandboxPolicyBlocked(msg: string): boolean {
+  return /sandbox[_ ]mode[^\n]{0,160}(?:disallowed|not (?:in |an? )?allowed|requirements)/i.test(msg)
+    || /(?:disallowed|requirements)[^\n]{0,160}sandbox[_ ]mode/i.test(msg);
+}
+
+export const CODEX_FULL_ACCESS_BLOCKED_NOTICE =
+  "Codex Full access was rejected by an approval or managed sandbox policy. Operator cannot override " +
+  "managed restrictions. Select Auto-run or Plan in this task's run controls (or change its inherited " +
+  "default in Settings) before retrying, or contact your administrator. Full access requests no command approvals.";
