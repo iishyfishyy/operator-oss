@@ -476,9 +476,12 @@ export function SessionView({ commandDraft, onCommandDraftUsed, project, task, a
                     </div>
                   ))}
                   <div className="divider" />
-                  <div className="pop-sec">Permission</div>
+                  <div className="pop-sec">Permission · applies next turn</div>
                   {permissionOpts.map((p) => (
-                    <div key={p.label} className="pop-item" onClick={() => { onSetPermission(p.value); setSettingsOpen(false); }}>
+                    <div key={p.label} className="pop-item" onClick={() => {
+                      if (p.value === "fullAccess" && !window.confirm("Enable Codex Full access for this task? Commands may access files and execute outside the task worktree with your account permissions, without command approvals. Managed restrictions still apply. Takes effect on the next turn, including resume.")) return;
+                      onSetPermission(p.value); setSettingsOpen(false);
+                    }}>
                       <div><div>{p.label}</div><div className="pi-sub">{p.sub}</div></div>
                       {(task.permission_mode ?? null) === p.value && <span className="pi-check">{Icon.check()}</span>}
                     </div>

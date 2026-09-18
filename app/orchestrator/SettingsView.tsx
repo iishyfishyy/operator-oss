@@ -412,13 +412,23 @@ export function SettingsView({ settings, setSetting, appDefaults, setAppDefault,
                   <div className="hlp" style={{ marginTop: 0, marginBottom: 10 }}>
                     How tasks run when their own picker is set to the default. <strong>Plan mode</strong> proposes a plan without editing files.
                   </div>
+                  {editAgent === "codex" && (
+                    <div className="hlp" style={{ marginBottom: 10 }}>
+                      Selected default: <strong>{permissionOptions(caps).find((p) => p.value === permissionVal)?.label ?? "Default"}{permissionVal === null ? " (Auto-run)" : ""}</strong>.
+                      {" "}Full access lets commands access files and execute outside the task worktree with your account permissions, without command approvals. Managed restrictions still apply.
+                      {" "}Changes apply on the next turn, including resumed sessions; a running turn keeps its current mode. Task overrides take priority.
+                    </div>
+                  )}
                   <div className="seg" style={{ flexWrap: "wrap", maxWidth: 520 }}>
                     {permissionOptions(caps).map((p) => (
                       <button
                         key={p.label}
                         className={permissionVal === p.value ? "on" : ""}
                         title={p.sub}
-                        onClick={() => setAppDefault(`default_permission_mode:${editAgent}`, p.value)}
+                        onClick={() => {
+                          if (p.value === "fullAccess" && !window.confirm("Enable Codex Full access? Commands may access files and execute outside the task worktree with your account permissions, without command approvals. Managed restrictions still apply. Applies from the next turn to tasks using Default.")) return;
+                          setAppDefault(`default_permission_mode:${editAgent}`, p.value);
+                        }}
                       >
                         {p.label}
                       </button>
