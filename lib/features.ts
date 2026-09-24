@@ -15,6 +15,8 @@ export interface Features {
   /** PREVIEW tab (project live-URL view). WIP — depends on the remote-execution
    *  backend landing first, so it stays off until the live URL is real. */
   livePreview: boolean;
+  /** Exact SDK input snapshots and the PROMPTS inspector (ORCH_DEBUG_PROMPTS). */
+  debugPrompts: boolean;
   /** Command palette: the toolbar "Jump to project, session, or command…"
    *  omni-search bar and its ⌘K/Ctrl-K shortcut (app/orchestrator/CommandPalette). */
   omniSearch: boolean;
@@ -29,6 +31,7 @@ export interface Features {
 
 export const DEFAULT_FEATURES: Features = {
   livePreview: false,
+  debugPrompts: false,
   omniSearch: false,
   services: true,
 };
@@ -42,6 +45,7 @@ const flag = (v: string | undefined, dflt: boolean) => (v ? truthy(v) : dflt);
 /** Server-side resolve from env. Never call this from client code (reads env). */
 export function resolveFeatures(): Features {
   return {
+    debugPrompts: truthy(process.env.ORCH_DEBUG_PROMPTS),
     livePreview: flag(process.env.ORCH_FEATURE_LIVE_PREVIEW, DEFAULT_FEATURES.livePreview),
     omniSearch: flag(process.env.ORCH_FEATURE_OMNI_SEARCH, DEFAULT_FEATURES.omniSearch),
     services: flag(process.env.ORCH_FEATURE_SERVICES, DEFAULT_FEATURES.services),

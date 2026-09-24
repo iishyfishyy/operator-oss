@@ -27,6 +27,8 @@ const PINNED = [
   "lib/store.ts", //     imported by nearly everything; the original poison edge
   "lib/services.ts", //  behind sync-compiled routes (grant, services-restore)
   "lib/db.ts",
+  "lib/promptCapture.ts",
+  "app/api/tasks/[id]/prompts/route.ts",
   "lib/agents/capabilities.ts", // the whole point of the module
   "lib/agents/connections.ts", // connection state is ID lookups only — no driving
   "lib/agentTools.ts", //        behind the internal agent-tools routes (stdio bridge)

@@ -111,3 +111,32 @@ for reproducible bugs, and [CONTRIBUTING.md](CONTRIBUTING.md) for pull requests.
 ## License
 
 [Apache-2.0](LICENSE)
+
+### Inspecting prompts
+
+Start with `ORCH_DEBUG_PROMPTS=1 npm start` (or `ORCH_DEBUG_PROMPTS=1 npm run dev`),
+then open a task's **PROMPTS** tab beside DIFF and CONTEXT. Run a turn and refresh
+captures to inspect the exact text Operator handed to Claude Code or Codex.
+The inspector shows context sections, repeated lines within a submission, run
+options, raw inputs, JSON download, and comparison with the previous submission
+for the same agent and job. It also includes the task's `/clear` summaries and
+project-level recap/context-refresh jobs, labeled separately.
+
+These are SDK input snapshots, not complete model requests: agent-managed system
+instructions, restored history, tool results, and compaction are outside this
+capture boundary. Claude's context append and user prompt are separate inputs;
+Codex's fresh-session input combines context and user text. A resumed Codex
+submission contains only the new user text. Model overrides of `null` mean the
+runtime chooses its default.
+
+Debugging is off by default and takes effect at server startup without rebuilding.
+Captures contain verbatim prompt content, including any secrets in that text;
+environment credentials and MCP bridge tokens are excluded from recorded options.
+They live in `ORCH_DB_DIR/orchestrator.db`, bounded globally to the newest 200
+captures / 32 MiB. Captures larger than 8 MiB are skipped with a server-log notice.
+Captures expire after seven days and are purged on the next capture or inspector
+read; task/project deletion also deletes associated captures. Disabling the flag
+hides the panel and endpoint and stops recording; it does not erase retained data.
+Downloaded copies are not managed by Operator. Earlier turns cannot be recovered
+retroactively. Captures record attempted SDK submissions, not confirmation of
+provider receipt.

@@ -51,6 +51,16 @@ export function init(db: Database.Database) {
       created_at  INTEGER NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS prompt_captures (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      task_id TEXT REFERENCES tasks(id) ON DELETE CASCADE,
+      created_at INTEGER NOT NULL,
+      bytes INTEGER NOT NULL,
+      payload TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS prompt_captures_scope ON prompt_captures(project_id, task_id, created_at);
+
     CREATE TABLE IF NOT EXISTS commands (
       id TEXT PRIMARY KEY,
       project_id TEXT REFERENCES projects(id) ON DELETE CASCADE,

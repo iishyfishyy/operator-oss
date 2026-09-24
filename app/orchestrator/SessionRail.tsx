@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { PromptInspector } from "./PromptInspector";
 import { Icon } from "../icons";
 import TaskChanges, { type ResolveResult } from "../TaskChanges";
 import { fmtTokens } from "./format";
@@ -8,7 +9,7 @@ import { clientFeatures } from "@/lib/features";
 import type { ServiceInfo } from "@/lib/types";
 import type { ProjectRow, TaskRow } from "./types";
 
-type Tab = "diff" | "preview" | "context";
+type Tab = "diff" | "preview" | "context" | "prompts";
 type Session = { n: number; summaryBefore: string | null };
 
 // The live URL a project's dev server is reachable at when no registered
@@ -124,6 +125,7 @@ export function SessionRail({ project, task, sessions, running, onResolveWithAI,
         <Tab id="diff" label="DIFF" />
         {showPreview && <Tab id="preview" label="PREVIEW" />}
         <Tab id="context" label="CONTEXT" />
+        {clientFeatures().debugPrompts && <Tab id="prompts" label="PROMPTS" />}
         <span style={{ flex: 1 }} />
         <button className="rail-collapse" onClick={onCollapse} title="Hide panel">{Icon.chevRight()}</button>
       </div>
@@ -135,6 +137,7 @@ export function SessionRail({ project, task, sessions, running, onResolveWithAI,
             return res;
           }} />
         )}
+        {tab === "prompts" && clientFeatures().debugPrompts && <PromptInspector key={task.id} taskId={task.id} running={running} />}
         {tab === "preview" && showPreview && <PreviewPane project={project} />}
         {tab === "context" && <ContextPane task={task} sessions={sessions} running={running} onClear={onClear} />}
       </div>

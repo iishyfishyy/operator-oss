@@ -16,6 +16,7 @@
 // back to the utility agent's implementation — a new driver can ship runTurn()
 // alone and still get working /clear summaries, recaps, and context drafts.
 
+import { promptScope } from "../promptCapture";
 import { getDriver, listDrivers, DEFAULT_AGENT } from "./registry";
 import { resolveConnectedAgent } from "./connections";
 import { addInternalUsage, getSetting } from "../store";
@@ -104,7 +105,8 @@ async function run<K extends OneShotKey>(
   try {
     const driver = resolveFor(preferred(), job);
     agent = driver.id;
-    const raw = await invoke(driver[job] as NonNullable<AgentDriver[K]>);
+    const raw = await promptScope.run({ projectId: scope.project_id!, taskId: scope.task_id, job },
+      () => invoke(driver[job] as NonNullable<AgentDriver[K]>));
     // Keep older third-party/test drivers from breaking at runtime while the
     // TypeScript contract moves them to OneShotResult.
     const result: OneShotResult = typeof raw === "string" ? { text: raw } : raw;
