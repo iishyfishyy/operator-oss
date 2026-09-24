@@ -16,7 +16,7 @@
 
 import type { AgentCapabilities } from "./types";
 import { claudeCapabilities } from "./claude/capabilities";
-import { CODEX_CAPABILITIES } from "./codex/capabilities";
+import { codexCapabilities } from "./codex/capabilities";
 import { MOCK_CAPABILITIES } from "./mock/capabilities";
 
 export const DEFAULT_AGENT = "claude";
@@ -26,7 +26,7 @@ export const DEFAULT_AGENT = "claude";
 // read. The others are static and just close over their constant.
 const CAPABILITIES: Record<string, () => AgentCapabilities> = {
   claude: () => claudeCapabilities(),
-  codex: () => CODEX_CAPABILITIES,
+  codex: () => codexCapabilities(),
 };
 
 // The deterministic e2e agent, under the same env gate registry.ts uses. It has

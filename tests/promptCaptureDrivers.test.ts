@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-const { queryMock, runMock } = vi.hoisted(() => ({ queryMock: vi.fn(), runMock: vi.fn() }));
+const { queryMock, runMock, threadOptions } = vi.hoisted(() => ({ queryMock: vi.fn(), runMock: vi.fn(), threadOptions: vi.fn() }));
 vi.mock("@anthropic-ai/claude-agent-sdk", () => ({
   query: queryMock,
   createSdkMcpServer: vi.fn(() => ({})),
@@ -7,8 +7,8 @@ vi.mock("@anthropic-ai/claude-agent-sdk", () => ({
 }));
 vi.mock("@openai/codex-sdk", () => ({
   Codex: class {
-    startThread() { return { id: null, runStreamed: runMock }; }
-    resumeThread(id: string) { return { id, runStreamed: runMock }; }
+    startThread(options: unknown) { threadOptions(options); return { id: null, runStreamed: runMock }; }
+    resumeThread(id: string, options: unknown) { threadOptions(options); return { id, runStreamed: runMock }; }
   },
 }));
 import { claudeDriver } from "@/lib/agents/claude/driver";
@@ -70,4 +70,24 @@ it("captures internal jobs with the correct scope across concurrent agents", asy
   expect(captures.find(c => c.agent === "claude")).toMatchObject({ taskId: task.id, job: "summarizeTranscript", prompt: queryMock.mock.calls[0][0].prompt });
   expect(captures.find(c => c.agent === "codex")).toMatchObject({ job: "summarizeProjectRecap", prompt: runMock.mock.calls[0][0] });
   expect(captures.find(c => c.agent === "codex")?.taskId).toBeUndefined();
+});
+
+
+it.each([null, "existing-session"])("passes exact Claude selections through on session %s", async (session_id) => {
+  const project = createProject({ name: "Exact Claude model" });
+  const task = createTask({ project_id: project.id, title: "Inspect" });
+  for (const model of ["claude-opus-5-5", "claude-sonnet-5", "opus", "arn:aws:bedrock:us-east-1:123:application-inference-profile/custom"]) {
+    await drain(claudeDriver.runTurn({ ...task, session_id, model }, project, "continue"));
+    expect(queryMock.mock.lastCall?.[0].options).toMatchObject({ model });
+    expect(queryMock.mock.lastCall?.[0].options.resume).toBe(session_id ?? undefined);
+  }
+});
+
+it.each([null, "existing-session"])("passes exact Codex selections through on session %s", async (session_id) => {
+  const project = createProject({ name: "Exact Codex model" });
+  const task = createTask({ project_id: project.id, title: "Inspect", agent: "codex" });
+  for (const model of ["gpt-6-astra", "gpt-6-sol", "gpt-6-luna", "gpt-5.6-sol", "custom-model-id"]) {
+    await drain(codexDriver.runTurn({ ...task, session_id, model }, project, "continue"));
+    expect(threadOptions.mock.lastCall?.[0]).toMatchObject({ model });
+  }
 });

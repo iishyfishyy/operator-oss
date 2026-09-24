@@ -4,50 +4,36 @@
 // Turbopack — see lib/agents/capabilities.ts). Null model = inherit codex's
 // built-in default (see DEFAULT_CODEX_MODEL in ./pricing).
 
+import { cachedModels } from "../modelCatalog";
 import type { AgentCapabilities } from "../types";
 import { codexApiKey } from "./auth";
 
-// Every current preset runs the same 272k window, so unlike Claude there's no
-// per-model variation here — but keep it per-entry anyway: this descriptor is
-// what drives the context gauge, and a future preset may differ.
+// The live CLI catalog budgets 272k for these models, independently of their
+// larger API maximum. Use the CLI window for the context gauge.
 const CTX = 272_000;
 
 export const CODEX_CAPABILITIES: AgentCapabilities = {
-  // Tracks the codex CLI's model line, ordered newest-first. "Previous
-  // versions" are still-live older models — selectable for the same reason
-  // Claude pins older versions, but not what a new task should default to.
-  // Groups must stay contiguous: the picker opens a new section whenever
-  // `group` changes (SessionView.tsx).
-  //
-  // Re-check this list when bumping @openai/codex-sdk; the codex model line
-  // moves faster than Claude's, and a stale entry here is a model that 400s the
-  // whole turn. Two traps when you do:
-  //   - The `{"models":[…]}` catalog embedded in the CLI binary is a stale
-  //     FALLBACK, not the truth. The live catalog is fetched at startup and can
-  //     both drop models the embedded one lists and keep ones it marks retired.
-  //   - Availability is per auth mode. We run on ChatGPT-plan login, and that
-  //     account type refuses models the API tier still serves.
-  // So verify empirically, on a ChatGPT login:
-  //   codex exec --model <slug> "reply with the single word ok"
-  // Checked against codex-cli 0.153.4: Astra initializes successfully, while
-  // gpt-5.2 and gpt-5.3-codex are no longer supported with ChatGPT accounts.
-  // gpt-5.4 / gpt-5.4-mini still run despite the embedded catalog flagging
-  // them for migration to Terra / Luna.
+  // Checked 2026-09-23 against Codex 0.156.1 model/list and
+  // https://learn.chatgpt.com/docs/models. Exact IDs pass through to the SDK.
+  // Recheck the live catalog when updating the CLI; availability varies by
+  // account. GPT-5.4 / Mini retired from ChatGPT sign-in, so they are custom
+  // IDs only (existing tasks and API-key users can still send them unchanged).
+  // Keep groups contiguous so each section gets one picker heading.
   models: [
     { value: "gpt-6-astra", label: "GPT-6 Astra", sub: "most capable for the hardest end-to-end work", contextWindow: CTX, group: "Latest" },
-    { value: "gpt-5.6-sol", label: "GPT-5.6 Sol", sub: "latest frontier agentic coding model (default)", contextWindow: CTX, group: "Latest" },
-    { value: "gpt-5.6-terra", label: "GPT-5.6 Terra", sub: "balanced agentic coding for everyday work", contextWindow: CTX, group: "Latest" },
-    { value: "gpt-5.6-luna", label: "GPT-5.6 Luna", sub: "fast and affordable agentic coding", contextWindow: CTX, group: "Latest" },
-    { value: "gpt-5.5", label: "GPT-5.5", sub: "previous frontier coding and research model", contextWindow: CTX, group: "Previous versions" },
-    { value: "gpt-5.4", label: "GPT-5.4", sub: "strong model for everyday coding", contextWindow: CTX, group: "Previous versions" },
-    { value: "gpt-5.4-mini", label: "GPT-5.4 Mini", sub: "small, fast, and cost-efficient", contextWindow: CTX, group: "Previous versions" },
+    { value: "gpt-6-sol", label: "GPT-6 Sol", sub: "complex coding and agentic workflows", contextWindow: CTX, group: "Latest" },
+    { value: "gpt-6-luna", label: "GPT-6 Luna", sub: "fast, efficient focused coding", contextWindow: CTX, group: "Latest" },
+    { value: "gpt-5.6-sol", label: "GPT-5.6 Sol", sub: "previous frontier agentic coding model", contextWindow: CTX, group: "Previous versions" },
+    { value: "gpt-5.6-terra", label: "GPT-5.6 Terra", sub: "balanced agentic coding for everyday work", contextWindow: CTX, group: "Previous versions" },
+    { value: "gpt-5.6-luna", label: "GPT-5.6 Luna", sub: "fast and affordable agentic coding", contextWindow: CTX, group: "Previous versions" },
+    { value: "gpt-5.5", label: "GPT-5.5", sub: "retires from ChatGPT sign-in October 14, 2026", contextWindow: CTX, group: "Previous versions" },
   ],
   // Off/Think/Think hard/Ultrathink → codex's model_reasoning_effort scale
   // (low/medium/high/xhigh — see EFFORT in ./driver.ts). Codex can't disable
   // reasoning ("minimal" 400s the turn), so "Off" is its floor, "low"; the
   // subs name the actual effort each preset sends so the picker stays honest.
-  // The 5.6 family also accepts "max" and "ultra" above xhigh; the shared
-  // preset vocabulary tops out at ultrathink, so those aren't reachable yet.
+  // Current Sol/Astra models also accept max/ultra; Luna tops out at max.
+  // The shared presets stop at xhigh, which every listed model supports.
   reasoningOptions: [
     { value: "off", label: "Off", sub: "low effort — codex's minimum" },
     { value: "think", label: "Think", sub: "medium effort" },
@@ -78,6 +64,11 @@ export const CODEX_CAPABILITIES: AgentCapabilities = {
   reportsCostUsd: false,
   costIsEstimated: true,
   supportsResume: true,
+  supportsCustomModels: true,
   apiKeyHint: codexApiKey.hint,
   loginStyle: "device_code",
 };
+
+export function codexCapabilities(): AgentCapabilities {
+  return { ...CODEX_CAPABILITIES, models: cachedModels("codex")?.models ?? CODEX_CAPABILITIES.models };
+}

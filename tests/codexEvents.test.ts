@@ -86,7 +86,7 @@ describe("codex event mapping", () => {
     // input_tokens carries fresh prompt only and the total doesn't double-count
     // the cache. Reasoning folds into output. cost_usd is ESTIMATED from the
     // token counts at the default model's published API prices
-    // (8764×$5.00 + 30848×$0.50 + 119×$30, per 1M).
+    // (8764×$10.00 + 30848×$1.00 + 119×$50, per 1M).
     const usage = byType(evs, "usage") as Extract<StreamEvent, { type: "usage" }>[];
     expect(usage).toHaveLength(1);
     expect(usage[0].usage).toMatchObject({
@@ -95,7 +95,7 @@ describe("codex event mapping", () => {
       cache_read_tokens: 30848,
       cache_creation_tokens: 0,
     });
-    expect(usage[0].usage.cost_usd).toBeCloseTo(0.062814, 6);
+    expect(usage[0].usage.cost_usd).toBeCloseTo(0.124438, 6);
 
     // No EMPTY sentinel leaks through, and every tool id is emitted at most once.
     expect(evs.some((e) => e.type === "notice")).toBe(false);
@@ -206,6 +206,12 @@ describe("codex cost estimation", () => {
     // Astra publishes a distinct $12.50/M cache-write rate.
     const withWrite = { ...usage, input_tokens: 500_000, cache_creation_tokens: 100_000 };
     expect(estimateCostUsd("gpt-6-astra", withWrite)).toBeCloseTo(11.65, 10);
+  });
+
+  it("prices Sol and Luna distinctly, including cache writes", () => {
+    const tokens = { input_tokens: 100_000, cache_read_tokens: 50_000, cache_creation_tokens: 20_000, output_tokens: 10_000 };
+    expect(estimateCostUsd("gpt-6-sol", tokens)).toBeCloseTo(0.36, 10);
+    expect(estimateCostUsd("gpt-6-luna", tokens)).toBeCloseTo(0.018, 10);
   });
 
   it("has a real price row for every model the picker offers", () => {

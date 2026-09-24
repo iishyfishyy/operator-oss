@@ -11,6 +11,7 @@ const claude = CLAUDE_CAPABILITIES;
 
 describe("modelLabel", () => {
   it("keeps the version, so Opus 5 never reads as bare Opus", () => {
+    expect(modelLabel("claude-opus-5-5", claude)).toBe("Opus 5.5");
     expect(modelLabel("claude-opus-5", claude)).toBe("Opus 5");
     expect(modelLabel("claude-opus-4-8", claude)).toBe("Opus 4.8");
     expect(modelLabel("claude-opus-4-8-20251101", claude)).toBe("Opus 4.8");
@@ -25,6 +26,8 @@ describe("modelLabel", () => {
   });
 
   it("falls back to capability labels for ids with no version shape", () => {
+    expect(modelLabel("gpt-6-sol", CODEX_CAPABILITIES)).toBe("GPT-6 Sol");
+    expect(modelLabel("gpt-6-luna", CODEX_CAPABILITIES)).toBe("GPT-6 Luna");
     expect(modelLabel("gpt-6-astra", CODEX_CAPABILITIES)).toBe("GPT-6 Astra");
     expect(modelLabel("gpt-5.5", CODEX_CAPABILITIES)).toBe("GPT-5.5");
     expect(modelLabel("gpt-5.6-sol", CODEX_CAPABILITIES)).toBe("GPT-5.6 Sol");
@@ -41,6 +44,15 @@ describe("modelLabel", () => {
 });
 
 describe("claude model list", () => {
+  it("offers exact version IDs rather than moving aliases", () => {
+    expect(claude.models[0]).toMatchObject({ value: "claude-opus-5-5", label: "Opus 5.5" });
+    for (const model of claude.models) {
+      expect(model.value).toMatch(/^claude-(opus|sonnet|haiku|fable)-\d/);
+      expect(model.label).toMatch(/\d/);
+    }
+    expect(contextWindowOf("claude-opus-5-5", claude)).toBe(1_000_000);
+  });
+
   it("offers unique values and labels (the picker keys on label)", () => {
     expect(new Set(claude.models.map((m) => m.value)).size).toBe(claude.models.length);
     expect(new Set(claude.models.map((m) => m.label)).size).toBe(claude.models.length);
@@ -61,7 +73,7 @@ describe("claude model list", () => {
   it("sizes the context gauge per selected variant, not per family", () => {
     expect(contextWindowOf("opus", claude)).toBe(200_000);
     expect(contextWindowOf("opus[1m]", claude)).toBe(1_000_000);
-    expect(contextWindowOf("fable", claude)).toBe(1_000_000);
+    expect(contextWindowOf("claude-fable-5-1", claude)).toBe(1_000_000);
   });
 
   it("handles provider-native custom model ids conservatively", () => {
@@ -72,6 +84,15 @@ describe("claude model list", () => {
 });
 
 describe("codex model list", () => {
+  it("matches the current visible Codex catalog with exact IDs", () => {
+    expect(CODEX_CAPABILITIES.models.map(m => m.value)).toEqual([
+      "gpt-6-astra", "gpt-6-sol", "gpt-6-luna",
+      "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5",
+    ]);
+    expect(CODEX_CAPABILITIES.models.filter(m => m.group === "Latest").map(m => m.value))
+      .toEqual(["gpt-6-astra", "gpt-6-sol", "gpt-6-luna"]);
+  });
+
   it("offers Astra as the first latest model", () => {
     expect(CODEX_CAPABILITIES.models[0]).toMatchObject({
       value: "gpt-6-astra",

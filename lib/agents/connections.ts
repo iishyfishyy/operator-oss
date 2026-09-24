@@ -1,3 +1,4 @@
+import { invalidateCatalog } from "./modelCatalog";
 import { getSetting, setSetting } from "../store";
 // capabilities.ts, not registry.ts, on purpose: this module only enumerates and
 // validates agent IDS — it never drives an agent — and importing the registry
@@ -79,6 +80,7 @@ export function resolveConnectedAgent(preferred: (string | null | undefined)[]):
 }
 
 export function setAgentConnection(agentId: string, conn: AgentConnection): void {
+  invalidateCatalog(agentId);
   setSetting(key(agentId), `${conn.method}|${conn.email ?? ""}|${conn.plan ?? ""}`);
   // A fresh login / verify / api-key save IS the repair — never leave a stale
   // "reconnect me" banner up after the user just did.
@@ -86,6 +88,7 @@ export function setAgentConnection(agentId: string, conn: AgentConnection): void
 }
 
 export function clearAgentConnection(agentId: string): void {
+  invalidateCatalog(agentId);
   setSetting(key(agentId), null);
   // Disconnected on purpose: the agent now reads as "not connected", which the
   // UI already explains — a broken-connection banner on top would be noise.

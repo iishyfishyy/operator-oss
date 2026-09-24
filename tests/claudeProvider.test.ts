@@ -51,7 +51,7 @@ describe("Bedrock model mappings", () => {
     expect(ids.haiku).toBeNull();
   });
 
-  it("serves only the mapped aliases when Bedrock is configured", () => {
+  it("serves the exact mapped IDs when Bedrock is configured", () => {
     const dir = settingsDir({
       env: {
         CLAUDE_CODE_USE_BEDROCK: "1",
@@ -60,9 +60,9 @@ describe("Bedrock model mappings", () => {
       },
     });
     const caps = claudeCapabilities({ CLAUDE_CONFIG_DIR: dir });
-    expect(caps.models.map((m) => m.value)).toEqual(["opus", "haiku"]);
+    expect(caps.models.map((m) => m.value)).toEqual(["global.anthropic.claude-opus-5", "us.anthropic.claude-haiku-4-5"]);
     // The label carries the resolved id — that's the whole point of the entry.
-    expect(caps.models[0].sub).toBe("global.anthropic.claude-opus-5");
+    expect(caps.models[0].label).toBe("global.anthropic.claude-opus-5");
     // No Anthropic-hosted pins or [1m] variants leak through.
     expect(caps.models.some((m) => m.value.includes("[1m]") || m.value.startsWith("claude-"))).toBe(false);
     // Everything else about the descriptor is unchanged.

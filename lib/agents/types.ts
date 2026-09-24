@@ -149,6 +149,8 @@ export interface AgentDriver {
   capabilities: AgentCapabilities;
   /** Instance-wide provider selected outside Operator, when applicable. */
   configuredProvider?(): string | null;
+  /** Metadata-only discovery; no user turn or billing. */
+  discoverModels?(): Promise<import("./modelCatalog").DiscoveredModels>;
   /** Whether the configured provider's credentials can be refreshed from the
    *  UI via the login surface (e.g. an AWS SSO device-code flow). Drives the
    *  refresh button in the connect card and gates POST /api/agents/[id]/login

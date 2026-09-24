@@ -236,7 +236,9 @@ export interface AgentCapabilities {
 // API-PRICE EQUIVALENT rather than a charge; "api_key" means it really is billed.
 // Mirrors lib/agents/connections.ts AgentConnection; null when not connected.
 export interface AgentAccount { email: string | null; plan: string | null; method: "subscription" | "api_key" | "bedrock" }
-export interface AgentInfo { id: string; label: string; provider?: string | null; capabilities: AgentCapabilities; authenticated: boolean; account?: AgentAccount | null; authBroken?: AgentAuthBrokenT | null }
+export interface AgentInfo { id: string; label: string; provider?: string | null; capabilities: AgentCapabilities; authenticated: boolean; account?: AgentAccount | null; authBroken?: AgentAuthBrokenT | null;
+  modelCatalog?: { source: "live" | "cached" | "fallback" | "configured"; updatedAt: number | null; error?: string };
+}
 export interface AgentsBundle { default: string; agents: AgentInfo[]; utility?: UtilityAgentT }
 export const EMPTY_AGENTS: AgentsBundle = { default: "claude", agents: [] };
 
@@ -248,7 +250,7 @@ const DEFAULT_HEAD: PickerOption = { value: null, label: "Default", sub: "inheri
 const withDefault = (opts: PickerOption[]): PickerOption[] => [DEFAULT_HEAD, ...opts];
 // Build each picker's option list from a driver's capabilities. Undefined caps
 // (agent metadata not loaded yet) yields just the Default head.
-export const modelOptions = (caps?: AgentCapabilities): PickerOption[] => withDefault(caps?.models ?? []);
+export const modelOptions = (caps?: AgentCapabilities): PickerOption[] => [{ value: null, label: "Provider default", sub: "follows CLI/account settings; choose a version below to pin it" }, ...(caps?.models ?? [])];
 export const reasoningOptions = (caps?: AgentCapabilities): PickerOption[] => withDefault(caps?.reasoningOptions ?? []);
 export const permissionOptions = (caps?: AgentCapabilities): PickerOption[] => withDefault(caps?.permissionModes ?? []);
 

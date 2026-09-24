@@ -23,7 +23,8 @@ import { Codex } from "@openai/codex-sdk";
 import type { SandboxMode, ApprovalMode, ModelReasoningEffort, ThreadOptions, CodexOptions } from "@openai/codex-sdk";
 import type { Project, Task, StreamEvent, TurnUsage } from "../../types";
 import type { AgentDriver, OneShotResult } from "../types";
-import { CODEX_CAPABILITIES } from "./capabilities";
+import { discoverCodexModels } from "./models";
+import { codexCapabilities } from "./capabilities";
 import { getSetting, setSetting, getThreadUsageCum, setThreadUsageCum } from "../../store";
 import { CODEX_APPROVAL_POLICY, CODEX_CLI_PATH, INTERNAL_BASE_URL, ORCH_MCP_SCRIPT } from "../../config";
 import { isApprovalDowngrade, isApprovalBlocked, isSandboxPolicyBlocked, CODEX_FULL_ACCESS_BLOCKED_NOTICE } from "../../approvalFailure";
@@ -360,7 +361,8 @@ async function summarizeProjectRecap(project: Project, digest: string): Promise<
 export const codexDriver: AgentDriver = {
   id: "codex",
   label: "Codex",
-  capabilities: CODEX_CAPABILITIES,
+  get capabilities() { return codexCapabilities(); },
+  discoverModels: discoverCodexModels,
   runTurn,
   summarizeTranscript,
   draftProjectContext,
