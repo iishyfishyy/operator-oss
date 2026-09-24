@@ -200,18 +200,21 @@ export function TasksColumn({ project, agents, tasks, suggested, selTaskId, runn
               <span className="sp">{shownSuggested.length}</span>
             </div>
             {sugGroups.map((g) => (
-              <SuggestionGroup key={g.key} group={g} variant="list" newSince={newSince} onOpenParent={onOpenParent} onDismissAll={onDismissSuggestions} onAcceptAll={onAcceptSuggestions} blockedBy={blockedBy}>
-                {g.tasks.map((s) => (
+              <SuggestionGroup key={g.key} group={g} variant="list" newSince={newSince} onOpenParent={onOpenParent} onDismissAll={onDismissSuggestions} onAcceptAll={onAcceptSuggestions}>
+                {g.tasks.map((s, index) => (
                   <div key={s.id} className="sug">
                     <StatusDot status="not_started" />
                     <div className="sg-meta">
-                      <div className="sg-name">{isNewSuggestion(s, newSince) && <NewPill />}{s.title}</div>
+                      <div className="sg-name"><span className="sug-order">{index + 1}.</span>{isNewSuggestion(s, newSince) && <NewPill />}{s.title}</div>
                       {s.description && <div className="sg-why">{s.description}</div>}
+                      {!!blockedBy.get(s.id)?.length && <div className="sug-blockers">← Blocked by {blockedBy.get(s.id)!.join(", ")}</div>}
                     </div>
+                    <div className="sug-card-actions">
                     <button className="sug-dismiss" title="Edit title & description" onClick={() => onEditTask(s.id)}>{Icon.edit()}</button>
                     <button className="sug-add" title="Add to task list to start later" onClick={() => onAcceptSuggestion(s.id)}>{Icon.plus()} Add</button>
                     <button className="sug-btn" onClick={() => onStartSuggestion(s.id)}>{Icon.play()} Start</button>
                     <button className="sug-dismiss" title="Dismiss" onClick={() => onDismissSuggestion(s.id)}>{Icon.x()}</button>
+                    </div>
                   </div>
                 ))}
               </SuggestionGroup>

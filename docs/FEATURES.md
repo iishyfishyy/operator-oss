@@ -82,7 +82,7 @@ the proposer.
 
 Both the list tray and board group suggestions by proposing task and session, then
 join groups connected by dependencies between suggestions. Search shows the whole
-matching group. A numbered chain preview puts blockers before dependents; arrows
+matching group. Task cards are numbered with blockers before dependents; arrows on each card
 name unfinished blockers, including accepted tasks outside the group.
 
 **Accept all (N)** moves the whole group into your task list in one transaction.
