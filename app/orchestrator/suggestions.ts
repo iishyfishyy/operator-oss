@@ -1,5 +1,5 @@
 import type { Msg, TaskRow } from "./types";
-import type { ToolData, ToolSuggestion } from "@/lib/types";
+import type { Priority, ToolData, ToolSuggestion } from "@/lib/types";
 
 // Grouping for the "Suggested by agents" tray. Every suggestion carries the task
 // (and that task's /clear generation) whose session proposed it — see
@@ -221,4 +221,81 @@ export function orderSuggestionChain(tasks: TaskRow[]): TaskRow[] {
     for (const t of ready) { ordered.push(t); remaining.delete(t.id); }
   }
   return ordered;
+}
+
+// ---------- tray row presentation ----------
+
+const PRIORITY_TAGS: Record<string, Priority> = {
+  hi: "hi", high: "hi", urgent: "hi", p0: "hi", p1: "hi",
+  med: "med", medium: "med", mid: "med", p2: "med",
+  lo: "lo", low: "lo", p3: "lo",
+};
+
+/**
+ * Split an agent's bracket-prefixed title ("[AO][Med] Fix the thing") into its
+ * tag chips, a priority, and the plain-English title. Only LEADING brackets are
+ * parsed — a bracket mid-title is part of the title. A priority token becomes
+ * the pill rather than a tag; with none, the caller falls back to the row's own
+ * priority column.
+ */
+export function parseSuggestionTitle(title: string): { text: string; tags: string[]; priority: Priority | null } {
+  const tags: string[] = [];
+  let priority: Priority | null = null;
+  let rest = title.trimStart();
+  for (let m = /^\[([^\]\n]{1,24})\]\s*/.exec(rest); m; m = /^\[([^\]\n]{1,24})\]\s*/.exec(rest)) {
+    const tok = m[1].trim();
+    const p = PRIORITY_TAGS[tok.toLowerCase()];
+    if (p) priority ??= p;
+    else if (tok) tags.push(tok);
+    rest = rest.slice(m[0].length);
+  }
+  // A title that was ALL brackets keeps its raw text rather than going blank.
+  return rest.trim() ? { text: rest.trim(), tags, priority } : { text: title, tags: [], priority: null };
+}
+
+/** The tag every member of a group shares — shown once on the group header instead of per row. */
+export function commonSuggestionTag(tasks: TaskRow[]): string | null {
+  const [first, ...rest] = tasks.map((t) => parseSuggestionTitle(t.title).tags);
+  if (!first) return null;
+  return first.find((tag) => rest.every((tags) => tags.includes(tag))) ?? null;
+}
+
+/** Do this group's members depend on each other? Then order means something and the rows read as a chain. */
+export function isOrderedGroup(tasks: TaskRow[]): boolean {
+  const ids = new Set(tasks.map((t) => t.id));
+  return tasks.some((t) => t.depends_on?.some((id) => ids.has(id)));
+}
+
+/** When a composed chain's next task starts: after the previous one is done, or all at once. */
+export type ChainAdvance = "done" | "now";
+
+/**
+ * The dependency edits that turn a reviewed group into the chain the user
+ * composed. `groupIds` is the whole group; `ordered` the selected members in
+ * launch order. Every in-group edge on a selected task is replaced — the
+ * user's order is now the authority, and an edge onto an EXCLUDED member would
+ * block it behind a suggestion that may never be accepted — while edges onto
+ * tasks outside the group are kept. `advance: "done"` links each task to the
+ * one before it; `"now"` leaves them unlinked so they all start together.
+ *
+ * Two passes, because setTaskDeps has a cycle guard: re-linking B → A while A
+ * still carries its old A → B edge would be rejected. `clear` strips the
+ * in-group edges from every selected task first; `link` then adds the chain.
+ * Only tasks whose deps actually change appear in either pass.
+ */
+export function planChainDeps(tasks: TaskRow[], groupIds: string[], ordered: string[], advance: ChainAdvance) {
+  const inGroup = new Set(groupIds);
+  const byId = new Map(tasks.map((t) => [t.id, t]));
+  const same = (a: string[], b: string[]) => a.length === b.length && a.every((x) => b.includes(x));
+  const clear: { id: string; depends_on: string[] }[] = [];
+  const link: { id: string; depends_on: string[] }[] = [];
+  ordered.forEach((id, i) => {
+    const current = byId.get(id)?.depends_on ?? [];
+    const outside = current.filter((d) => !inGroup.has(d));
+    const final = advance === "done" && i > 0 ? [...outside, ordered[i - 1]] : outside;
+    if (same(current, final)) return;
+    if (!same(current, outside)) clear.push({ id, depends_on: outside });
+    if (!same(outside, final)) link.push({ id, depends_on: final });
+  });
+  return { clear, link };
 }

@@ -211,8 +211,9 @@ export default function Orchestrator() {
       view={o.taskView} onSetView={setTaskView} onMoveTask={o.moveTask}
       onSelectTask={o.setSelTask} onNewTask={() => o.setModal("task")} onEditContext={() => o.setModal("context")}
       onShowSessions={() => o.setModal("sessions")} onShowRecap={() => o.setSelTask(null)} onEditTask={o.setEditId}
-      onStartSuggestion={o.startSuggestion} onAcceptSuggestion={o.acceptSuggestion} onDismissSuggestion={o.dismissSuggestion}
-      onAcceptSuggestions={o.acceptSuggestions} onDismissSuggestions={o.dismissSuggestions} onOpenParent={(id) => o.goToTask(project.id, id)}
+      onStartSuggestion={o.startSuggestion} onAcceptSuggestion={o.acceptSuggestion}
+      onAcceptSuggestions={o.acceptSuggestions} onDismissSuggestions={o.queueDismiss} onLaunchChain={o.launchChain}
+      pendingDismiss={o.pendingDismiss} onUndoDismiss={o.undoDismiss} onOpenParent={(id) => o.goToTask(project.id, id)}
       traySeenAt={o.traySeen[project.id]} traySeenReady={o.prefsHydrated} onTrayViewed={o.markTrayViewed}
     />
   );
@@ -312,8 +313,9 @@ export default function Orchestrator() {
       onSetView={setTaskView} onMoveTask={o.moveTask}
       onSelectTask={openBoardTask} onNewTask={() => o.setModal("task")} onEditContext={() => o.setModal("context")}
       onShowSessions={() => o.setModal("sessions")} onEditTask={o.setEditId}
-      onStartSuggestion={o.startSuggestion} onAcceptSuggestion={o.acceptSuggestion} onDismissSuggestion={o.dismissSuggestion}
-      onAcceptSuggestions={o.acceptSuggestions} onDismissSuggestions={o.dismissSuggestions} onOpenParent={(id) => openBoardTask(id)}
+      onStartSuggestion={o.startSuggestion} onAcceptSuggestion={o.acceptSuggestion}
+      onAcceptSuggestions={o.acceptSuggestions} onDismissSuggestions={o.queueDismiss} onLaunchChain={o.launchChain}
+      pendingDismiss={o.pendingDismiss} onUndoDismiss={o.undoDismiss} onOpenParent={(id) => openBoardTask(id)}
       traySeenAt={o.traySeen[project.id]} traySeenReady={o.prefsHydrated} onTrayViewed={o.markTrayViewed}
     >
       {task && boardPanel && (

@@ -70,8 +70,12 @@ automatically**, the old always-proactive behaviour.
 
 Every suggestion records which
 task proposed it — and which of that task's sessions (its `/clear` generation) — so the
-tray groups them under a **From: ‹task› · session N** header instead of one flat pile when
-several sessions are planning at once. Suggestions from one planning call stay together
+tray groups them under one header per source — a **From ‹task›** link carrying that task's
+live status dot, over a summary bar ("3 follow-ups · session 2 · 2h ago") — instead of one
+flat pile when several sessions are planning at once. The tray sits above the task list and
+folds to a single line ("2 sources · 1 stale"); the fold is remembered per project.
+Bracket prefixes agents put on titles (`[AO][Med] …`) are lifted into a tag chip and a
+priority pill, so rows read as plain English. Suggestions from one planning call stay together
 and in the order they were proposed; clicking a header jumps to the task that made them.
 Suggestions whose proposer was deleted collect under **From a deleted task**; ones that
 never recorded a proposer (created before this shipped) collect under **Other**. The edit
@@ -82,12 +86,25 @@ the proposer.
 
 Both the list tray and board group suggestions by proposing task and session, then
 join groups connected by dependencies between suggestions. Search shows the whole
-matching group. Task cards are numbered with blockers before dependents; arrows on each card
-name unfinished blockers, including accepted tasks outside the group.
+matching group. When members depend on each other, rows are numbered along a dashed rail,
+blockers before dependents; a "← Blocked by" line names blockers outside the group. Groups
+longer than six rows show five and a "+ N more" with title previews. Per-row actions (edit,
+dismiss, Add, Start) appear on hover; a one-suggestion group offers Dismiss / Add to list /
+Start on its header instead.
 
-**Accept all (N)** moves the whole group into your task list in one transaction.
-**Start chain** also enables auto-start on every member with unfinished blockers
-and starts each ready root in its own worktree through the normal turn-slot guard.
+Group actions are ranked by intent: **Start chain** (primary), **Accept all** (moves the
+whole group into your task list in one transaction), **Dismiss all** (quiet).
+
+**Start chain** never fires blind — it opens an inline composer on the group: tick which
+members to include, drag rows (or Alt+↑/↓ on the grip) to set the order, pick one agent for
+the whole chain, and choose when each next task starts — **Done** (after the previous task
+is marked done; merging marks it done) or **Immediately** (all in parallel). Launching
+writes the order as ordinary dependency edges — each selected task's in-group edges are
+replaced by a link to the one before it (none for Immediately), edges to tasks outside the
+group are kept — then accepts the batch with auto-start on every member with unfinished
+blockers and starts each ready root in its own worktree through the normal turn-slot guard.
+**Add N to list only** applies the same order without starting anything. Unselected members
+stay in the tray. A step that needs input isn't done, so the chain pauses there.
 More than three roots requires confirmation before acceptance. Dependents start
 when their last blocker is marked done; completing an agent turn alone does not
 mark a task done. A group with no ready roots waits for its external blockers.
@@ -130,8 +147,13 @@ one round of stale pills, and it never costs a server round trip.
 
 A group goes **stale** when its proposer is done, cancelled (merging a task marks it done)
 or deleted, or when nothing has been added to it in over a week. Stale groups render
-collapsed with a line saying why and a **Dismiss all** — a hard delete of every suggestion
-in the group, with no undo, so it asks once before doing it. The list column and the board's
+collapsed behind an amber **Stale** tag (hover it for why), and the tray header offers
+**Dismiss stale** for all of them at once.
+
+Every dismissal from the tray — one row, a group, or all stale groups — is instant, with an
+**Undo** toast for six seconds. Deletes are still hard deletes: the rows are only hidden
+during that window and the delete goes out when it closes (or immediately, as a keepalive
+request, if you close the tab), so Undo never has to resurrect anything. The list column and the board's
 Suggested column render the same groups from the same component, so they always agree.
 
 Project recaps help restore your mental context when you return later.

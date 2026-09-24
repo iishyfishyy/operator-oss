@@ -8,7 +8,8 @@ import { SEARCH_MIN, type ProjectRow, type TaskRow, type AgentsBundle, type Task
 import { agentLabel } from "./agents";
 import { StatusDot, PriPill, SearchBar, AgentBadge } from "./shared";
 import { countNewSuggestions, groupSuggestions, isNewSuggestion } from "./suggestions";
-import { NewPill, SuggestionGroup, useTrayView } from "./SuggestionGroup";
+import { NewPill, SuggestionGroup, UndoToast, useTrayView, type ChainLaunch } from "./SuggestionGroup";
+import type { PendingDismiss } from "./useOrchestrator";
 
 // The kanban alternative to the grouped task list (layout from the Claude
 // Design "Operator — Board View" study, rendered with the app's own tokens).
@@ -154,7 +155,7 @@ function BoardCard({ task, agents, selected, running, blockedBy, chainPosition, 
   );
 }
 
-export function TaskBoard({ project, tasks, suggested, allTasks, agents, selTaskId, running, blockedBy, canDrag, onSelect, onEditTask, onMove, onStartSuggestion, onAcceptSuggestion, onDismissSuggestion, onDismissSuggestions, onAcceptSuggestions, onOpenParent, traySeenAt, traySeenReady, onTrayViewed }: {
+export function TaskBoard({ project, tasks, suggested, allTasks, agents, selTaskId, running, blockedBy, canDrag, onSelect, onEditTask, onMove, onStartSuggestion, onAcceptSuggestion, onDismissSuggestions, onAcceptSuggestions, onLaunchChain, pendingDismiss, onUndoDismiss, onOpenParent, traySeenAt, traySeenReady, onTrayViewed }: {
   project: ProjectRow;
   tasks: TaskRow[]; suggested: TaskRow[];
   // The project's UNFILTERED task list, used only to name a suggestion's
@@ -167,10 +168,12 @@ export function TaskBoard({ project, tasks, suggested, allTasks, agents, selTask
   canDrag: boolean;
   onSelect: (id: string) => void; onEditTask: (id: string) => void;
   onMove: (id: string, patch: Partial<Pick<TaskRow, "status" | "suggested">>, orderedIds: string[]) => void;
-  onStartSuggestion: (id: string) => void; onAcceptSuggestion: (id: string) => void; onDismissSuggestion: (id: string) => void;
-  // Bulk dismiss ("Dismiss all" on a stale group) — same hard delete, one call.
+  onStartSuggestion: (id: string) => void; onAcceptSuggestion: (id: string) => void;
   onAcceptSuggestions: (ids: string[], start: boolean) => Promise<void>;
-  onDismissSuggestions: (ids: string[]) => void;
+  // Undoable dismissal + chain launch — see the list tray (TasksColumn).
+  onDismissSuggestions: (ids: string[], label: string) => void;
+  pendingDismiss: PendingDismiss | null; onUndoDismiss: () => void;
+  onLaunchChain: (launch: ChainLaunch) => Promise<void>;
   // Jump to the task a suggestion group came from (its header).
   onOpenParent: (id: string) => void;
   // Tray freshness marker, shared with the list tray (see useTrayView).
@@ -294,7 +297,7 @@ export function TaskBoard({ project, tasks, suggested, allTasks, agents, selTask
                           <div className="bsug-acts" onClick={(e) => e.stopPropagation()}>
                             <button className="go" onClick={() => onStartSuggestion(t.id)}>{Icon.play()} Start</button>
                             <button onClick={() => onAcceptSuggestion(t.id)} title="Add to list to start later">{Icon.plus()} Add</button>
-                            <button className="no" onClick={() => onDismissSuggestion(t.id)} title="Dismiss">{Icon.x()}</button>
+                            <button className="no" onClick={() => onDismissSuggestions([t.id], "")} title="Dismiss">{Icon.x()}</button>
                           </div>
                         ) : undefined}
                       />
@@ -305,11 +308,19 @@ export function TaskBoard({ project, tasks, suggested, allTasks, agents, selTask
                 // same header the list tray draws), so a stale group can collapse
                 // its cards away as one block. Every other column is a flat list.
                 if (sugGroups) {
-                  return sugGroups.map((g) => (
-                    <SuggestionGroup key={g.key} group={g} variant="board" newSince={newSince} onOpenParent={onOpenParent} onDismissAll={onDismissSuggestions} onAcceptAll={onAcceptSuggestions}>
-                      {g.tasks.map((t, index) => slot(t, null, index + 1))}
-                    </SuggestionGroup>
-                  ));
+                  return (
+                    <>
+                      {pendingDismiss && <UndoToast pending={pendingDismiss} onUndo={onUndoDismiss} />}
+                      {sugGroups.map((g) => (
+                        <SuggestionGroup
+                          key={g.key} group={g} variant="board" newSince={newSince} agents={agents} running={running}
+                          onOpenParent={onOpenParent} onDismiss={onDismissSuggestions} onAcceptAll={onAcceptSuggestions}
+                          onStartOne={onStartSuggestion} onAcceptOne={onAcceptSuggestion} onLaunchChain={onLaunchChain}
+                          renderItem={(t, position) => slot(t, null, g.tasks.length > 1 && position !== null ? position : undefined)}
+                        />
+                      ))}
+                    </>
+                  );
                 }
                 return visible.map((t) => {
                   const day = def.mini && key === "done" ? dayBucket(t.updated_at) : null;
@@ -339,16 +350,18 @@ export function TaskBoard({ project, tasks, suggested, allTasks, agents, selTask
 // Full-workspace board shell (desktop): owns everything right of the projects
 // sidebar — header with the List/Board toggle, the board, and (via `children`)
 // the slide-over session panel + drawers the composition root mounts on top.
-export function BoardWorkspace({ project, agents, tasks, suggested, selTaskId, running, blockedBy, loading, onSetView, onMoveTask, onSelectTask, onNewTask, onEditContext, onShowSessions, onEditTask, onStartSuggestion, onAcceptSuggestion, onDismissSuggestion, onDismissSuggestions, onAcceptSuggestions, onOpenParent, traySeenAt, traySeenReady, onTrayViewed, children }: {
+export function BoardWorkspace({ project, agents, tasks, suggested, selTaskId, running, blockedBy, loading, onSetView, onMoveTask, onSelectTask, onNewTask, onEditContext, onShowSessions, onEditTask, onStartSuggestion, onAcceptSuggestion, onDismissSuggestions, onAcceptSuggestions, onLaunchChain, pendingDismiss, onUndoDismiss, onOpenParent, traySeenAt, traySeenReady, onTrayViewed, children }: {
   project: ProjectRow; agents: AgentsBundle; tasks: TaskRow[]; suggested: TaskRow[]; selTaskId: string | null;
   running: Set<string>; blockedBy: Map<string, string[]>; loading?: boolean;
   onSetView: (v: TaskView) => void;
   onMoveTask: (id: string, patch: Partial<Pick<TaskRow, "status" | "suggested">>, orderedIds: string[]) => void;
   onSelectTask: (id: string) => void; onNewTask: () => void; onEditContext: () => void; onShowSessions: () => void;
   onEditTask: (id: string) => void;
-  onStartSuggestion: (id: string) => void; onAcceptSuggestion: (id: string) => void; onDismissSuggestion: (id: string) => void;
+  onStartSuggestion: (id: string) => void; onAcceptSuggestion: (id: string) => void;
   onAcceptSuggestions: (ids: string[], start: boolean) => Promise<void>;
-  onDismissSuggestions: (ids: string[]) => void;
+  onDismissSuggestions: (ids: string[], label: string) => void;
+  pendingDismiss: PendingDismiss | null; onUndoDismiss: () => void;
+  onLaunchChain: (launch: ChainLaunch) => Promise<void>;
   onOpenParent: (id: string) => void;
   traySeenAt: number | undefined; traySeenReady: boolean; onTrayViewed: (projectId: string) => void;
   children?: ReactNode;
@@ -394,8 +407,9 @@ export function BoardWorkspace({ project, agents, tasks, suggested, selTaskId, r
           project={project} tasks={shown} suggested={shownSuggested} allTasks={allTasks} agents={agents} selTaskId={selTaskId}
           running={running} blockedBy={blockedBy} canDrag={!q}
           onSelect={onSelectTask} onEditTask={onEditTask} onMove={onMoveTask}
-          onStartSuggestion={onStartSuggestion} onAcceptSuggestion={onAcceptSuggestion} onDismissSuggestion={onDismissSuggestion}
-          onAcceptSuggestions={onAcceptSuggestions} onDismissSuggestions={onDismissSuggestions} onOpenParent={onOpenParent}
+          onStartSuggestion={onStartSuggestion} onAcceptSuggestion={onAcceptSuggestion}
+          onAcceptSuggestions={onAcceptSuggestions} onDismissSuggestions={onDismissSuggestions} onLaunchChain={onLaunchChain}
+          pendingDismiss={pendingDismiss?.projectId === project.id ? pendingDismiss : null} onUndoDismiss={onUndoDismiss} onOpenParent={onOpenParent}
           traySeenAt={traySeenAt} traySeenReady={traySeenReady} onTrayViewed={onTrayViewed}
         />
       )}

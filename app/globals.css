@@ -530,11 +530,6 @@ button{font-family:inherit;color:inherit;cursor:pointer;border:none;background:n
 .bcard.mini .bc-meta{margin-top:5px;}
 .b-day{font-family:var(--mono);font-size:8.5px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-4);display:flex;align-items:center;gap:7px;padding:3px 2px;}
 .b-day i{flex:1;height:1px;background:var(--line-2);}
-/* Suggested column: the shared group wrapper (see .sug-group / .sug-head), laid
-   out as a stack of cards rather than a bordered tray section. */
-.sg-board{display:flex;flex-direction:column;gap:8px;flex:0 0 auto;}
-.sg-board .sug-head{margin:0;padding:4px 6px;border:0;border-radius:6px;background:var(--accent-soft);font-size:8.5px;letter-spacing:.07em;}
-.sg-board .sh-stale{padding:0 6px 2px;}
 .b-showall{margin:2px 2px 0;border:1px dashed var(--line);border-radius:var(--r);padding:9px;text-align:center;font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3);background:var(--surface-2);cursor:pointer;flex:0 0 auto;}
 .b-showall:hover{color:var(--ink);border-color:var(--line-strong);}
 .bcard.dragging{opacity:.45;border-style:dashed;}
@@ -576,18 +571,6 @@ button{font-family:inherit;color:inherit;cursor:pointer;border:none;background:n
 [data-theme="dark"] .pri.med{color:#DCB458;}
 
 /* suggested tray */
-.suggest{margin:6px 10px 12px;border-radius:var(--r-lg);border:1px dashed var(--accent);background:var(--accent-soft);overflow:hidden;}
-.suggest-h{display:flex;align-items:center;gap:7px;padding:10px 13px 8px;font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--accent-ink);}
-[data-theme="dark"] .suggest-h{color:#D98C6A;}
-.suggest-h .sh-new{margin-left:auto;}
-.suggest-h .sp{margin-left:auto;font-weight:600;}
-.suggest-h .sh-new + .sp{margin-left:0;}
-.sug{display:grid;grid-template-columns:10px minmax(0,1fr);align-items:start;gap:7px;padding:9px 13px;border-top:1px solid rgba(194,96,60,.18);}
-.sug > .sdot{margin-top:5px;}
-.sug-card-actions{grid-column:2;display:flex;align-items:center;gap:7px;}
-.sug .sg-meta{flex:1;min-width:0;}
-.sug .sg-name{font-weight:600;font-size:12.5px;overflow-wrap:anywhere;}
-.sug .sg-why{font-size:10.5px;color:var(--ink-2);margin-top:2px;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden;}
 .sug-btn{flex:0 0 auto;display:flex;align-items:center;gap:5px;font-family:var(--mono);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--on-accent);background:var(--accent);padding:5px 9px;border-radius:var(--r-sm);}
 .sug-btn:hover{filter:brightness(1.06);}
 .sug-add{flex:0 0 auto;display:flex;align-items:center;gap:5px;font-family:var(--mono);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--accent-ink);background:transparent;border:1px solid rgba(194,96,60,.4);padding:4px 8px;border-radius:var(--r-sm);}
@@ -620,22 +603,7 @@ button{font-family:inherit;color:inherit;cursor:pointer;border:none;background:n
 .sug-batch-h .sb-count{margin-left:auto;font-weight:600;opacity:.75;text-transform:none;letter-spacing:0;}
 .sug-batch-list{display:flex;flex-direction:column;gap:6px;padding:0 10px 10px;}
 .sug-batch-list .sug-chip{background:var(--surface);}
-/* One suggestion group: "From: <parent> · session N" plus the freshness signals
-   (age of the newest member, how many are new since you last looked) and, when
-   the group has gone stale, why + a bulk dismiss. Shared verbatim by the list
-   tray and the board's Suggested column — see app/orchestrator/SuggestionGroup.tsx. */
-.sug-head{display:flex;align-items:center;gap:6px;width:100%;padding:6px 13px 5px;border-top:1px solid rgba(194,96,60,.18);background:rgba(194,96,60,.07);font-family:var(--mono);font-size:9.5px;font-weight:700;letter-spacing:.05em;color:var(--accent-ink);}
-[data-theme="dark"] .sug-head{color:#D98C6A;}
-.sug-group:first-child > .sug-head{border-top:0;}
-.sug-head .sh-toggle{flex:0 0 auto;display:grid;place-items:center;width:14px;height:14px;color:inherit;opacity:.7;}
-.sug-head .sh-toggle:hover{opacity:1;}
-.sug-head .sh-chev{width:12px;height:12px;transition:transform .14s;}
 .is-collapsed > .sug-head .sh-chev{transform:rotate(-90deg);}
-.sug-head .sh-txt{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left;color:inherit;font:inherit;letter-spacing:inherit;}
-.sug-head .sh-txt.link{text-decoration:underline;text-decoration-color:transparent;}
-.sug-head .sh-txt.link:hover{text-decoration-color:currentColor;}
-.sug-head .sh-age{flex:0 0 auto;font-weight:600;opacity:.6;}
-.sug-head .sh-count{flex:0 0 auto;font-weight:600;opacity:.75;}
 /* "N new" — on a group header, on the tray header, and on the board column head. */
 .sh-new{flex:0 0 auto;padding:1px 5px;border-radius:99px;background:var(--accent);color:var(--on-accent);font-family:var(--mono);font-size:8.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;}
 /* Per-suggestion "new" pill, inline before the title on both surfaces. Kept
@@ -643,15 +611,146 @@ button{font-family:inherit;color:inherit;cursor:pointer;border:none;background:n
    than the marker, so the pill also paints an accent edge on its row for the
    scan-down read and stays out of the title's way. */
 .sug-new{display:inline-block;vertical-align:1px;margin-right:4px;padding:0 4px;border-radius:99px;background:var(--accent);color:var(--on-accent);font-family:var(--mono);font-size:7.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;}
-.sug:has(.sug-new){box-shadow:inset 2px 0 0 var(--accent);}
-/* A stale group is dimmed and starts collapsed — it's a leftover, not the working set. */
-.sug-group.is-stale > .sug-head{background:var(--line-2);color:var(--ink-3);}
-[data-theme="dark"] .sug-group.is-stale > .sug-head{color:var(--ink-3);}
-.sh-stale{display:flex;align-items:center;gap:8px;padding:4px 13px 6px;background:var(--line-2);font-size:10.5px;color:var(--ink-3);}
-.sh-stale .ss-why{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-.sh-stale .ss-drop{flex:0 0 auto;margin-left:auto;padding:2px 7px;border-radius:var(--r-sm);border:1px solid var(--line-strong);font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-3);}
-.sh-stale .ss-drop:hover{border-color:var(--red);color:var(--red);}
-.sh-stale .ss-drop.on{background:var(--red);border-color:var(--red);color:#fff;}
+/* ---------- Suggested-by-agents tray (Claude Design "Operator — Suggested
+   Tasks"). One header per group — source line + summary bar — with actions
+   ranked by intent; numbered nodes on a dashed rail when order matters; per-row
+   actions on hover; Start chain opens the inline composer. Shared by the list
+   tray and the board's Suggested column (app/orchestrator/SuggestionGroup.tsx). */
+.sx-tray{container-type:inline-size;margin:2px 0 10px;border:1px solid var(--line);border-radius:var(--r-lg);background:var(--panel);box-shadow:var(--sh-1);overflow:hidden;}
+.sx-h{display:flex;align-items:center;gap:8px;padding:11px 10px 10px 12px;}
+.sx-h > :not(.sx-ttl):not(.sx-digest){flex:0 0 auto;}
+/* In the default-width column the long title and the tray-wide "N new" give
+   way — every group header still carries its own new count. */
+@container (max-width:400px){.sx-ttl-x,.sx-h-new{display:none;}}
+.sx-spark{width:18px;height:18px;border-radius:5px;display:grid;place-items:center;border:1px dashed rgba(77,140,255,.5);color:var(--blue);flex:0 0 auto;}
+.sx-spark svg{width:11px;height:11px;}
+.sx-ttl{font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;}
+.sx-ct{font-family:var(--mono);font-size:9.5px;font-weight:700;color:var(--ink-3);background:var(--raise);border:1px solid var(--line);border-radius:99px;min-width:20px;text-align:center;padding:2px 6px;}
+.sx-digest{font-family:var(--mono);font-size:9.5px;color:var(--ink-4);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;}
+.sx-sp{flex:1 1 0;min-width:0;}
+.sx-ghost{height:26px;border:1px solid transparent;border-radius:var(--r-sm);font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-4);padding:0 8px;white-space:nowrap;}
+.sx-ghost:hover{color:var(--coral);border-color:var(--line);}
+.sx-icon{width:26px;height:26px;flex:0 0 auto;border-radius:var(--r-sm);border:1px solid transparent;display:grid;place-items:center;color:var(--ink-4);}
+.sx-icon:hover{border-color:var(--line);color:var(--ink-2);background:var(--raise);}
+.sx-icon svg{width:12px;height:12px;}
+.sx-icon svg,.sx-chev svg{transition:transform .14s;}
+
+/* group */
+.sug-group{margin:0 8px 8px;border:1px solid var(--line);border-radius:var(--r-lg);background:var(--surface-2);overflow:hidden;flex:0 0 auto;}
+.sug-head{padding:10px 11px;display:flex;flex-direction:column;gap:8px;border-bottom:1px solid var(--line-2);background:var(--raise);}
+.sug-group.is-collapsed .sug-head{border-bottom:0;}
+.sx-src{display:flex;align-items:center;gap:8px;min-width:0;}
+.sx-chev{width:16px;height:16px;flex:0 0 auto;display:grid;place-items:center;color:var(--ink-4);border-radius:4px;}
+.sx-chev:hover{color:var(--ink-2);}
+.sx-chev svg{width:12px;height:12px;}
+.sx-k{font-family:var(--mono);font-size:8.5px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-4);flex:0 0 auto;}
+.sx-k.on{color:var(--blue);}
+.sx-t{flex:1;min-width:0;display:flex;align-items:center;gap:7px;font-size:12.5px;font-weight:500;color:var(--ink);white-space:nowrap;overflow:hidden;text-align:left;}
+.sx-t .t{overflow:hidden;text-overflow:ellipsis;}
+.sx-t .sdot{width:7px;height:7px;}
+.sx-t.link:hover .t{color:var(--blue);text-decoration:underline;text-underline-offset:2px;}
+.sx-t.dim{color:var(--ink-3);}
+.sx-tag{font-family:var(--mono);font-size:8.5px;letter-spacing:.06em;color:var(--ink-4);border:1px solid var(--line);border-radius:4px;padding:2px 5px;flex:0 0 auto;white-space:nowrap;}
+.sx-age{font-family:var(--mono);font-size:9px;color:var(--ink-4);flex:0 0 auto;white-space:nowrap;}
+.sx-stale{font-family:var(--mono);font-size:8.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--amber);border:1px solid rgba(245,166,35,.28);background:var(--amber-soft);border-radius:4px;padding:2px 5px;flex:0 0 auto;cursor:help;}
+.sx-bar,.sx-cbar{display:flex;align-items:center;gap:6px;padding-left:24px;flex-wrap:wrap;row-gap:6px;}
+.sx-cbar{padding:0 11px 8px 35px;background:var(--raise);border-bottom:1px solid var(--line-2);}
+.sx-sum{font-family:var(--mono);font-size:9.5px;color:var(--ink-3);letter-spacing:.02em;white-space:nowrap;min-width:0;overflow:hidden;text-overflow:ellipsis;}
+.sx-sum b{color:var(--ink-2);font-weight:500;}
+
+/* buttons */
+.sx-b{height:26px;border-radius:var(--r-sm);border:1px solid var(--line);background:var(--surface);font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-2);padding:0 10px;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;flex:0 0 auto;}
+.sx-b:hover:not(:disabled){border-color:var(--line-strong);color:var(--ink);}
+.sx-b:disabled{opacity:.5;cursor:default;}
+.sx-b svg{width:10px;height:10px;}
+.sx-b.pri{background:var(--blue);border-color:var(--blue);color:var(--on-accent);}
+.sx-b.pri:hover:not(:disabled){background:#6a9fff;color:var(--on-accent);}
+.sx-b.soft{background:var(--blue-soft);border-color:rgba(77,140,255,.4);color:var(--blue);}
+.sx-b.soft:hover:not(:disabled){color:var(--blue);border-color:var(--blue);}
+.sx-b.quiet{border-color:transparent;background:none;color:var(--ink-4);}
+.sx-b.quiet:hover:not(:disabled){border-color:transparent;color:var(--coral);}
+.sx-b.quiet.dim{color:var(--ink-3);}
+.sx-b.quiet.dim:hover:not(:disabled){color:var(--ink);}
+
+/* rows + chain rail */
+.sx-rows{padding:4px 0;}
+.sx-row{position:relative;display:grid;grid-template-columns:24px minmax(0,1fr);gap:10px;padding:9px 11px;align-items:start;}
+.sx-row:hover{background:rgba(150,170,200,.035);}
+.sx-row.is-new{box-shadow:inset 2px 0 0 var(--accent);}
+.sx-node{position:relative;width:24px;display:flex;justify-content:center;padding-top:1px;}
+.sx-node i{width:20px;height:20px;border-radius:50%;border:1px dashed rgba(150,170,200,.3);background:var(--surface-2);display:grid;place-items:center;font-family:var(--mono);font-style:normal;font-size:9px;font-weight:700;color:var(--ink-3);position:relative;z-index:1;}
+.sx-rows.ordered .sx-row:not(:last-child) .sx-node::after,.sx-rows.chain .sx-row:not(:last-child) .sx-node::after{content:"";position:absolute;left:50%;top:22px;bottom:-19px;width:1px;background:repeating-linear-gradient(180deg,rgba(150,170,200,.22) 0 3px,transparent 3px 6px);}
+.sx-rows.single .sx-node i{border-style:solid;border-color:var(--line);}
+.sx-rows.unordered .sx-node i{width:7px;height:7px;border:1.5px dashed rgba(77,140,255,.6);margin-top:5px;background:none;}
+.sx-main{min-width:0;display:flex;flex-direction:column;gap:4px;}
+.sx-rt{display:flex;align-items:center;gap:7px;min-width:0;}
+.sx-rt .sg-name{font-size:12.5px;font-weight:500;line-height:1.35;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;}
+.sx-rt .sug-new{margin-right:0;flex:0 0 auto;}
+.sx-rd{font-size:11.5px;line-height:1.45;color:var(--ink-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.sx-rd code{font-family:var(--mono);font-size:10.5px;color:var(--ink-2);}
+.sx-rb{font-size:11px;color:var(--amber);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.sx-pill{font-family:var(--mono);font-size:8.5px;font-weight:700;letter-spacing:.1em;padding:2.5px 5px;border-radius:4px;border:1px solid transparent;flex:0 0 auto;}
+.sx-pill.hi{color:var(--coral);background:var(--coral-soft);border-color:rgba(255,106,69,.28);}
+.sx-pill.med{color:var(--ink-3);background:var(--line-2);}
+.sx-pill.lo{color:var(--ink-4);border-color:var(--line);}
+/* Per-row actions only on hover (or keyboard focus), floated over the row's
+   right edge so the title keeps the full width at rest; on touch there's no
+   hover, so they sit in flow under the text instead. */
+.sx-acts{position:absolute;top:6px;right:8px;display:flex;align-items:center;gap:2px;padding:2px 2px 2px 14px;border-radius:var(--r-sm);background:linear-gradient(90deg,transparent,var(--surface-2) 14px);opacity:0;pointer-events:none;transition:opacity .1s;}
+.sx-row:hover .sx-acts,.sx-row:focus-within .sx-acts{opacity:1;pointer-events:auto;}
+@media (hover:none){.sx-acts{position:static;grid-column:2;opacity:1;pointer-events:auto;padding:0;background:none;}}
+.sx-acts .sx-b{height:24px;padding:0 8px;}
+.sx-acts .sx-icon{width:24px;height:24px;}
+.sx-more{display:flex;align-items:center;gap:8px;width:100%;text-align:left;padding:6px 11px 10px 45px;font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3);white-space:nowrap;overflow:hidden;}
+.sx-more span{color:var(--ink-4);font-weight:400;letter-spacing:.04em;text-transform:none;overflow:hidden;text-overflow:ellipsis;min-width:0;}
+.sx-more:hover{color:var(--ink);}
+.sx-err{margin:8px 11px;font-size:11px;color:var(--coral);overflow-wrap:anywhere;}
+
+/* chain composer */
+.sug-group.is-composing{border-color:rgba(77,140,255,.4);box-shadow:0 0 0 3px rgba(77,140,255,.06);}
+.sug-group.is-composing .sug-head,.sug-group.is-composing .sx-cbar{background:linear-gradient(180deg,rgba(77,140,255,.07),rgba(77,140,255,.03)),var(--raise);}
+.sug-group.is-composing .sug-head{border-bottom:0;padding-bottom:6px;}
+.sx-rows.chain .sx-row{grid-template-columns:14px 24px minmax(0,1fr) auto;cursor:grab;}
+.sx-rows.chain .sx-node i{border-style:solid;border-color:rgba(77,140,255,.55);color:var(--blue);}
+.sx-rows.chain .sx-row:not(:last-child) .sx-node::after{background:linear-gradient(180deg,rgba(77,140,255,.5),rgba(77,140,255,.2));}
+.sx-row.excluded .sx-main{opacity:.4;}
+.sx-row.excluded .sx-node i{border-color:var(--line);color:var(--ink-4);}
+.sx-row.dragging{background:var(--raise);box-shadow:var(--sh-2),inset 0 0 0 1px rgba(77,140,255,.4);border-radius:var(--r);opacity:.85;}
+.sx-chk{width:14px;height:14px;margin-top:3px;border-radius:4px;border:1px solid rgba(77,140,255,.55);background:var(--blue);color:var(--on-accent);display:grid;place-items:center;}
+.sx-chk svg{width:9px;height:9px;}
+.sx-chk.off{background:none;border-color:var(--line-strong);}
+.sx-grip{color:var(--ink-4);display:grid;place-items:center;height:20px;width:16px;border-radius:4px;cursor:grab;}
+.sx-grip:hover,.sx-grip:focus-visible,.sx-row.dragging .sx-grip{color:var(--blue);}
+.sx-grip svg{width:8px;height:12px;}
+.sx-dropline{height:2px;margin:0 11px 0 59px;border-radius:2px;background:var(--blue);box-shadow:0 0 10px var(--blue);}
+.sx-compose{border-top:1px solid var(--line-2);padding:12px;display:flex;flex-direction:column;gap:10px;background:var(--panel);}
+.sx-opt{display:flex;align-items:center;gap:10px;font-size:11.5px;color:var(--ink-2);}
+.sx-opt .k{font-family:var(--mono);font-size:8.5px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-4);width:78px;flex:0 0 auto;}
+.sx-sel{height:26px;min-width:0;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--surface-2);padding:0 9px;font:inherit;font-size:11.5px;color:var(--ink-2);}
+.sx-sel.static{display:inline-flex;align-items:center;}
+.sx-radio{display:flex;gap:2px;background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r-sm);padding:2px;}
+.sx-radio button{font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-4);padding:4px 8px;border-radius:5px;}
+.sx-radio button:hover{color:var(--ink-2);}
+.sx-radio button.on{background:var(--raise);color:var(--ink);box-shadow:var(--sh-1);}
+.sx-hint{font-size:11px;color:var(--ink-4);line-height:1.45;}
+.sx-cacts{display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
+
+/* undo toast */
+.sx-toast{margin:0 8px 8px;border:1px solid var(--line);border-radius:var(--r);background:var(--raise);padding:8px 8px 8px 12px;display:flex;align-items:center;gap:10px;box-shadow:var(--sh-2);flex:0 0 auto;}
+.sx-toast .t{font-size:12px;color:var(--ink-2);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.sx-toast .t b{color:var(--ink);font-weight:500;}
+
+/* Board: the Suggested column is itself the tray, so groups sit flush and
+   stack their cards; the header bar wraps within the narrow column. */
+.sug-group.sg-board{margin:0;display:flex;flex-direction:column;}
+.sg-board .sx-src{flex-wrap:wrap;row-gap:6px;}
+.sg-board .sx-k{display:none;}
+.sg-board .sx-t{flex:1 1 calc(100% - 24px);}
+.sg-board .sx-bar{padding-left:0;}
+.sg-board .sx-rows:not(.chain){display:flex;flex-direction:column;gap:6px;padding:8px;}
+.sg-board .sx-cbar{padding-left:11px;}
+.sg-board .sx-opt .k{width:64px;}
+.bcol-body > .sx-toast{margin:0;}
 /* "↳ suggested by <parent>" in the edit dialog — provenance for one suggestion. */
 .from-parent{display:block;width:100%;text-align:left;margin:-4px 0 14px;padding:7px 10px;border-radius:var(--r-sm);border:1px dashed var(--accent);background:var(--accent-soft);font-size:11.5px;color:var(--accent-ink);}
 [data-theme="dark"] .from-parent{color:#D98C6A;}
@@ -1610,11 +1709,6 @@ button.tpeek-more:hover{color:var(--accent-ink);}
   .in-dd{min-width:0;flex:1;}
 }
 
-.sh-actions{display:flex;gap:8px;padding:6px 12px;flex-wrap:wrap;}
-.sh-actions button{padding:4px 8px;border:1px solid var(--line-strong);border-radius:var(--r-sm);font-size:11px;}
-.sh-actions button:disabled{opacity:.5;cursor:wait;}
-.sh-chain{margin:4px 12px 8px;padding-left:20px;font-size:11px;overflow-wrap:anywhere;}
-.sh-chain span{color:var(--ink-3);}
 
 /* Prompt inspector preserves whitespace and contains long provider inputs. */
 .prompt-inspector { overflow-wrap: anywhere; font-size: 12px; }
@@ -1625,6 +1719,5 @@ button.tpeek-more:hover{color:var(--accent-ink);}
 .prompt-inspector pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 400px; overflow: auto; padding: 10px; font-size: 11px; border: 1px solid var(--line); border-radius: 6px; }
 .prompt-inspector mark { background: #f4cd6680; color: inherit; }
 
-.sh-error{margin:4px 12px 8px;font-size:11px;overflow-wrap:anywhere;}
 .sug-order{margin-right:6px;color:var(--ink-3);font-variant-numeric:tabular-nums;}
 .sug-blockers{margin-top:4px;font-size:11px;color:var(--ink-3);overflow-wrap:anywhere;}
