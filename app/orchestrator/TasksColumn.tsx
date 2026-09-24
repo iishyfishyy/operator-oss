@@ -9,7 +9,8 @@ import { StatusDot, PriPill, SearchBar, AgentBadge } from "./shared";
 import { TaskCardSkeleton } from "./Layout";
 import { TaskBoard } from "./TaskBoard";
 import { countNewSuggestions, groupSuggestions, isNewSuggestion } from "./suggestions";
-import { NewPill, SuggestionGroup, useTrayView } from "./SuggestionGroup";
+import { SuggestionGroup, SuggestionRow, TrayHeader, UndoToast, outsideBlockerTitles, useTrayView, type ChainLaunch } from "./SuggestionGroup";
+import type { PendingDismiss } from "./useOrchestrator";
 
 function TaskCard({ task, agents, selected, running, blockedBy, onSelect }: { task: TaskRow; agents: AgentsBundle; selected: boolean; running: boolean; blockedBy?: string[]; onSelect: () => void }) {
   const sessionCount = task.started ? task.generation : Math.max(0, task.generation - 1);
@@ -90,16 +91,19 @@ function useCollapsed(key: string, def: boolean) {
   return [collapsed, toggle] as const;
 }
 
-export function TasksColumn({ project, agents, tasks, suggested, selTaskId, running, blockedBy, width, loading, view, onSetView, onMoveTask, onSelectTask, onNewTask, onEditContext, onShowSessions, onShowRecap, onEditTask, onStartSuggestion, onAcceptSuggestion, onDismissSuggestion, onDismissSuggestions, onAcceptSuggestions, onOpenParent, traySeenAt, traySeenReady, onTrayViewed, onCollapse, mobile, onBack }: {
+export function TasksColumn({ project, agents, tasks, suggested, selTaskId, running, blockedBy, width, loading, view, onSetView, onMoveTask, onSelectTask, onNewTask, onEditContext, onShowSessions, onShowRecap, onEditTask, onStartSuggestion, onAcceptSuggestion, onDismissSuggestions, onAcceptSuggestions, onLaunchChain, pendingDismiss, onUndoDismiss, onOpenParent, traySeenAt, traySeenReady, onTrayViewed, onCollapse, mobile, onBack }: {
   project: ProjectRow; agents: AgentsBundle; tasks: TaskRow[]; suggested: TaskRow[]; selTaskId: string | null; running: Set<string>; blockedBy: Map<string, string[]>; width: number; loading?: boolean;
   view: TaskView; onSetView: (v: TaskView) => void;
   onMoveTask: (id: string, patch: Partial<Pick<TaskRow, "status" | "suggested">>, orderedIds: string[]) => void;
   onSelectTask: (id: string) => void; onNewTask: () => void; onEditContext: () => void; onShowSessions: () => void; onShowRecap: () => void;
   onEditTask: (id: string) => void; onCollapse: () => void;
-  onStartSuggestion: (id: string) => void; onAcceptSuggestion: (id: string) => void; onDismissSuggestion: (id: string) => void;
-  // Bulk dismiss ("Dismiss all" on a stale group) — same hard delete, one call.
+  onStartSuggestion: (id: string) => void; onAcceptSuggestion: (id: string) => void;
   onAcceptSuggestions: (ids: string[], start: boolean) => Promise<void>;
-  onDismissSuggestions: (ids: string[]) => void;
+  // Every tray dismissal (one row, a group, or all stale groups) is undoable:
+  // hidden now, deleted when the Undo window closes (see queueDismiss).
+  onDismissSuggestions: (ids: string[], label: string) => void;
+  pendingDismiss: PendingDismiss | null; onUndoDismiss: () => void;
+  onLaunchChain: (launch: ChainLaunch) => Promise<void>;
   // Jump to the task a suggestion group came from (its header).
   onOpenParent: (id: string) => void;
   // The project's "last looked at the tray" mark (see useTrayView), whether the
@@ -114,6 +118,7 @@ export function TasksColumn({ project, agents, tasks, suggested, selTaskId, runn
   // graveyard, not the working set.
   const [doneCollapsed, toggleDone] = useCollapsed(`orch_done_collapsed_${project.id}`, false);
   const [cancelledCollapsed, toggleCancelled] = useCollapsed(`orch_cancelled_collapsed_${project.id}`, true);
+  const [trayCollapsed, toggleTray] = useCollapsed(`orch_tray_collapsed_${project.id}`, false);
   const q = query.trim().toLowerCase();
   const match = (t: TaskRow) => !q || t.title.toLowerCase().includes(q) || (t.description ?? "").toLowerCase().includes(q);
   const shown = tasks.filter(match);
@@ -135,6 +140,35 @@ export function TasksColumn({ project, agents, tasks, suggested, selTaskId, runn
   const newCount = countNewSuggestions(shownSuggested, newSince);
   const canSearch = tasks.length + suggested.length >= SEARCH_MIN;
   const noMatches = q && shown.length === 0 && shownSuggested.length === 0;
+  const toast = pendingDismiss?.projectId === project.id ? pendingDismiss : null;
+  // The tray sits ABOVE the task list: it's the inbox of proposed work, and a
+  // folded tray costs one line. Searching always unfolds it so matches show.
+  const trayOpen = !trayCollapsed || !!q;
+  const tray = (shownSuggested.length > 0 || toast) && (
+    <section className="sx-tray" ref={trayOpen ? trayRef : undefined}>
+      <TrayHeader
+        count={shownSuggested.length} newCount={newCount} groups={sugGroups}
+        collapsed={!trayOpen} onToggle={toggleTray}
+        onDismissStale={(ids) => onDismissSuggestions(ids, "from stale groups")}
+      />
+      {toast && <UndoToast pending={toast} onUndo={onUndoDismiss} />}
+      {trayOpen && sugGroups.map((g) => (
+        <SuggestionGroup
+          key={g.key} group={g} variant="list" newSince={newSince} agents={agents} running={running}
+          onOpenParent={onOpenParent} onDismiss={onDismissSuggestions} onAcceptAll={onAcceptSuggestions}
+          onStartOne={onStartSuggestion} onAcceptOne={onAcceptSuggestion} onLaunchChain={onLaunchChain}
+          renderItem={(s, position, groupTag) => (
+            <SuggestionRow
+              key={s.id} task={s} position={position} groupTag={groupTag}
+              isNew={isNewSuggestion(s, newSince)} outsideBlockers={outsideBlockerTitles(s, g, blockedBy)}
+              onEdit={() => onEditTask(s.id)} onDismiss={() => onDismissSuggestions([s.id], "")}
+              onAccept={() => onAcceptSuggestion(s.id)} onStart={() => onStartSuggestion(s.id)}
+            />
+          )}
+        />
+      ))}
+    </section>
+  );
   return (
     <div className="col col-tasks" style={{ flexBasis: width }}>
       <div className="proj-banner">
@@ -175,14 +209,16 @@ export function TasksColumn({ project, agents, tasks, suggested, selTaskId, runn
             project={project} tasks={shown} suggested={shownSuggested} allTasks={allTasks} agents={agents} selTaskId={selTaskId}
             running={running} blockedBy={blockedBy} canDrag={!q}
             onSelect={onSelectTask} onEditTask={onEditTask} onMove={onMoveTask}
-            onStartSuggestion={onStartSuggestion} onAcceptSuggestion={onAcceptSuggestion} onDismissSuggestion={onDismissSuggestion}
-            onAcceptSuggestions={onAcceptSuggestions} onDismissSuggestions={onDismissSuggestions} onOpenParent={onOpenParent}
+            onStartSuggestion={onStartSuggestion} onAcceptSuggestion={onAcceptSuggestion}
+            onAcceptSuggestions={onAcceptSuggestions} onDismissSuggestions={onDismissSuggestions} onLaunchChain={onLaunchChain}
+            pendingDismiss={pendingDismiss?.projectId === project.id ? pendingDismiss : null} onUndoDismiss={onUndoDismiss} onOpenParent={onOpenParent}
             traySeenAt={traySeenAt} traySeenReady={traySeenReady} onTrayViewed={onTrayViewed}
           />
         </div>
       ) : (
       <div className="scroll">
         <div className="task-scroll">
+          {tray}
           {tasks.length === 0 && <div className="empty" style={{ padding: "30px 16px" }}><div className="e-t">No tasks yet</div><div className="e-s">Create one to start an agent session.</div></div>}
           {noMatches && <div className="search-empty">No tasks match “{query.trim()}”.</div>}
           <TaskGroup label="Needs your input" tasks={needsYou} agents={agents} selTaskId={selTaskId} running={running} blockedBy={blockedBy} onSelect={onSelectTask} accent />
@@ -192,35 +228,6 @@ export function TasksColumn({ project, agents, tasks, suggested, selTaskId, runn
           <TaskGroup label="Done" tasks={groups.g} agents={agents} selTaskId={selTaskId} running={running} blockedBy={blockedBy} onSelect={onSelectTask} collapsible collapsed={doneCollapsed && !q} onToggle={toggleDone} />
           <TaskGroup label="Cancelled" tasks={groups.x} agents={agents} selTaskId={selTaskId} running={running} blockedBy={blockedBy} onSelect={onSelectTask} collapsible collapsed={cancelledCollapsed && !q} onToggle={toggleCancelled} />
         </div>
-        {shownSuggested.length > 0 && (
-          <div className="suggest" ref={trayRef}>
-            <div className="suggest-h">
-              {Icon.spark()} Suggested by agents
-              {newCount > 0 && <span className="sh-new">{newCount} new</span>}
-              <span className="sp">{shownSuggested.length}</span>
-            </div>
-            {sugGroups.map((g) => (
-              <SuggestionGroup key={g.key} group={g} variant="list" newSince={newSince} onOpenParent={onOpenParent} onDismissAll={onDismissSuggestions} onAcceptAll={onAcceptSuggestions}>
-                {g.tasks.map((s, index) => (
-                  <div key={s.id} className="sug">
-                    <StatusDot status="not_started" />
-                    <div className="sg-meta">
-                      <div className="sg-name"><span className="sug-order">{index + 1}.</span>{isNewSuggestion(s, newSince) && <NewPill />}{s.title}</div>
-                      {s.description && <div className="sg-why">{s.description}</div>}
-                      {!!blockedBy.get(s.id)?.length && <div className="sug-blockers">← Blocked by {blockedBy.get(s.id)!.join(", ")}</div>}
-                    </div>
-                    <div className="sug-card-actions">
-                    <button className="sug-dismiss" title="Edit title & description" onClick={() => onEditTask(s.id)}>{Icon.edit()}</button>
-                    <button className="sug-add" title="Add to task list to start later" onClick={() => onAcceptSuggestion(s.id)}>{Icon.plus()} Add</button>
-                    <button className="sug-btn" onClick={() => onStartSuggestion(s.id)}>{Icon.play()} Start</button>
-                    <button className="sug-dismiss" title="Dismiss" onClick={() => onDismissSuggestion(s.id)}>{Icon.x()}</button>
-                    </div>
-                  </div>
-                ))}
-              </SuggestionGroup>
-            ))}
-          </div>
-        )}
       </div>
       )}
     </div>

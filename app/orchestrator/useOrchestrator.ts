@@ -13,6 +13,12 @@ import { useTaskStream } from "./useTaskStream";
 import { useGlobalEvents } from "./useGlobalEvents";
 import { usePrefs } from "./usePrefs";
 import { useRecaps } from "./useRecaps";
+import { planChainDeps, type ChainAdvance } from "./suggestions";
+
+// How long a tray dismissal can be undone before its delete is sent.
+const UNDO_MS = 6000;
+/** A tray dismissal inside its Undo window: hidden now, deleted when the window closes. */
+export interface PendingDismiss { ids: string[]; label: string; projectId: string }
 
 type Modal = null | "task" | "context" | "project" | "sessions";
 
@@ -63,7 +69,13 @@ export function useOrchestrator() {
   const activeProjects = useMemo(() => projects.filter((p) => !p.deprecated), [projects]);
   const deprecatedProjects = useMemo(() => projects.filter((p) => p.deprecated), [projects]);
   const realTasks = useMemo(() => tasks.filter((t) => !t.suggested), [tasks]);
-  const suggested = useMemo(() => tasks.filter((t) => t.suggested), [tasks]);
+  // Tray dismissals wait out an Undo window before the (hard) delete runs — see
+  // queueDismiss. Until then the rows are only hidden from the tray.
+  const [pendingDismiss, setPendingDismiss] = useState<PendingDismiss | null>(null);
+  const suggested = useMemo(() => {
+    const hidden = new Set(pendingDismiss?.ids);
+    return tasks.filter((t) => t.suggested && !hidden.has(t.id));
+  }, [tasks, pendingDismiss]);
   const task = useMemo(() => tasks.find((t) => t.id === selTask) ?? null, [tasks, selTask]);
   // taskId -> titles of its unfinished blockers. A task in this map is blocked:
   // it shows a "Blocked by" chip and its Start button is disabled. Recomputed from
@@ -600,12 +612,70 @@ export function useOrchestrator() {
     await jsend(`/api/tasks/${id}`, "DELETE");
     if (selProj) await loadTasks(selProj, false);
   };
-  // "Dismiss all" on a stale tray group. Sequential, not Promise.all: each
-  // delete tears down a git worktree server-side, and one failure shouldn't
-  // leave the rest in flight. One reload at the end covers the whole batch.
-  const dismissSuggestions = async (ids: string[]) => {
-    for (const id of ids) await jsend(`/api/tasks/${id}`, "DELETE");
-    if (selProj) await loadTasks(selProj, false);
+  // Tray dismissals are instant with an Undo toast, never a confirm step. Delete
+  // is still a hard delete (no soft-delete column), so the undo lives HERE: the
+  // rows are hidden at once and the DELETEs only go out when the window closes.
+  // A second dismissal commits the first straight away (one toast at a time),
+  // and closing the tab mid-window sends the deletes as keepalive requests so
+  // "dismissed" never silently turns into "came back".
+  const pendingRef = useRef<{ pending: PendingDismiss; timer: ReturnType<typeof setTimeout> } | null>(null);
+  const commitDismiss = useCallback(() => {
+    const cur = pendingRef.current;
+    if (!cur) return;
+    clearTimeout(cur.timer);
+    pendingRef.current = null;
+    setPendingDismiss(null);
+    const { ids, projectId } = cur.pending;
+    // Sequential, not Promise.all: each delete tears down a git worktree
+    // server-side, and one failure shouldn't leave the rest in flight.
+    void (async () => {
+      try { for (const id of ids) await jsend(`/api/tasks/${id}`, "DELETE"); }
+      // Reload only if that project is still the one on screen — loading
+      // another project's rows would replace the visible list.
+      finally { if (selProjRef.current === projectId) await loadTasks(projectId, false); }
+    })();
+  }, [loadTasks]);
+  const queueDismiss = (ids: string[], label: string) => {
+    if (!ids.length || !selProj) return;
+    commitDismiss();
+    const pending = { ids, label, projectId: selProj };
+    pendingRef.current = { pending, timer: setTimeout(commitDismiss, UNDO_MS) };
+    setPendingDismiss(pending);
+  };
+  const undoDismiss = () => {
+    if (pendingRef.current) clearTimeout(pendingRef.current.timer);
+    pendingRef.current = null;
+    setPendingDismiss(null);
+  };
+  useEffect(() => {
+    const flush = () => {
+      const cur = pendingRef.current;
+      if (!cur) return;
+      pendingRef.current = null;
+      for (const id of cur.pending.ids) void fetch(`/api/tasks/${id}`, { method: "DELETE", keepalive: true }).catch(() => {});
+    };
+    window.addEventListener("pagehide", flush);
+    return () => window.removeEventListener("pagehide", flush);
+  }, []);
+
+  // The chain composer's launch: apply the reviewed agent + order, then accept
+  // the batch (and start it when `start`). The order is written as ordinary
+  // dependency edges, so the existing machinery runs the chain — the head starts
+  // now, and each next task auto-starts when the one before it is marked done
+  // (merging marks done). A step that needs input simply isn't done yet, so the
+  // chain pauses there on its own.
+  const launchChain = async ({ groupIds, ordered, agent, advance, start }: {
+    groupIds: string[]; ordered: string[]; agent: string | null; advance: ChainAdvance; start: boolean;
+  }) => {
+    if (agent) {
+      for (const id of ordered) {
+        const t = tasks.find((x) => x.id === id);
+        if (t && t.agent !== agent) await jsend(`/api/tasks/${id}`, "PATCH", { agent });
+      }
+    }
+    const { clear, link } = planChainDeps(tasks, groupIds, ordered, advance);
+    for (const e of [...clear, ...link]) await jsend(`/api/tasks/${e.id}`, "PATCH", { depends_on: e.depends_on });
+    await acceptSuggestions(ordered, start);
   };
 
   const saveContext = async (patch: { name: string; context: string; send_context: number; repo_path: string; branch: string; dev_command: string; setup_command: string; test_command: string }) => {
@@ -700,7 +770,7 @@ export function useOrchestrator() {
     setSelTask, fetchRecap, runTurn, answerQuestion, stopTurn, cancelQueued, resolveConflictsWithAI,
     selectProject, jumpToNeedsYou, goToTask, clearSession, setStatus, setPriority, setModel,
     setReasoning, setPermission, setSendContext, createTask, saveTask, renameTask, removeTask, moveTask, startSuggestion, acceptSuggestion, acceptSuggestions,
-    dismissSuggestion, dismissSuggestions, saveContext, createProject, reorderProjects, removeProject, setDeprecated,
+    dismissSuggestion, queueDismiss, undoDismiss, pendingDismiss, launchChain, saveContext, createProject, reorderProjects, removeProject, setDeprecated,
     resetSettings, setProjectDefaultAgent,
   };
 }

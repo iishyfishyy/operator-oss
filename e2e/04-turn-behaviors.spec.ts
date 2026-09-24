@@ -108,12 +108,15 @@ test("agent suggestions land in the Suggested tray", async ({ page, request }) =
   // UI: it shows under "Suggested by agents".
   await gotoApp(page);
   await page.getByText(PROJECT).first().click();
-  await expect(page.getByText("Suggested by agents")).toBeVisible();
+  // (The tray title drops "by agents" in a narrow column — match the stable part.)
+  await expect(page.locator(".sx-ttl")).toContainText("Suggested");
   // Scoped to the tray's name element — the originating task's description
   // contains the same words, so a bare text match is ambiguous.
   await expect(page.locator(".sg-name").filter({ hasText: "Refactor the widget factory" })).toBeVisible();
   // …under a header naming the task (and session) whose turn proposed it.
-  await expect(page.locator(".sug-head").filter({ hasText: "From: Suggesting · session 1" })).toBeVisible();
+  const head = page.locator(".sug-head").filter({ hasText: "Suggesting" });
+  await expect(head).toBeVisible();
+  await expect(head).toContainText("session 1");
 
   // The persisted suggest_task card links to the task it created (the driver
   // lifts the id off the tool result; the runner persists it on the row).
