@@ -18,6 +18,7 @@
 // instead usage carries an ESTIMATED cost (tokens × published API prices,
 // see ./pricing.ts) and costIsEstimated=true tells the UI to label it ~.
 
+import { capturePrompt, contextSections } from "../../promptCapture";
 import { Codex } from "@openai/codex-sdk";
 import type { SandboxMode, ApprovalMode, ModelReasoningEffort, ThreadOptions, CodexOptions } from "@openai/codex-sdk";
 import type { Project, Task, StreamEvent, TurnUsage } from "../../types";
@@ -194,7 +195,16 @@ async function* runTurn(
 
   // Fresh session: seed the opening prompt with the project context (project
   // description, task framing, and carried summaries from prior generations).
-  const prompt = task.session_id ? userText : `${buildProjectContext(project, task)}\n\n---\n\n${userText}`;
+  const context = task.session_id ? "" : buildProjectContext(project, task);
+  const prompt = task.session_id ? userText : `${context}\n\n---\n\n${userText}`;
+  capturePrompt({
+    projectId: project.id, taskId: task.id, generation: task.generation, job: "turn",
+    agent: "codex", sessionId: task.session_id ?? null, prompt,
+    sections: [...(context ? contextSections(context) : []),
+      ...(context ? [{ label: "Separator", text: "\n\n---\n\n" }] : []),
+      { label: "User message", text: userText }],
+    options: { ...threadOptions, modelOverride: task.model ?? null, mcpServers: ["orchestrator"] },
+  });
 
   const turnError = (content: string): StreamEvent => {
     if (permission === "fullAccess" && (isApprovalBlocked(content) || isSandboxPolicyBlocked(content))) {
@@ -258,13 +268,16 @@ const ONESHOT_MAX_ITEMS_EXPLORE = 120;
 // Claude driver. Usage received before an error or max-items abort is retained.
 async function oneShot(project: Project, prompt: string, maxItems: number, mode: SandboxMode = "read-only"): Promise<OneShotResult> {
   const codex = new Codex({ codexPathOverride: CODEX_CLI_PATH || undefined });
-  const thread = codex.startThread({
+  const threadOptions: ThreadOptions = {
     workingDirectory: project.repo_path || process.cwd(),
     skipGitRepoCheck: true,
     sandboxMode: mode,
     ...approvalOverride(),
     networkAccessEnabled: false,
-  });
+  };
+  const thread = codex.startThread(threadOptions);
+  capturePrompt({ projectId: project.id, agent: "codex", sessionId: null, prompt,
+    options: { ...threadOptions, modelOverride: null } });
   const abort = new AbortController();
   let items = 0;
   // The last agent_message wins — the same semantics as the SDK's finalResponse.

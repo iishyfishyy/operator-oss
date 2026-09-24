@@ -14,6 +14,7 @@ process.env.ORCH_WORKTREES_DIR = path.join(root, "worktrees");
 // Point the SQLite store at a throwaway dir so store-backed tests get a fresh,
 // isolated orchestrator.db instead of the user's real one. Read at import time
 // by lib/config.ts, so it must be set here (before the module graph loads).
+delete process.env.ORCH_DEBUG_PROMPTS;
 process.env.ORCH_DB_DIR = path.join(root, "db");
 process.env.CLAUDE_CONFIG_DIR = path.join(root, "claude");
 

@@ -1613,6 +1613,18 @@ button.tpeek-more:hover{color:var(--accent-ink);}
 .sh-actions{display:flex;gap:8px;padding:6px 12px;flex-wrap:wrap;}
 .sh-actions button{padding:4px 8px;border:1px solid var(--line-strong);border-radius:var(--r-sm);font-size:11px;}
 .sh-actions button:disabled{opacity:.5;cursor:wait;}
+.sh-chain{margin:4px 12px 8px;padding-left:20px;font-size:11px;overflow-wrap:anywhere;}
+.sh-chain span{color:var(--ink-3);}
+
+/* Prompt inspector preserves whitespace and contains long provider inputs. */
+.prompt-inspector { overflow-wrap: anywhere; font-size: 12px; }
+.prompt-inspector p { margin: 12px 0; }
+.prompt-inspector select { display: block; width: 100%; margin: 8px 0; color: inherit; background: var(--bg); }
+.prompt-inspector details { margin: 12px 0; }
+.prompt-inspector summary { cursor: pointer; }
+.prompt-inspector pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 400px; overflow: auto; padding: 10px; font-size: 11px; border: 1px solid var(--line); border-radius: 6px; }
+.prompt-inspector mark { background: #f4cd6680; color: inherit; }
+
 .sh-error{margin:4px 12px 8px;font-size:11px;overflow-wrap:anywhere;}
 .sug-order{margin-right:6px;color:var(--ink-3);font-variant-numeric:tabular-nums;}
 .sug-blockers{margin-top:4px;font-size:11px;color:var(--ink-3);overflow-wrap:anywhere;}

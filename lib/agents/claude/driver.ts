@@ -7,6 +7,7 @@
 // lib/claude-auth.ts) round out the interface.
 
 import { query, createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
+import { capturePrompt, contextSections } from "../../promptCapture";
 import { z } from "zod";
 import type { Project, Task, StreamEvent, AskQuestion, TurnUsage } from "../../types";
 import type { AgentDriver, OneShotResult } from "../types";
@@ -112,6 +113,26 @@ function reasoningOptions(level: string | null): { maxThinkingTokens?: number; e
   return r.effort ? { maxThinkingTokens: r.maxThinkingTokens, effort: r.effort } : { maxThinkingTokens: r.maxThinkingTokens };
 }
 
+// Snapshot the actual SDK arguments. Only allowlisted options are persisted:
+// environment credentials and MCP bridge tokens must never enter the inspector.
+function capturedQuery(project: Project, task: Task | null, args: Parameters<typeof query>[0]) {
+  const options = args.options ?? {};
+  const system = options.systemPrompt;
+  const systemAppend = typeof system === "object" && !Array.isArray(system) ? system.append : undefined;
+  if (typeof args.prompt === "string") capturePrompt({
+    projectId: project.id, ...(task ? { taskId: task.id, generation: task.generation, job: "turn" } : {}),
+    agent: "claude", sessionId: options.resume ?? null, prompt: args.prompt, systemAppend,
+    sections: [...(systemAppend ? contextSections(systemAppend) : []), { label: "User prompt", text: args.prompt }],
+    options: {
+      cwd: options.cwd, modelOverride: options.model ?? null, permissionMode: options.permissionMode,
+      maxThinkingTokens: options.maxThinkingTokens, effort: options.effort, maxTurns: options.maxTurns,
+      allowedTools: options.allowedTools, systemPreset: typeof system === "object" && !Array.isArray(system) ? system.preset : null,
+      mcpServers: Object.keys(options.mcpServers ?? {}),
+    },
+  });
+  return query(args);
+}
+
 // The task's run permission. null (and any unknown value) keeps the app default of
 // bypassPermissions — sessions auto-approve tools and run unattended. "plan" makes
 // Claude propose a plan without editing; "acceptEdits" auto-accepts file edits only.
@@ -177,7 +198,7 @@ async function* runTurn(
     ? `${userText}\n\n(Read each attached image/file with the Read tool before responding.)`
     : userText;
 
-  const response = query({
+  const response = capturedQuery(project, task, {
     prompt,
     options: {
       // Prefer the task's isolated worktree; fall back to the shared repo path
@@ -339,7 +360,7 @@ async function* runTurn(
  * One-shot, no tools — just text in, summary out.
  */
 async function summarizeTranscript(transcript: string, project: Project): Promise<OneShotResult> {
-  const response = query({
+  const response = capturedQuery(project, null, {
     prompt:
       `Summarize the following Claude Code session into a concise handoff note for a fresh session ` +
       `continuing the same task. Cover: what was done, the current state of the code, decisions made, ` +
@@ -382,7 +403,7 @@ const CTX_CLOSE = "<<<END_CONTEXT>>>";
  * saving — we deliberately don't persist here.
  */
 async function draftProjectContext(project: Project, digest: string): Promise<OneShotResult> {
-  const response = query({
+  const response = capturedQuery(project, null, {
     prompt:
       `You are refreshing the saved "project context" for the project "${project.name}". ` +
       `This context is prepended to every new Claude Code session in this project, so it must get a ` +
@@ -441,7 +462,7 @@ async function draftProjectContext(project: Project, digest: string): Promise<On
  * happened only — deliberately no next-step suggestions.
  */
 async function summarizeProjectRecap(project: Project, digest: string): Promise<OneShotResult> {
-  const response = query({
+  const response = capturedQuery(project, null, {
     prompt:
       `Write a very short "where I left off" recap for the project "${project.name}", shown when the user returns ` +
       `after time away so they can quickly regain context. Output ONLY 2–4 terse markdown bullet points ` +
