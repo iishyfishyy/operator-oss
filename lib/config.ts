@@ -55,7 +55,8 @@ export const CODEX_CLI_PATH = process.env.CODEX_CLI_PATH || "";
  * transport — non-interactive runs cannot service approvals, so every
  * non-allowlisted command is rejected ("approval request failed") and the task
  * flails. It maps to "on-request", the closest policy that actually works.
- * Unknown values fall back to "never".
+ * Unknown values fall back to "never". Explicit Full access turns always request
+ * "never" instead; the CLI still enforces managed requirements.
  */
 export const CODEX_APPROVAL_POLICY = (() => {
   const v = String(process.env.CODEX_APPROVAL_POLICY || "never").toLowerCase();

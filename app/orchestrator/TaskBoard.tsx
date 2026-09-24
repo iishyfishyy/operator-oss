@@ -95,9 +95,9 @@ function dayBucket(ts: number): string {
   return "Earlier";
 }
 
-function BoardCard({ task, agents, selected, running, blockedBy, mini, isNew, dragging, canDrag, onSelect, onDragStart, onDragOverCard, onDropOnCard, onDragEnd, actions }: {
+function BoardCard({ task, agents, selected, running, blockedBy, chainPosition, mini, isNew, dragging, canDrag, onSelect, onDragStart, onDragOverCard, onDropOnCard, onDragEnd, actions }: {
   task: TaskRow; agents: AgentsBundle; selected: boolean; running: boolean; blockedBy?: string[];
-  mini?: boolean; isNew?: boolean; dragging: boolean; canDrag: boolean;
+  chainPosition?: number; mini?: boolean; isNew?: boolean; dragging: boolean; canDrag: boolean;
   onSelect: () => void; onDragStart: () => void; onDragOverCard: (e: React.DragEvent) => void;
   onDropOnCard: (e: React.DragEvent) => void; onDragEnd: () => void; actions?: ReactNode;
 }) {
@@ -125,7 +125,7 @@ function BoardCard({ task, agents, selected, running, blockedBy, mini, isNew, dr
     >
       <div className="bc-top">
         <StatusDot status={task.status} running={running} awaiting={awaiting} />
-        <h3 className="bc-title">{isNew && <NewPill />}{task.title}</h3>
+        <h3 className="bc-title">{chainPosition !== undefined && <span className="sug-order">{chainPosition}.</span>}{isNew && <NewPill />}{task.title}</h3>
         {!mini && <PriPill p={task.priority} />}
       </div>
       <div className="bc-meta">
@@ -133,10 +133,11 @@ function BoardCard({ task, agents, selected, running, blockedBy, mini, isNew, dr
         <span className={`bc-act ${awaiting ? "need" : running ? "on" : ""}`}>{activity}</span>
       </div>
       {running && <div className="bc-bar"><i /></div>}
+      {chainPosition !== undefined && blocked && <div className="sug-blockers">← Blocked by {blockedBy!.join(", ")}</div>}
       {actions}
-      {(blocked || sessionCount > 0) && !mini && (
+      {((blocked && chainPosition === undefined) || sessionCount > 0) && !mini && (
         <div className="bc-foot">
-          {blocked && (task.auto_start ? (
+          {blocked && chainPosition === undefined && (task.auto_start ? (
             <span className="bc-chip autostart" title={`Starts automatically once done: ${blockedBy!.join(", ")}`}>
               {Icon.bolt()} Auto-starts after {blockedBy!.length === 1 ? "1 task" : `${blockedBy!.length} tasks`}
             </span>
@@ -267,7 +268,7 @@ export function TaskBoard({ project, tasks, suggested, allTasks, agents, selTask
                   the card resolves back to its column index (terminal columns
                   just append). */}
               {(() => {
-                const slot = (t: TaskRow, divider: ReactNode) => {
+                const slot = (t: TaskRow, divider: ReactNode, chainPosition?: number) => {
                   const at = def.mini ? colTasks.length : colTasks.indexOf(t);
                   return (
                     <div className="b-slot" key={t.id}>
@@ -279,6 +280,7 @@ export function TaskBoard({ project, tasks, suggested, allTasks, agents, selTask
                         selected={t.id === selTaskId}
                         running={running.has(t.id)}
                         blockedBy={blockedBy.get(t.id)}
+                        chainPosition={chainPosition}
                         mini={def.mini}
                         isNew={!!t.suggested && isNewSuggestion(t, newSince)}
                         dragging={dragId === t.id}
@@ -304,8 +306,8 @@ export function TaskBoard({ project, tasks, suggested, allTasks, agents, selTask
                 // its cards away as one block. Every other column is a flat list.
                 if (sugGroups) {
                   return sugGroups.map((g) => (
-                    <SuggestionGroup key={g.key} group={g} variant="board" newSince={newSince} onOpenParent={onOpenParent} onDismissAll={onDismissSuggestions} onAcceptAll={onAcceptSuggestions} blockedBy={blockedBy}>
-                      {g.tasks.map((t) => slot(t, null))}
+                    <SuggestionGroup key={g.key} group={g} variant="board" newSince={newSince} onOpenParent={onOpenParent} onDismissAll={onDismissSuggestions} onAcceptAll={onAcceptSuggestions}>
+                      {g.tasks.map((t, index) => slot(t, null, index + 1))}
                     </SuggestionGroup>
                   ));
                 }

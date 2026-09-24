@@ -74,14 +74,13 @@ export function NewPill({ title }: { title?: string }) {
  * the default is to keep them out of the way with one line saying why and a
  * bulk dismiss, rather than to make you close them one at a time.
  */
-export function SuggestionGroup({ group, variant, newSince, onOpenParent, onDismissAll, onAcceptAll, blockedBy, children }: {
+export function SuggestionGroup({ group, variant, newSince, onOpenParent, onDismissAll, onAcceptAll, children }: {
   group: Group;
   variant: "list" | "board";
   newSince: number;
   onOpenParent: (id: string) => void;
   onDismissAll: (ids: string[]) => void;
   onAcceptAll: (ids: string[], start: boolean) => Promise<void>;
-  blockedBy: Map<string, string[]>;
   children: ReactNode;
 }) {
   const [open, setOpen] = useState(!group.stale);
@@ -129,13 +128,7 @@ export function SuggestionGroup({ group, variant, newSince, onOpenParent, onDism
         <button disabled={busy} onClick={() => void submit(false)}>Accept all ({n})</button>
         <button disabled={busy} onClick={() => void submit(true)}>Start chain</button>
       </div>
-      {error && <div role="alert" className="sh-chain">{error}</div>}
-      {open && <ol className="sh-chain" aria-label="Chain order">
-        {group.tasks.map((t) => <li key={t.id}>
-          {t.title}
-          {!!blockedBy.get(t.id)?.length && <span> ← blocked by {blockedBy.get(t.id)!.join(", ")}</span>}
-        </li>)}
-      </ol>}
+      {error && <div role="alert" className="sh-error">{error}</div>}
       {group.stale && (
         <div className="sh-stale">
           <span className="ss-why" title={`Stale — ${group.staleReason}`}>Stale — {group.staleReason}</span>

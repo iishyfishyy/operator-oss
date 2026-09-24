@@ -26,7 +26,7 @@ import type { AgentDriver, OneShotResult } from "../types";
 import { CODEX_CAPABILITIES } from "./capabilities";
 import { getSetting, setSetting, getThreadUsageCum, setThreadUsageCum } from "../../store";
 import { CODEX_APPROVAL_POLICY, CODEX_CLI_PATH, INTERNAL_BASE_URL, ORCH_MCP_SCRIPT } from "../../config";
-import { isApprovalDowngrade } from "../../approvalFailure";
+import { isApprovalDowngrade, isApprovalBlocked, isSandboxPolicyBlocked, CODEX_FULL_ACCESS_BLOCKED_NOTICE } from "../../approvalFailure";
 import { buildProjectContext } from "../shared";
 import { mapThreadEvent, newState, ZERO_CUM, type CodexCum } from "./events";
 import { resolveCodexModel } from "./pricing";
@@ -99,9 +99,10 @@ type RunControls = { sandboxMode: SandboxMode; networkAccessEnabled: boolean };
 // The task's run permission → codex sandbox. Default (null / unknown /
 // "bypassPermissions") is the auto-run analog of Claude's bypassPermissions:
 // write within the workspace, run commands and reach the network without
-// approvals — safe because tasks run in isolated worktrees / a hardened
-// container. "plan" runs read-only so codex proposes without editing.
+// approvals. "plan" runs read-only so codex proposes without editing.
+// Full access is an explicit opt-in; worktrees are not a security boundary.
 function runControls(mode: string | null): RunControls {
+  if (mode === "fullAccess") return { sandboxMode: "danger-full-access", networkAccessEnabled: true };
   if (mode === "plan") return { sandboxMode: "read-only", networkAccessEnabled: false };
   return { sandboxMode: "workspace-write", networkAccessEnabled: true };
 }
@@ -179,7 +180,8 @@ async function* runTurn(
     // be — skip the check so codex never hard-errors on a missing repo.
     skipGitRepoCheck: true,
     sandboxMode: controls.sandboxMode,
-    ...approvalOverride(),
+    // Full access always requests never; managed requirements still win in the CLI.
+    ...(permission === "fullAccess" ? { approvalPolicy: "never" as const } : approvalOverride()),
     networkAccessEnabled: controls.networkAccessEnabled,
     ...(task.model ? { model: task.model } : {}),
     ...reasoningEffort(reasoning),
@@ -204,14 +206,21 @@ async function* runTurn(
     options: { ...threadOptions, modelOverride: task.model ?? null, mcpServers: ["orchestrator"] },
   });
 
+  const turnError = (content: string): StreamEvent => {
+    if (permission === "fullAccess" && (isApprovalBlocked(content) || isSandboxPolicyBlocked(content))) {
+      return { type: "error", content: `${content}\n\n${CODEX_FULL_ACCESS_BLOCKED_NOTICE}` };
+    }
+    noteApprovalDowngrade(content);
+    return { type: "error", content };
+  };
+
   yield { type: "model", model };
 
   try {
     const { events } = await thread.runStreamed(prompt, { signal: abortController?.signal });
     for await (const ev of events) {
       for (const out of mapThreadEvent(ev, state)) {
-        if (out.type === "error") noteApprovalDowngrade(out.content);
-        yield out;
+        yield out.type === "error" ? turnError(out.content) : out;
       }
       // Advance the thread's cumulative baseline the moment a turn's usage is
       // mapped, not at the end of the run: a crash (or a Stop) between here and
@@ -229,7 +238,7 @@ async function* runTurn(
     // deliberate teardown, not an error. The partial transcript is already
     // persisted by the runner. Any other throw is a real failure.
     if (!abortController?.signal.aborted) {
-      yield { type: "error", content: err instanceof Error ? err.message : String(err) };
+      yield turnError(err instanceof Error ? err.message : String(err));
     }
   }
 

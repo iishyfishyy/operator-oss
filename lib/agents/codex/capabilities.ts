@@ -61,6 +61,7 @@ export const CODEX_CAPABILITIES: AgentCapabilities = {
   // offered — both fall back to bypassPermissions.
   permissionModes: [
     { value: "bypassPermissions", label: "Auto-run", sub: "workspace write, no approvals (default)" },
+    { value: "fullAccess", label: "Full access", sub: "access files and execute outside the task worktree with your account permissions; no approvals" },
     { value: "plan", label: "Plan mode", sub: "read-only, propose without editing" },
   ],
   // Interactive asks arrive via the MCP bridge's ask_user tool (the card UI and

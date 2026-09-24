@@ -140,3 +140,29 @@ hides the panel and endpoint and stops recording; it does not erase retained dat
 Downloaded copies are not managed by Operator. Earlier turns cannot be recovered
 retroactively. Captures record attempted SDK submissions, not confirmation of
 provider receipt.
+
+### Codex permission modes
+
+In **Settings → Run defaults**, select **Codex** and choose a default permission
+mode. **Auto-run** remains the default: `workspace-write`. **Plan** stays
+`read-only` with network access disabled. **Full access** is an explicit opt-in
+that requests `danger-full-access` and `approvalPolicy: never`: commands may
+access files and execute outside the task worktree with your account permissions,
+without command approvals. Enable it only for tasks you trust.
+
+The task's gear menu provides the same permission choices. **Default** inherits
+the saved per-agent setting; an explicit task choice takes priority. Preferences
+persist across restarts and apply on the next turn, including resumed sessions.
+A running turn keeps the mode it started with. Internal utility jobs remain read-only.
+
+Full access explicitly requests `never` even when `CODEX_APPROVAL_POLICY` or
+Auto-run's remembered approval negotiation selects another policy. Codex still
+enforces managed requirements; Operator does not alter them or retry with bypass
+flags. Rejections appear in the transcript with guidance to select Auto-run/Plan
+or contact your administrator. Auto-run and Plan retain their existing approval
+negotiation. See [Codex sandbox documentation](https://learn.chatgpt.com/docs/sandboxing).
+
+On macOS, Full access can remove Codex sandbox restrictions that prevent Chrome
+from launching (for example, `MachPortRendezvousServer permission denied`). It
+cannot remove an outer process sandbox, managed policy, or macOS privacy and
+application permissions; browser automation must be verified on your machine.
