@@ -22,7 +22,7 @@ describe("Codex SDK runtime", () => {
     const sdk = lock.packages["node_modules/@openai/codex-sdk"];
     const cli = lock.packages["node_modules/@openai/codex"];
 
-    expect(atLeast(sdk.version!, "0.153.4")).toBe(true);
+    expect(atLeast(sdk.version!, "0.156.1")).toBe(true);
     expect(sdk.version).toBe(cli.version);
     expect(sdk.dependencies?.["@openai/codex"]).toBe(cli.version);
     expect(lock.packages["node_modules/@openai/codex-sdk/node_modules/@openai/codex"])

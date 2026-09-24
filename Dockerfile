@@ -66,7 +66,7 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
 # The `claude` CLI (Agent SDK spawns it; login state lives in ~/.claude on the
 # volume). Pinned location via CLAUDE_CLI_PATH; updates ship as image rebuilds,
 # so the in-place autoupdater is disabled.
-ARG CLAUDE_CODE_VERSION=2.1.226
+ARG CLAUDE_CODE_VERSION=2.1.281
 RUN npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" && claude --version
 
 # The `codex` CLI (the Codex agent driver drives it via @openai/codex-sdk; login

@@ -155,7 +155,7 @@ function useStableHandler<A extends unknown[]>(fn?: (...args: A) => void): (...a
   return useCallback((...args: A) => { ref.current?.(...args); }, []);
 }
 
-export function SessionView({ commandDraft, onCommandDraftUsed, project, task, agents, messages, running, blockedBy, transcriptLoading, onSend, onStart, onStop, onClear, clearConfirming, onConfirmClear, onCancelClear, onEdit, onReconnect, onSetStatus, onSetPriority, onSetModel, onSetReasoning, onSetPermission, onSetSendContext, onResolveWithAI, onMerged, onPrCreated, onAnswer, onCancelQueued, onBack, mobile, railW, onRailWidth, onRailReset, railCollapsed, onRailCollapse, onRailExpand }: {
+export function SessionView({ commandDraft, onCommandDraftUsed, project, task, agents, messages, running, blockedBy, transcriptLoading, onSend, onStart, onStop, onClear, clearConfirming, onConfirmClear, onCancelClear, onEdit, onReconnect, onSetStatus, onSetPriority, onSetModel, onRefreshModels, onSetReasoning, onSetPermission, onSetSendContext, onResolveWithAI, onMerged, onPrCreated, onAnswer, onCancelQueued, onBack, mobile, railW, onRailWidth, onRailReset, railCollapsed, onRailCollapse, onRailExpand }: {
   project: ProjectRow; task: TaskRow; agents: AgentsBundle; messages: Msg[]; running: boolean; blockedBy?: string[]; transcriptLoading?: boolean;
   commandDraft?: import("./useCommands").CommandDraft | null; onCommandDraftUsed?: () => void;
   onSend: (t: string) => void; onStart: () => void; onStop: () => void; onClear: () => void; onEdit: () => void;
@@ -163,6 +163,7 @@ export function SessionView({ commandDraft, onCommandDraftUsed, project, task, a
   // Deep-link to Settings → Agents, for the transcript's "your login died" recovery button.
   onReconnect?: () => void;
   onSetStatus: (s: Status) => void; onSetPriority: (p: Priority) => void; onSetModel: (m: string | null) => void;
+  onRefreshModels?: () => Promise<void>;
   onSetReasoning: (r: string | null) => void; onSetPermission: (p: string | null) => void;
   onSetSendContext: (v: boolean) => void;
   onResolveWithAI: (taskId: string) => Promise<ResolveResult>;
@@ -214,10 +215,13 @@ export function SessionView({ commandDraft, onCommandDraftUsed, project, task, a
   }, [clearConfirming, task.id]);
   // Run-control pickers + feature gates come from this task's agent capabilities,
   // never a hardcoded list — so the options always match the agent it runs under.
+  const [refreshingModels, setRefreshingModels] = useState(false);
+  const [modelRefreshError, setModelRefreshError] = useState("");
+  const catalog = findAgent(agents, task.agent)?.modelCatalog;
   const caps = capsFor(agents, task.agent);
   const models = modelOptions(caps);
   const configuredModelLabel = models.find((m) => m.value === task.model)?.label
-    ?? (task.model ? modelLabel(task.model, caps) : "Default");
+    ?? (task.model ? `${modelLabel(task.model, caps)} (custom / legacy)` : "Provider default");
   const reasoningOpts = reasoningOptions(caps);
   const permissionOpts = permissionOptions(caps);
   // Usage chip: tokens split into fresh work vs re-read cache (the raw total is
@@ -421,13 +425,22 @@ export function SessionView({ commandDraft, onCommandDraftUsed, project, task, a
               </button>
               {modelOpen && (
                 <Popover onClose={() => setModelOpen(false)}>
+                  {onRefreshModels && <div className="pop-sec">
+                    <button className="btn btn-ghost btn-sm" disabled={refreshingModels} onClick={async () => {
+                      setRefreshingModels(true); setModelRefreshError("");
+                      try { await onRefreshModels(); } catch { setModelRefreshError("Could not refresh models. Try again."); }
+                      finally { setRefreshingModels(false); }
+                    }}>{refreshingModels ? "Refreshing…" : "Refresh models"}</button>
+                    <div className="pi-sub">{catalog?.source === "live" ? "Available from your agent" : catalog?.source === "cached" ? "Using saved model list" : catalog?.source === "configured" ? "From AWS configuration" : "Using bundled model list"}</div>
+                    {(modelRefreshError || catalog?.error) && <div className="pi-sub" role="status">{modelRefreshError || catalog?.error}</div>}
+                  </div>}
                   {models.map((m, i) => (
                     <Fragment key={m.value ?? "default"}>
                       {/* Section header whenever the group changes — Claude Code's
                           list runs to a dozen-plus pins, so it needs the structure. */}
                       {m.group && m.group !== models[i - 1]?.group && <div className="pop-sec">{m.group}</div>}
-                      <div className="pop-item" onClick={() => { onSetModel(m.value); setModelOpen(false); }}>
-                        <div><div>{m.label}</div><div className="pi-sub">{m.sub}</div></div>
+                      <div className="pop-item" title={m.value ?? "Inherit CLI/account settings"} onClick={() => { onSetModel(m.value); setModelOpen(false); }}>
+                        <div><div>{m.label}</div><div className="pi-sub">{m.sub}</div>{m.value && <div className="pi-sub ctx-mono">{m.value}</div>}</div>
                         {(task.model ?? null) === m.value && <span className="pi-check">{Icon.check()}</span>}
                       </div>
                     </Fragment>

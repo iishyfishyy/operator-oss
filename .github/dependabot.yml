@@ -1,0 +1,15 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    allow:
+      - dependency-name: "@openai/codex"
+      - dependency-name: "@openai/codex-sdk"
+      - dependency-name: "@anthropic-ai/claude-agent-sdk"
+    groups:
+      codex-runtime:
+        patterns:
+          - "@openai/codex"
+          - "@openai/codex-sdk"

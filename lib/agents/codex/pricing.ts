@@ -18,6 +18,8 @@ import type { TurnUsage } from "../../types";
 // Retired models keep their rows: historical turns still price against the
 // model they actually ran on, even once the picker stops offering it.
 const PRICES: { prefix: string; input: number; cachedInput: number; cacheWrite?: number; output: number }[] = [
+  { prefix: "gpt-6-sol", input: 2.0, cachedInput: 0.2, cacheWrite: 2.5, output: 10.0 },
+  { prefix: "gpt-6-luna", input: 0.1, cachedInput: 0.01, cacheWrite: 0.125, output: 0.5 },
   { prefix: "gpt-6-astra", input: 10.0, cachedInput: 1.0, cacheWrite: 12.5, output: 50.0 },
   { prefix: "gpt-5.6-sol", input: 5.0, cachedInput: 0.5, output: 30.0 },
   { prefix: "gpt-5.6-terra", input: 2.0, cachedInput: 0.2, output: 12.0 },
@@ -39,14 +41,10 @@ const PRICES: { prefix: string; input: number; cachedInput: number; cacheWrite?:
   { prefix: "gpt-5", input: 1.25, cachedInput: 0.125, output: 10.0 },
 ];
 
-// The codex CLI's own default model, assumed when a task doesn't pick one
-// (tasks.model = null → we omit the model override and the CLI runs its
-// default). Used to resolve pricing and the resolved-model badge; bump when
-// upstream changes its default. Verify rather than guess: it's the
-// lowest-`priority` entry in the catalog embedded in the CLI binary, and can be
-// confirmed end-to-end by running `codex exec` under a scratch CODEX_HOME (no
-// config.toml to override it) and reading the model off the session rollout.
-export const DEFAULT_CODEX_MODEL = "gpt-5.6-sol";
+// Fallback for pricing/badges when no task override is present. Codex 0.156.1
+// model/list marks Astra as isDefault (checked 2026-09-23). A user's local
+// config can override this; explicit task selections always take precedence.
+export const DEFAULT_CODEX_MODEL = "gpt-6-astra";
 
 /** The model a codex turn effectively runs: the task's choice, else the CLI default. */
 export function resolveCodexModel(taskModel: string | null | undefined): string {

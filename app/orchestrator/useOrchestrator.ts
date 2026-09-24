@@ -143,7 +143,14 @@ export function useOrchestrator() {
     () => jget<AgentsBundle>("/api/agents").then(setAgents).catch(() => {}),
     []
   );
-  useEffect(() => { void refreshAgents(); }, [refreshAgents]);
+  useEffect(() => {
+    void refreshAgents();
+    const timer = setInterval(() => { void refreshAgents(); }, 5 * 60 * 1000);
+    return () => clearInterval(timer);
+  }, [refreshAgents]);
+  const refreshModels = useCallback(async () => {
+    setAgents(await jsend<AgentsBundle>("/api/agents", "POST"));
+  }, []);
 
   // Agents that are connected on record but whose credentials just stopped
   // working — the titlebar reconnect banner's input. Normally empty.
@@ -680,7 +687,7 @@ export function useOrchestrator() {
     blockedBy, liveAwaiting, needsYouTotal,
     modal, setModal, editId, setEditId, view, setView, taskView, setTaskView,
     appearance, setAppearance, appearanceOpen, setAppearanceOpen,
-    settings, setSetting, appDefaults, setAppDefault, agents, refreshAgents, brokenAgents,
+    settings, setSetting, appDefaults, setAppDefault, agents, refreshAgents, refreshModels, brokenAgents,
     onboarding, wizardOpen, finishWizard, rerunOnboarding, nudge, setNudge, onMerged, onPrCreated,
     layout, setLayout, accessEmail, recaps,
     // Suggestion-tray read marks: the per-project "last looked" timestamps, the

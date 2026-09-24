@@ -6,6 +6,7 @@
 // (summarize / draft / recap) and the wizard's auth flow (delegating to
 // lib/claude-auth.ts) round out the interface.
 
+import { discoverClaudeModels } from "./models";
 import { query, createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
 import { capturePrompt, contextSections } from "../../promptCapture";
 import { z } from "zod";
@@ -205,7 +206,7 @@ async function* runTurn(
       // (non-git projects, or worktree creation skipped).
       cwd: task.worktree_path || project.repo_path || process.cwd(),
       resume: task.session_id ?? undefined,
-      // Per-task model selection ("opus"/"sonnet"/"haiku" alias). Omit to inherit
+      // Pass the selected model ID verbatim (including legacy aliases). Omit to inherit
       // Claude Code's default model.
       ...(task.model ? { model: task.model } : {}),
       // Reasoning preset → thinking budget + effort (Off/Think/Think hard/Ultrathink).
@@ -492,6 +493,7 @@ async function summarizeProjectRecap(project: Project, digest: string): Promise<
 
 export const claudeDriver: AgentDriver = {
   id: "claude",
+  discoverModels: discoverClaudeModels,
   label: "Claude Code",
   // Computed per read: on Bedrock the model catalog is instance-config-shaped
   // (only the aliases the AWS config actually maps), not the Anthropic list.

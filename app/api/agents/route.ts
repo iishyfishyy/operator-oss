@@ -1,3 +1,4 @@
+import { refreshCatalog, catalogStatus } from "@/lib/agents/modelCatalog";
 import { NextResponse } from "next/server";
 import { listDrivers, DEFAULT_AGENT } from "@/lib/agents/registry";
 import { getSetting } from "@/lib/store";
@@ -14,7 +15,13 @@ export const dynamic = "force-dynamic";
 // settings record (lib/agents/connections.ts), written on a successful login /
 // verify / api-key save, rather than shelling out to every agent's CLI on each
 // page load. `authenticated` mirrors `connected` for the run-control pickers.
-export async function GET() {
+async function response(force = false) {
+  const drivers = listDrivers();
+  await Promise.all(drivers.map(async d => {
+    if (!d.discoverModels || d.configuredProvider?.() === "bedrock") return;
+    if (!d.apiKey?.has() && !getAgentConnection(d.id)) return;
+    await refreshCatalog(d.id, () => d.discoverModels!(), force);
+  }));
   return NextResponse.json({
     // The app-level default agent (Settings → Run defaults) is the client's
     // ultimate fallback when a project hasn't set its own; unset → the built-in.
@@ -24,7 +31,7 @@ export async function GET() {
     // show the EFFECTIVE choice — and flag it as a fallback when the configured
     // agent isn't connected. `id: null` means nothing is connected at all.
     utility: resolveUtilityAgent(),
-    agents: listDrivers().map((d) => {
+    agents: drivers.map((d) => {
       const provider = d.configuredProvider?.() ?? null;
       const conn = getAgentConnection(d.id);
       // Effective-credential overlay (issue #4): the settings record says how
@@ -41,6 +48,9 @@ export async function GET() {
         // button; false = "reconfigure and restart" guidance only.
         providerRefresh: d.providerAuthRefreshable?.() ?? false,
         capabilities: d.capabilities,
+        modelCatalog: provider === "bedrock"
+          ? { source: "configured", updatedAt: null }
+          : catalogStatus(d.id),
         connected: keyed || !!conn,
         authenticated: keyed || !!conn,
         account: keyed
@@ -58,3 +68,8 @@ export async function GET() {
     }),
   });
 }
+
+export async function GET() { return response(); }
+
+/** Explicit refresh is a POST; normal GETs reuse the hourly cache. */
+export async function POST() { return response(true); }

@@ -141,6 +141,48 @@ Downloaded copies are not managed by Operator. Earlier turns cannot be recovered
 retroactively. Captures record attempted SDK submissions, not confirmation of
 provider receipt.
 
+### Model selection
+
+The task's model picker shows versioned Claude and Codex models and their exact
+routing IDs, including **Opus 5.5** (`claude-opus-5-5`), **GPT-6 Sol**
+(`gpt-6-sol`), and **GPT-6 Luna** (`gpt-6-luna`). Selecting a version pins
+that ID for subsequent turns, including resumed sessions. **Provider default**
+instead inherits the CLI/account configuration; the session badge shows the last
+resolved model. Existing alias selections keep their behavior and are marked
+custom / legacy until you choose a version.
+
+Both agents accept custom model IDs. For Claude on Bedrock, choices use the exact
+configured inference-profile IDs or ARNs. Availability still depends on your
+provider and account.
+
+Opus 5.5 requires **Claude Code 2.1.280 or newer**. Local installations should run
+`claude update` (or update the executable set by `CLAUDE_CLI_PATH`); Docker builds
+include a compatible version. See [Claude model configuration](https://code.claude.com/docs/en/model-config).
+
+Model choices are discovered from the connected agents: Claude's SDK supplies
+resolved model IDs and Codex supplies its live `model/list` catalog. Operator
+refreshes the catalog hourly while the app is open; **Refresh models** in the
+picker checks immediately. Discovery only reads metadata and does not send a
+prompt or create a task session.
+
+The last successful catalog is cached under `ORCH_DB_DIR` and survives restarts.
+If discovery fails, the picker shows the saved catalog (or the bundled list on
+first use) with a retry message. Account changes clear the cache; configuration
+changes invalidate it. Bedrock continues to use the exact IDs from AWS
+configuration. Refreshes never change an existing task's pinned model.
+
+An older Claude CLI that returns only aliases cannot supply exact versions;
+Operator retains its fallback list until the CLI is updated. Model availability
+is account- and provider-dependent. The catalog describes the instance's user
+configuration; project or organization restrictions can still reject a choice.
+Unknown models use a conservative context-window estimate. Pricing is maintained
+separately; automatic discovery does not supply new pricing rates.
+
+Dependabot checks the agent packages weekly and groups Codex CLI/SDK upgrades in
+one PR. Dependency PRs run unit tests, TypeScript checks, and a production build.
+Updates require review; local Claude installations and any `CODEX_CLI_PATH`
+override still need their own CLI updates.
+
 ### Codex permission modes
 
 In **Settings → Run defaults**, select **Codex** and choose a default permission
