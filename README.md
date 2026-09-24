@@ -106,7 +106,7 @@ for reproducible bugs, and [CONTRIBUTING.md](CONTRIBUTING.md) for pull requests.
 
 ## Documentation
 
-[Install and develop](docs/INSTALLATION.md) · [Self-host](docs/SELF_HOSTING.md) · [Features](docs/FEATURES.md) · [Agents](docs/AGENTS.md) · [Changelog](CHANGELOG.md) · [Security](SECURITY.md) · [Community](docs/COMMUNITY.md)
+[Install and develop](docs/INSTALLATION.md) · [Self-host](docs/SELF_HOSTING.md) · [Features](docs/FEATURES.md) · [Agents](docs/AGENTS.md) · [Changelog](CHANGELOG.md) · [Releasing](docs/RELEASING.md) · [Security](SECURITY.md) · [Community](docs/COMMUNITY.md)
 
 ## License
 

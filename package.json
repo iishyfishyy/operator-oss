@@ -1,6 +1,6 @@
 {
   "name": "agent-orchestrator",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "engines": {
     "node": ">=20.9"
   },
