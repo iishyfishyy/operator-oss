@@ -5,6 +5,7 @@
 // built-in default (see DEFAULT_CODEX_MODEL in ./pricing).
 
 import { cachedModels } from "../modelCatalog";
+import { agentReasoningOptions } from "../reasoning";
 import type { AgentCapabilities } from "../types";
 import { codexApiKey } from "./auth";
 
@@ -28,17 +29,17 @@ export const CODEX_CAPABILITIES: AgentCapabilities = {
     { value: "gpt-5.6-luna", label: "GPT-5.6 Luna", sub: "fast and affordable agentic coding", contextWindow: CTX, group: "Previous versions" },
     { value: "gpt-5.5", label: "GPT-5.5", sub: "retires from ChatGPT sign-in October 14, 2026", contextWindow: CTX, group: "Previous versions" },
   ],
-  // Off/Think/Think hard/Ultrathink → codex's model_reasoning_effort scale
-  // (low/medium/high/xhigh — see EFFORT in ./driver.ts). Codex can't disable
-  // reasoning ("minimal" 400s the turn), so "Off" is its floor, "low"; the
-  // subs name the actual effort each preset sends so the picker stays honest.
-  // Current Sol/Astra models also accept max/ultra; Luna tops out at max.
-  // The shared presets stop at xhigh, which every listed model supports.
+  // Codex's reasoning efforts with the CLI's own descriptions (model/list,
+  // checked 2026-09-26 on codex-cli 0.154). Only the fallback: the live catalog
+  // carries each model's supportedReasoningEfforts + default, and the
+  // agent-wide list is rebuilt from those (codexCapabilities below).
   reasoningOptions: [
-    { value: "off", label: "Off", sub: "low effort — codex's minimum" },
-    { value: "think", label: "Think", sub: "medium effort" },
-    { value: "think_hard", label: "Think hard", sub: "high effort" },
-    { value: "ultrathink", label: "Ultrathink", sub: "extra-high effort" },
+    { value: "low", label: "low", sub: "Fast responses with lighter reasoning" },
+    { value: "medium", label: "medium", sub: "Balances speed and reasoning depth for everyday tasks" },
+    { value: "high", label: "high", sub: "Greater reasoning depth for complex problems" },
+    { value: "xhigh", label: "xhigh", sub: "Extra high reasoning depth for complex problems" },
+    { value: "max", label: "max", sub: "Maximum reasoning depth for the hardest problems" },
+    { value: "ultra", label: "ultra", sub: "Maximum reasoning with automatic task delegation" },
   ],
   // Only the modes with a real codex analog are declared. bypassPermissions maps
   // to workspace-write + approvals-never (auto-run); plan maps to a read-only
@@ -70,5 +71,6 @@ export const CODEX_CAPABILITIES: AgentCapabilities = {
 };
 
 export function codexCapabilities(): AgentCapabilities {
-  return { ...CODEX_CAPABILITIES, models: cachedModels("codex")?.models ?? CODEX_CAPABILITIES.models };
+  const models = cachedModels("codex")?.models ?? CODEX_CAPABILITIES.models;
+  return { ...CODEX_CAPABILITIES, models, reasoningOptions: agentReasoningOptions(models, CODEX_CAPABILITIES.reasoningOptions) };
 }

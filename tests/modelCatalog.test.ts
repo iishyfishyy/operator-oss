@@ -26,6 +26,33 @@ describe("model discovery normalization", () => {
     expect(r.defaultModel).toBe("claude-opus-6-2[1m]");
     expect(r.models[0].contextWindow).toBe(1_000_000);
   });
+  it("keeps the CLI's own model names and per-model effort levels", () => {
+    const r = claudeModels([
+      { value: "default", resolvedModel: "claude-opus-5-5[1m]", displayName: "Default (recommended)", description: "Opus 5.5 with 1M context · Most capable for complex work", supportsEffort: true, supportedEffortLevels: ["low", "medium", "high", "xhigh", "max"] },
+      { value: "claude-fable-5-1", displayName: "Fable", description: "Fable 5.1 · Most capable for your hardest tasks", supportsEffort: true, supportedEffortLevels: ["low", "max"] },
+      { value: "haiku", resolvedModel: "claude-haiku-4-5-20251001", displayName: "Haiku", description: "Haiku 4.5 · Fastest for quick answers" },
+    ], []);
+    expect(r.models.map(m => [m.label, m.sub, m.reasoningEfforts?.map(e => e.value)])).toEqual([
+      ["Opus 5.5 with 1M context", "Most capable for complex work", ["low", "medium", "high", "xhigh", "max"]],
+      ["Fable 5.1", "Most capable for your hardest tasks", ["low", "max"]],
+      ["Haiku 4.5", "Fastest for quick answers", []],
+    ]);
+    const c = codexModels([
+      { model: "gpt-x", displayName: "GPT-X", defaultReasoningEffort: "low", supportedReasoningEfforts: [
+        { reasoningEffort: "minimal", description: "no tools" },
+        { reasoningEffort: "low", description: "Fast responses with lighter reasoning" },
+        { reasoningEffort: "ultra", description: "Maximum reasoning with automatic task delegation" },
+      ] },
+      { model: "gpt-old", displayName: "GPT-Old" },
+    ], []);
+    expect(c.models[0].reasoningEfforts).toEqual([
+      { value: "low", label: "low", sub: "Fast responses with lighter reasoning" },
+      { value: "ultra", label: "ultra", sub: "Maximum reasoning with automatic task delegation" },
+    ]);
+    expect(c.models[0].defaultReasoning).toBe("low");
+    expect(c.models[1].reasoningEfforts).toBeUndefined(); // older CLI: unknown, not "none"
+    expect(getCapabilities("codex").reasoningOptions.length).toBeGreaterThan(0);
+  });
   it("uses Codex routing model rather than opaque record ID and skips hidden models", () => {
     const r = codexModels([{ id: "opaque", model: "gpt-future", displayName: "Future", isDefault: true }, { model: "hidden", hidden: true }, { model: "gpt-future" }, null], []);
     expect(r.models).toHaveLength(1);

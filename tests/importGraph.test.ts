@@ -25,6 +25,7 @@ const FORBIDDEN = ["@anthropic-ai/claude-agent-sdk", "@openai/codex-sdk"];
 // Modules that must stay SDK-free, and why:
 const PINNED = [
   "lib/agents/modelCatalog.ts",
+  "lib/agents/reasoning.ts",
   "lib/store.ts", //     imported by nearly everything; the original poison edge
   "lib/services.ts", //  behind sync-compiled routes (grant, services-restore)
   "lib/db.ts",

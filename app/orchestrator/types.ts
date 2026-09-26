@@ -39,7 +39,7 @@ export interface TaskRow {
   send_context: number; // 1 = sessions get the saved project context (seeded from the project setting)
   model: string | null;
   resolved_model: string | null;
-  reasoning: string | null; // thinking preset; null = inherit default
+  reasoning: string | null; // CLI effort level (low/medium/high/…); null = inherit default
   permission_mode: string | null; // agent permission override; null inherits app default
   session_id: string | null;
   worktree_path: string; // isolated git worktree this task runs in ("" = not created yet — appears on the first turn)
@@ -217,8 +217,10 @@ export const PRIORITIES: Priority[] = ["hi", "med", "lo"];
 // capability descriptor (models / reasoning / permission modes it supports, plus
 // feature flags) served by GET /api/agents. The client renders every picker from
 // this data, so a task's controls always match the agent it runs under.
-export interface AgentModelOption { value: string; label: string; sub: string; contextWindow: number; group?: string }
 export interface AgentPickerOption { value: string; label: string; sub: string }
+// reasoningEfforts: the model's own levels as its CLI names them (undefined =
+// unknown, use the agent-wide list; [] = no reasoning control for this model).
+export interface AgentModelOption { value: string; label: string; sub: string; contextWindow: number; group?: string; reasoningEfforts?: AgentPickerOption[]; defaultReasoning?: string }
 export interface AgentCapabilities {
   models: AgentModelOption[];
   reasoningOptions: AgentPickerOption[];
@@ -237,7 +239,7 @@ export interface AgentCapabilities {
 // Mirrors lib/agents/connections.ts AgentConnection; null when not connected.
 export interface AgentAccount { email: string | null; plan: string | null; method: "subscription" | "api_key" | "bedrock" }
 export interface AgentInfo { id: string; label: string; provider?: string | null; capabilities: AgentCapabilities; authenticated: boolean; account?: AgentAccount | null; authBroken?: AgentAuthBrokenT | null;
-  modelCatalog?: { source: "live" | "cached" | "fallback" | "configured"; updatedAt: number | null; error?: string };
+  modelCatalog?: { source: "live" | "cached" | "fallback" | "configured"; updatedAt: number | null; error?: string; defaultModel?: string };
 }
 export interface AgentsBundle { default: string; agents: AgentInfo[]; utility?: UtilityAgentT }
 export const EMPTY_AGENTS: AgentsBundle = { default: "claude", agents: [] };
@@ -251,7 +253,17 @@ const withDefault = (opts: PickerOption[]): PickerOption[] => [DEFAULT_HEAD, ...
 // Build each picker's option list from a driver's capabilities. Undefined caps
 // (agent metadata not loaded yet) yields just the Default head.
 export const modelOptions = (caps?: AgentCapabilities): PickerOption[] => [{ value: null, label: "Provider default", sub: "follows CLI/account settings; choose a version below to pin it" }, ...(caps?.models ?? [])];
-export const reasoningOptions = (caps?: AgentCapabilities): PickerOption[] => withDefault(caps?.reasoningOptions ?? []);
+// Reasoning follows the MODEL, not just the agent: each CLI reports which levels
+// a model accepts (and Codex its default), so pass the task's effective model to
+// get exactly that list. No model / unknown model → the agent-wide list.
+export const modelReasoning = (caps: AgentCapabilities | undefined, model: string | null | undefined): AgentModelOption | undefined =>
+  model ? caps?.models.find((m) => m.value === model) : undefined;
+export const reasoningOptions = (caps?: AgentCapabilities, model?: string | null): PickerOption[] => {
+  const m = modelReasoning(caps, model);
+  const opts = m?.reasoningEfforts ?? caps?.reasoningOptions ?? [];
+  if (!opts.length) return [];
+  return [m?.defaultReasoning ? { ...DEFAULT_HEAD, sub: `CLI default: ${m.defaultReasoning}` } : DEFAULT_HEAD, ...opts];
+};
 export const permissionOptions = (caps?: AgentCapabilities): PickerOption[] => withDefault(caps?.permissionModes ?? []);
 
 // Lightweight filter box for the project & task lists — only worth showing once a

@@ -1,4 +1,4 @@
-import { refreshCatalog, catalogStatus } from "@/lib/agents/modelCatalog";
+import { refreshCatalog, catalogStatus, cachedModels } from "@/lib/agents/modelCatalog";
 import { NextResponse } from "next/server";
 import { listDrivers, DEFAULT_AGENT } from "@/lib/agents/registry";
 import { getSetting } from "@/lib/store";
@@ -50,7 +50,9 @@ async function response(force = false) {
         capabilities: d.capabilities,
         modelCatalog: provider === "bedrock"
           ? { source: "configured", updatedAt: null }
-          : catalogStatus(d.id),
+          // defaultModel lets a task on "Provider default" show that model's
+          // own reasoning levels rather than the agent-wide list.
+          : { ...catalogStatus(d.id), ...(cachedModels(d.id)?.defaultModel ? { defaultModel: cachedModels(d.id)!.defaultModel } : {}) },
         connected: keyed || !!conn,
         authenticated: keyed || !!conn,
         account: keyed

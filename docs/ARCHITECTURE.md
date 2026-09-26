@@ -87,7 +87,8 @@ usage → tokens plus an **estimated** `cost_usd`) into the `StreamEvent` contra
 
 Run controls map our permission modes to codex's sandbox/approval policy
 (bypassPermissions → workspace-write + approvals-never; plan → read-only); reasoning
-presets map to `model_reasoning_effort`. Capabilities declare `supportsMcpTools: true` (the
+levels are the CLI's own effort names (per model, from `model/list`), passed straight to
+`model_reasoning_effort` (see `lib/agents/reasoning.ts`). Capabilities declare `supportsMcpTools: true` (the
 orchestrator's tools reach codex through the portable stdio MCP bridge below, registered
 per turn with a ~1-day `tool_timeout_sec` so a parked ask survives),
 `supportsAsks: true` (codex has no native interactive-ask hook, but the bridge's

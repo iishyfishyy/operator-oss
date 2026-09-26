@@ -45,7 +45,7 @@ export interface Task {
   send_context: number; // 1 = include the saved project context in this task's sessions (seeded from projects.send_context)
   model: string | null; // chosen model alias ("fable"|"opus"|"sonnet"|"haiku"); null = inherit default
   resolved_model: string | null; // model the SDK actually ran last turn (for the badge)
-  reasoning: string | null; // thinking preset ("off"|"think"|"think_hard"|"ultrathink"); null = inherit default
+  reasoning: string | null; // the CLI's own effort level ("low"|"medium"|"high"|"xhigh"|…); null = inherit default
   permission_mode: string | null; // agent permission override (Codex also supports "fullAccess"); null inherits app default
   session_id: string | null; // the agent's opaque session/thread id for the current generation
   worktree_path: string; // isolated git worktree this task runs in ("" = runs in repo_path)

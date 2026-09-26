@@ -389,10 +389,10 @@ export function SettingsView({ settings, setSetting, appDefaults, setAppDefault,
                     </div>
                   </div>
                 )}
-                <div className="field">
-                  <div className="lab">{Icon.spark()} Default reasoning level</div>
+                {reasoningOptions(caps).length > 0 && <div className="field">
+                  <div className="lab">{Icon.spark()} Default reasoning effort</div>
                   <div className="hlp" style={{ marginTop: 0, marginBottom: 10 }}>
-                    The thinking level a task uses when its own picker is set to <strong>Default</strong>. Per-task choices always override this.
+                    The effort level a task uses when its own picker is set to <strong>Default</strong>, named as the agent&apos;s CLI names it. Per-task choices always override this; a model that doesn&apos;t support the level uses its CLI default.
                   </div>
                   <div className="seg" style={{ flexWrap: "wrap", maxWidth: 520 }}>
                     {reasoningOptions(caps).map((r) => (
@@ -406,7 +406,7 @@ export function SettingsView({ settings, setSetting, appDefaults, setAppDefault,
                       </button>
                     ))}
                   </div>
-                </div>
+                </div>}
                 <div className="field">
                   <div className="lab">{Icon.lock()} Default permission mode</div>
                   <div className="hlp" style={{ marginTop: 0, marginBottom: 10 }}>
