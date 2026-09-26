@@ -7,6 +7,7 @@
 // lists carry only explicit choices.
 
 import { cachedModels } from "../modelCatalog";
+import { agentReasoningOptions } from "../reasoning";
 import type { AgentCapabilities, AgentModelOption } from "../types";
 import { isBedrockConfigured, bedrockDefaultModels } from "./provider";
 
@@ -21,7 +22,7 @@ export const CLAUDE_CAPABILITIES: AgentCapabilities = {
   models: [
     { value: "claude-opus-5-5", label: "Opus 5.5", sub: "complex coding · 1M context", contextWindow: M1, group: "Latest" },
     { value: "claude-sonnet-5", label: "Sonnet 5", sub: "routine coding · 1M context", contextWindow: M1, group: "Latest" },
-    { value: "claude-haiku-4-5-20251001", label: "Haiku 4.5", sub: "fast, lightweight tasks", contextWindow: K200, group: "Latest" },
+    { value: "claude-haiku-4-5-20251001", label: "Haiku 4.5", sub: "fast, lightweight tasks", contextWindow: K200, group: "Latest", reasoningEfforts: [] },
     { value: "claude-fable-5-1", label: "Fable 5.1", sub: "most capable · 1M context", contextWindow: M1, group: "Latest" },
     { value: "claude-opus-5", label: "Opus 5", sub: "previous Opus · 1M context", contextWindow: M1, group: "Previous versions" },
     { value: "claude-fable-5", label: "Fable 5", sub: "previous Fable · 1M context", contextWindow: M1, group: "Previous versions" },
@@ -32,12 +33,10 @@ export const CLAUDE_CAPABILITIES: AgentCapabilities = {
     { value: "claude-sonnet-4-6", label: "Sonnet 4.6", sub: "200K context", contextWindow: K200, group: "Previous versions" },
     { value: "claude-sonnet-4-6[1m]", label: "Sonnet 4.6 (1M)", sub: "extended context", contextWindow: M1, group: "Previous versions" },
   ],
-  reasoningOptions: [
-    { value: "off", label: "Off", sub: "no extended thinking" },
-    { value: "think", label: "Think", sub: "light reasoning" },
-    { value: "think_hard", label: "Think hard", sub: "deeper reasoning" },
-    { value: "ultrathink", label: "Ultrathink", sub: "maximum reasoning" },
-  ],
+  // Claude Code's effort levels (/effort), verbatim. Only the fallback: the live
+  // catalog carries each model's own supportedEffortLevels, and the agent-wide
+  // list is rebuilt from those (claudeCapabilities below).
+  reasoningOptions: ["low", "medium", "high", "xhigh", "max"].map((l) => ({ value: l, label: l, sub: "" })),
   permissionModes: [
     { value: "bypassPermissions", label: "Auto-run", sub: "bypass permissions (default)" },
     { value: "acceptEdits", label: "Accept edits", sub: "auto-accept file edits" },
@@ -83,6 +82,9 @@ function bedrockModels(env: Record<string, string | undefined>): AgentModelOptio
  *  Bedrock-shaped model list when the instance routes Claude through AWS.
  *  Computed per read because the provider is instance config, not code. */
 export function claudeCapabilities(env: Record<string, string | undefined> = process.env): AgentCapabilities {
-  if (!isBedrockConfigured(env)) return { ...CLAUDE_CAPABILITIES, models: (env === process.env ? cachedModels("claude")?.models : undefined) ?? CLAUDE_CAPABILITIES.models };
+  if (!isBedrockConfigured(env)) {
+    const models = (env === process.env ? cachedModels("claude")?.models : undefined) ?? CLAUDE_CAPABILITIES.models;
+    return { ...CLAUDE_CAPABILITIES, models, reasoningOptions: agentReasoningOptions(models, CLAUDE_CAPABILITIES.reasoningOptions) };
+  }
   return { ...CLAUDE_CAPABILITIES, models: bedrockModels(env) };
 }

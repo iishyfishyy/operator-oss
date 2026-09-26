@@ -25,6 +25,8 @@ import type { Project, Task, StreamEvent, TurnUsage } from "../../types";
 import type { AgentDriver, OneShotResult } from "../types";
 import { discoverCodexModels } from "./models";
 import { codexCapabilities } from "./capabilities";
+import { cachedModels } from "../modelCatalog";
+import { resolveReasoning } from "../reasoning";
 import { getSetting, setSetting, getThreadUsageCum, setThreadUsageCum } from "../../store";
 import { CODEX_APPROVAL_POLICY, CODEX_CLI_PATH, INTERNAL_BASE_URL, ORCH_MCP_SCRIPT } from "../../config";
 import { isApprovalDowngrade, isApprovalBlocked, isSandboxPolicyBlocked, CODEX_FULL_ACCESS_BLOCKED_NOTICE } from "../../approvalFailure";
@@ -72,27 +74,16 @@ export function orchestratorMcpConfig(project: Project, task: Task): CodexOption
   };
 }
 
-// Reasoning preset → codex model_reasoning_effort. null / unknown = inherit
-// codex's default (no override, i.e. the preset's default_reasoning_level —
-// "medium" on every current model).
-//
-// Every model preset in the bundled CLI supports exactly low|medium|high|xhigh.
-// "minimal" still typechecks (the SDK type allows it) but the API 400s the
-// whole turn ("tools cannot be used with reasoning.effort 'minimal'"), so it
-// must never be sent — codex has no true "off"; "low" is its floor. The scale
-// below mirrors the Claude driver's effort mapping (think → medium,
-// think_hard → high, ultrathink → xhigh) so a preset means the same thing on
-// either agent. Exported for tests (tests/codexReasoning.test.ts).
-export const EFFORT: Record<string, ModelReasoningEffort> = {
-  off: "low",
-  think: "medium",
-  think_hard: "high",
-  ultrathink: "xhigh",
-};
-
-function reasoningEffort(level: string | null): { modelReasoningEffort?: ModelReasoningEffort } {
-  const e = level ? EFFORT[level] : undefined;
-  return e ? { modelReasoningEffort: e } : {};
+// Reasoning level → codex model_reasoning_effort, passed through as the CLI
+// names it (model/list reports each model's supportedReasoningEfforts and its
+// default). Checked against the effective model's list so a leftover level the
+// model doesn't accept falls back to codex's default. model/list never offers
+// "minimal" (it 400s tool-using turns), and discovery drops it defensively.
+// Exported for tests (tests/codexReasoning.test.ts).
+export function codexEffort(level: string | null | undefined, model: string | null | undefined): { modelReasoningEffort?: ModelReasoningEffort } {
+  const caps = codexCapabilities();
+  const effort = resolveReasoning(level, caps.models, model ?? cachedModels("codex")?.defaultModel);
+  return effort && effort !== "minimal" ? { modelReasoningEffort: effort as ModelReasoningEffort } : {};
 }
 
 type RunControls = { sandboxMode: SandboxMode; networkAccessEnabled: boolean };
@@ -185,7 +176,7 @@ async function* runTurn(
     ...(permission === "fullAccess" ? { approvalPolicy: "never" as const } : approvalOverride()),
     networkAccessEnabled: controls.networkAccessEnabled,
     ...(task.model ? { model: task.model } : {}),
-    ...reasoningEffort(reasoning),
+    ...codexEffort(reasoning, task.model),
   };
 
   const codex = new Codex({

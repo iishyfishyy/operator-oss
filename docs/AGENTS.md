@@ -35,6 +35,19 @@ Task sessions run unattended inside their isolated worktrees. Operator is a cont
 not an additional security sandbox; review [the security model](../SECURITY.md) before
 exposing an instance.
 
+### Models and reasoning effort
+
+Operator doesn't keep its own model names or reasoning levels. When an agent is
+connected it asks the installed CLI for its model list (Claude Code's model list, Codex's
+`model/list`) and shows each model and each **reasoning effort** exactly as the CLI names
+it: `low`, `medium`, `high`, `xhigh`, `max` (plus `ultra` on Codex models that offer it).
+The effort picker follows the task's model, so it only offers levels that model accepts
+(Codex also shows the model's own default). Models without an effort setting, like Haiku,
+hide the picker. If a task keeps a level its new model doesn't support, the turn uses the
+CLI's default instead of failing. The list is cached for an hour and refreshes when the
+CLI, its config or the login changes. A built-in list is used only until the first
+successful discovery.
+
 ### Amazon Bedrock
 
 Claude can instead run entirely through **Amazon Bedrock**. Configure the normal AWS

@@ -22,10 +22,20 @@ export interface AgentModelOption {
   sub: string; // short picker subtitle, e.g. "most capable"
   contextWindow: number;
   group?: string;
+  /**
+   * Reasoning levels this model accepts, exactly as the agent's CLI names and
+   * describes them (Claude Code's supportedEffortLevels, Codex's
+   * supportedReasoningEfforts). Undefined = unknown (the agent-wide list
+   * applies); [] = the model takes no reasoning level (the picker hides).
+   */
+  reasoningEfforts?: AgentPickerOption[];
+  /** The CLI's own default level for this model, when it reports one. */
+  defaultReasoning?: string;
 }
 
-// A reasoning preset / permission mode a driver supports. `value` is what's
+// A reasoning level / permission mode a driver supports. `value` is what's
 // persisted in tasks.reasoning / tasks.permission_mode (null = driver default).
+// Reasoning values are the CLI's own effort names, passed through unchanged.
 export interface AgentPickerOption {
   value: string;
   label: string;

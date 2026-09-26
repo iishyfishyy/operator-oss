@@ -13,6 +13,8 @@ import { z } from "zod";
 import type { Project, Task, StreamEvent, AskQuestion, TurnUsage } from "../../types";
 import type { AgentDriver, OneShotResult } from "../types";
 import { claudeCapabilities } from "./capabilities";
+import { cachedModels } from "../modelCatalog";
+import { resolveReasoning } from "../reasoning";
 import { getSetting } from "../../store";
 import { createSuggestedTask, registerExposedService, resolveTitleRefs, type SuggestSource } from "../../agentTools";
 import { SUGGEST_TASK, EXPOSE_SERVICE } from "../../agentToolDefs.mjs";
@@ -95,23 +97,15 @@ function orchestratorServer(project: Project, source: SuggestSource, onSuggest: 
   });
 }
 
-// Map the UI reasoning preset to the SDK's thinking controls. `maxThinkingTokens`
-// is Claude Code's native thinking-budget knob (mirrors the think / think hard /
-// ultrathink keywords) and the binary translates it per model — 0 disables, any
-// nonzero value enables thinking. On adaptive-only models a budget is treated as
-// on/off, so we also scale `effort` to keep higher presets visibly thinking more
-// there. null = inherit Claude Code's default (no override).
-const REASONING: Record<string, { maxThinkingTokens: number; effort?: "medium" | "high" | "xhigh" }> = {
-  off: { maxThinkingTokens: 0 },
-  think: { maxThinkingTokens: 4_000, effort: "medium" },
-  think_hard: { maxThinkingTokens: 10_000, effort: "high" },
-  ultrathink: { maxThinkingTokens: 31_999, effort: "xhigh" },
-};
-
-function reasoningOptions(level: string | null): { maxThinkingTokens?: number; effort?: "medium" | "high" | "xhigh" } {
-  const r = level ? REASONING[level] : undefined;
-  if (!r) return {};
-  return r.effort ? { maxThinkingTokens: r.maxThinkingTokens, effort: r.effort } : { maxThinkingTokens: r.maxThinkingTokens };
+// Reasoning level → the SDK's `effort`, the same knob as Claude Code's /effort.
+// The value is the CLI's own level name (low/medium/high/xhigh/max, reported
+// per model by supportedModels()), checked against the effective model's list
+// so an unsupported leftover falls back to the CLI default. Exported for tests.
+type Effort = "low" | "medium" | "high" | "xhigh" | "max";
+export function claudeEffort(level: string | null | undefined, model: string | null | undefined): { effort?: Effort } {
+  const caps = claudeCapabilities();
+  const effort = resolveReasoning(level, caps.models, model ?? cachedModels("claude")?.defaultModel);
+  return effort ? { effort: effort as Effort } : {};
 }
 
 // Snapshot the actual SDK arguments. Only allowlisted options are persisted:
@@ -182,7 +176,7 @@ async function* runTurn(
 
   // Resolve the run controls with a two-level fallback: the task's own choice wins;
   // when it's null ("Default"), inherit the app-level default set in Settings; when
-  // that's also unset, fall through to Claude Code's built-in (no thinking override,
+  // that's also unset, fall through to Claude Code's built-in (no effort override,
   // bypassPermissions).
   // App defaults are agent-scoped ("default_reasoning:<agent>"), falling back to
   // the legacy un-suffixed key so pre-existing settings still apply.
@@ -209,9 +203,8 @@ async function* runTurn(
       // Pass the selected model ID verbatim (including legacy aliases). Omit to inherit
       // Claude Code's default model.
       ...(task.model ? { model: task.model } : {}),
-      // Reasoning preset → thinking budget + effort (Off/Think/Think hard/Ultrathink).
-      // Omitted keys leave Claude Code's default thinking.
-      ...reasoningOptions(reasoning),
+      // Reasoning level → effort. Omitted leaves Claude Code's default.
+      ...claudeEffort(reasoning, task.model),
       systemPrompt: { type: "preset", preset: "claude_code", append: buildProjectContext(project, task) },
       // Permission mode (default bypassPermissions; "plan" proposes without editing).
       permissionMode: permissionModeFor(permission),

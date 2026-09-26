@@ -391,6 +391,13 @@ export function migrate(db: Database.Database) {
   // Per-task run controls (added after model selection): thinking preset + permission mode.
   if (!taskCols.includes("reasoning")) db.exec("ALTER TABLE tasks ADD COLUMN reasoning TEXT");
   if (!taskCols.includes("permission_mode")) db.exec("ALTER TABLE tasks ADD COLUMN permission_mode TEXT");
+  // Reasoning levels are now the agent CLIs' own effort names (low/medium/high/
+  // xhigh/…), not Operator presets. Rewrite the old presets to the level each
+  // already sent, so every task and default keeps its behavior. Idempotent: the
+  // new names never match. Keep in sync with LEGACY_REASONING (lib/agents/reasoning.ts).
+  const legacyReasoning = "CASE %s WHEN 'off' THEN 'low' WHEN 'think' THEN 'medium' WHEN 'think_hard' THEN 'high' WHEN 'ultrathink' THEN 'xhigh' END";
+  db.exec(`UPDATE tasks SET reasoning = ${legacyReasoning.replace("%s", "reasoning")} WHERE reasoning IN ('off','think','think_hard','ultrathink')`);
+  db.exec(`UPDATE settings SET value = ${legacyReasoning.replace("%s", "value")} WHERE (key = 'default_reasoning' OR key LIKE 'default_reasoning:%') AND value IN ('off','think','think_hard','ultrathink')`);
   // Agent-driver seam: which driver runs this task's sessions. Every pre-seam
   // task ran Claude, so the column default backfills existing rows correctly.
   if (!taskCols.includes("agent")) db.exec("ALTER TABLE tasks ADD COLUMN agent TEXT NOT NULL DEFAULT 'claude'");

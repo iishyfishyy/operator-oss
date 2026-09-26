@@ -222,7 +222,13 @@ export function SessionView({ commandDraft, onCommandDraftUsed, project, task, a
   const models = modelOptions(caps);
   const configuredModelLabel = models.find((m) => m.value === task.model)?.label
     ?? (task.model ? `${modelLabel(task.model, caps)} (custom / legacy)` : "Provider default");
-  const reasoningOpts = reasoningOptions(caps);
+  // Levels come from the effective model (the pinned one, else the CLI's
+  // default model) — each CLI reports which efforts a model accepts.
+  const reasoningOpts = reasoningOptions(caps, task.model ?? catalog?.defaultModel);
+  // A stored level the list doesn't carry (switched to a model without it) still
+  // shows by its CLI name; the driver sends the CLI default for it instead.
+  const reasoningLabel = reasoningOpts.find((r) => r.value === task.reasoning)?.label
+    ?? (task.reasoning && reasoningOpts.length ? `${task.reasoning} (not supported · default)` : task.reasoning ?? "Default");
   const permissionOpts = permissionOptions(caps);
   // Usage chip: tokens split into fresh work vs re-read cache (the raw total is
   // mostly cache reads and wildly overstates what ran), and a dollar figure whose
@@ -476,19 +482,21 @@ export function SessionView({ commandDraft, onCommandDraftUsed, project, task, a
             <div style={{ position: "relative" }}>
               <button className="status-ctl" title="Reasoning level & permission mode for this task" onClick={(e) => { e.stopPropagation(); setSettingsOpen((o) => !o); setModelOpen(false); setStatusOpen(false); setPriOpen(false); }}>
                 {Icon.gear()}
-                <span className="cv">{reasoningOpts.find((r) => r.value === task.reasoning)?.label ?? "Default"}</span>
+                <span className="cv">{reasoningLabel}</span>
                 {Icon.chevDown()}
               </button>
               {settingsOpen && (
                 <Popover onClose={() => setSettingsOpen(false)}>
-                  <div className="pop-sec">Reasoning</div>
-                  {reasoningOpts.map((r) => (
-                    <div key={r.label} className="pop-item" onClick={() => { onSetReasoning(r.value); setSettingsOpen(false); }}>
-                      <div><div>{r.label}</div><div className="pi-sub">{r.sub}</div></div>
-                      {(task.reasoning ?? null) === r.value && <span className="pi-check">{Icon.check()}</span>}
-                    </div>
-                  ))}
-                  <div className="divider" />
+                  {reasoningOpts.length > 0 && (<>
+                    <div className="pop-sec">Reasoning effort</div>
+                    {reasoningOpts.map((r) => (
+                      <div key={r.label} className="pop-item" onClick={() => { onSetReasoning(r.value); setSettingsOpen(false); }}>
+                        <div><div>{r.label}</div>{r.sub && <div className="pi-sub">{r.sub}</div>}</div>
+                        {(task.reasoning ?? null) === r.value && <span className="pi-check">{Icon.check()}</span>}
+                      </div>
+                    ))}
+                    <div className="divider" />
+                  </>)}
                   <div className="pop-sec">Permission · applies next turn</div>
                   {permissionOpts.map((p) => (
                     <div key={p.label} className="pop-item" onClick={() => {
