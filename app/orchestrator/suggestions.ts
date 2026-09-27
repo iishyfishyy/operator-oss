@@ -266,8 +266,18 @@ export function isOrderedGroup(tasks: TaskRow[]): boolean {
   return tasks.some((t) => t.depends_on?.some((id) => ids.has(id)));
 }
 
-/** When a composed chain's next task starts: after the previous one is done, or all at once. */
-export type ChainAdvance = "done" | "now";
+/**
+ * When a composed chain's next task starts:
+ * - `done` — after the previous one is marked done (merging marks it done);
+ * - `now`  — all at once, in parallel;
+ * - `auto` — "Auto-advance, review at end": as soon as the previous step calls
+ *   complete_step and its turn ends cleanly, stacked on the previous step's
+ *   branch; nothing merges until the user reviews the chain (lib/chains.ts).
+ */
+export type ChainAdvance = "done" | "now" | "auto";
+
+/** Is this a sequential advance mode (each task linked to the one before it)? */
+export const isSequentialAdvance = (advance: ChainAdvance) => advance !== "now";
 
 /**
  * The dependency edits that turn a reviewed group into the chain the user
@@ -276,7 +286,9 @@ export type ChainAdvance = "done" | "now";
  * user's order is now the authority, and an edge onto an EXCLUDED member would
  * block it behind a suggestion that may never be accepted — while edges onto
  * tasks outside the group are kept. `advance: "done"` links each task to the
- * one before it; `"now"` leaves them unlinked so they all start together.
+ * one before it (so does `"auto"` — the chain row, created on accept, is what
+ * makes it advance on complete_step); `"now"` leaves them unlinked so they all
+ * start together.
  *
  * Two passes, because setTaskDeps has a cycle guard: re-linking B → A while A
  * still carries its old A → B edge would be rejected. `clear` strips the
@@ -292,7 +304,7 @@ export function planChainDeps(tasks: TaskRow[], groupIds: string[], ordered: str
   ordered.forEach((id, i) => {
     const current = byId.get(id)?.depends_on ?? [];
     const outside = current.filter((d) => !inGroup.has(d));
-    const final = advance === "done" && i > 0 ? [...outside, ordered[i - 1]] : outside;
+    const final = isSequentialAdvance(advance) && i > 0 ? [...outside, ordered[i - 1]] : outside;
     if (same(current, final)) return;
     if (!same(current, outside)) clear.push({ id, depends_on: outside });
     if (!same(outside, final)) link.push({ id, depends_on: final });

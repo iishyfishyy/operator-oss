@@ -369,10 +369,11 @@ function ChainComposer({ group, agents, onCancel, onLaunch }: {
   const rest = total - k;
   const restNote = rest > 0 ? ` The ${rest} unselected stay in suggestions.` : "";
   const hint = k === 0 ? "Select at least one task."
-    : advance === "done"
-      ? k === 1 ? `Task 1 starts now.${restNote}`
-        : `Task 1 starts now. Each next task starts once the previous one is done (merging marks it done); the chain pauses if any step needs input.${restNote}`
-      : `All ${k} start now, each in its own session and worktree.${restNote}`;
+    : advance === "now" ? `All ${k} start now, each in its own session and worktree.${restNote}`
+    : k === 1 ? `Task 1 starts now.${restNote}`
+    : advance === "auto"
+      ? `Task 1 starts now. Each next task starts as soon as the agent reports the previous step finished, building on its branch — nothing is merged. The chain pauses if a step asks you something; review and merge the whole chain at the end.${restNote}`
+      : `Task 1 starts now. Each next task starts once the previous one is done (merging marks it done); the chain pauses if any step needs input.${restNote}`;
 
   let slot = 0;
   return (
@@ -452,6 +453,7 @@ function ChainComposer({ group, agents, onCancel, onLaunch }: {
           <span className="k">Advance on</span>
           <div className="sx-radio" role="radiogroup" aria-label="When the next task starts">
             <button role="radio" aria-checked={advance === "done"} className={advance === "done" ? "on" : ""} onClick={() => setAdvance("done")} title="Start each next task once the previous one is done — merging marks a task done">Done</button>
+            <button role="radio" aria-checked={advance === "auto"} className={advance === "auto" ? "on" : ""} onClick={() => setAdvance("auto")} aria-label="Auto-advance, review at end" title="Auto-advance, review at end: start each next task when the agent finishes the previous step, stacked on its branch — review and merge the whole chain at the end">Auto-advance</button>
             <button role="radio" aria-checked={advance === "now"} className={advance === "now" ? "on" : ""} onClick={() => setAdvance("now")} title="Start every selected task right away, in parallel">Immediately</button>
           </div>
         </div>
@@ -462,7 +464,7 @@ function ChainComposer({ group, agents, onCancel, onLaunch }: {
           <span className="sx-sp" />
           <button className="sx-b" disabled={busy || !k} onClick={() => void launch(false)} title="Accept in this order without starting anything">Add {k} to list only</button>
           <button className="sx-b pri" disabled={busy || !k} onClick={() => void launch(true)}>
-            <PlayGlyph />{advance === "done" && k > 1 ? `Start chain · ${k}` : `Start ${k}`}
+            <PlayGlyph />{advance !== "now" && k > 1 ? `Start chain · ${k}` : `Start ${k}`}
           </button>
         </div>
       </div>

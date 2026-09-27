@@ -133,6 +133,16 @@ controls show their run count and API-price-equivalent cost without polling.
 
 ### The agent-tool bridge (`scripts/orch-mcp.mjs` + `lib/agentTools.ts`)
 
+`complete_step` (auto-advance chains, `lib/chains.ts`) rides the same seams but is mounted
+only for a chain step: the Claude driver adds it to its in-process server when
+`isAutoAdvanceTask(task)`, and the Codex driver sets `ORCH_COMPLETE_STEP=1` in the bridge's
+env so the bridge registers it (→ `/api/internal/agent-tools/complete-step`). Both call
+`recordStepComplete()`, which only stamps the task; the runner's turn-end
+`chainAdvanceBlocker()` decides whether to advance, and `finishChainStep()`
+(`lib/autoStart.ts`) commits, moves the step to `in_review`, and launches the next step on a
+worktree stacked on this step's branch. The blocker rule shared by the server and the client
+lives in `lib/chainRules.ts`.
+
 `suggest_task` / `expose_service` / `ask_user` are the same orchestrator tools every driver
 exposes. The Claude driver mounts the first two as an in-process SDK MCP server
 (`createSdkMcpServer`) and gets asks natively via its AskUserQuestion hook; the portable

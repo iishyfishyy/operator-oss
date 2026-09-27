@@ -20,6 +20,7 @@ import { formatAnswers, formatSuggestedTaskText } from "./agents/shared";
 import { resolveConnectedAgent } from "./agents/connections";
 import { suggestionPolicy } from "./suggestionPolicy";
 import { track } from "./analytics";
+export { recordStepComplete } from "./chains";
 
 /**
  * Resolve `blocked_by` refs against a per-session title→id map: an id passes

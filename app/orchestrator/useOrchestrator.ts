@@ -594,12 +594,14 @@ export function useOrchestrator() {
     await jsend<TaskRow>(`/api/tasks/${id}`, "PATCH", { suggested: 0 });
     if (selProj) await loadTasks(selProj, false);
   };
-  const acceptSuggestions = async (ids: string[], start: boolean) => {
+  // `chainMode` also makes the batch one auto-advance chain, in `ids` order.
+  const acceptSuggestions = async (ids: string[], start: boolean, chainMode?: "auto_review") => {
     type Batch = { tasks: TaskRow[]; root_ids: string[]; confirmation_required: boolean };
-    let result = await jsend<Batch>("/api/tasks/accept-batch", "POST", { ids, start_chain: start });
+    const body = { ids, start_chain: start, ...(chainMode ? { chain_mode: chainMode } : {}) };
+    let result = await jsend<Batch>("/api/tasks/accept-batch", "POST", body);
     if (result.confirmation_required) {
       if (!window.confirm(`Start ${result.root_ids.length} root sessions in parallel? Each runs in its own worktree.`)) return;
-      result = await jsend<Batch>("/api/tasks/accept-batch", "POST", { ids, start_chain: start, confirmed_roots: true });
+      result = await jsend<Batch>("/api/tasks/accept-batch", "POST", { ...body, confirmed_roots: true });
     }
     const fresh = new Map(result.tasks.map((t) => [t.id, t]));
     setTasks((prev) => prev.map((t) => fresh.has(t.id) ? { ...t, ...fresh.get(t.id)! } : t));
@@ -663,7 +665,9 @@ export function useOrchestrator() {
   // dependency edges, so the existing machinery runs the chain — the head starts
   // now, and each next task auto-starts when the one before it is marked done
   // (merging marks done). A step that needs input simply isn't done yet, so the
-  // chain pauses there on its own.
+  // chain pauses there on its own. "auto" also creates the chain row (in the
+  // same accept transaction): each next step then starts when the previous one
+  // calls complete_step, stacked on its branch — see lib/chains.ts.
   const launchChain = async ({ groupIds, ordered, agent, advance, start }: {
     groupIds: string[]; ordered: string[]; agent: string | null; advance: ChainAdvance; start: boolean;
   }) => {
@@ -675,7 +679,7 @@ export function useOrchestrator() {
     }
     const { clear, link } = planChainDeps(tasks, groupIds, ordered, advance);
     for (const e of [...clear, ...link]) await jsend(`/api/tasks/${e.id}`, "PATCH", { depends_on: e.depends_on });
-    await acceptSuggestions(ordered, start);
+    await acceptSuggestions(ordered, start, advance === "auto" ? "auto_review" : undefined);
   };
 
   const saveContext = async (patch: { name: string; context: string; send_context: number; repo_path: string; branch: string; dev_command: string; setup_command: string; test_command: string }) => {

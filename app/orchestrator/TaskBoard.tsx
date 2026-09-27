@@ -16,9 +16,9 @@ import type { PendingDismiss } from "./useOrchestrator";
 // Columns are live views over the same task rows the list renders — cards
 // update as sessions stream — and dragging a card re-statuses it and/or
 // persists a new manual order.
-type ColKey = "suggested" | "not_started" | "in_progress" | "awaiting" | "on_hold" | "done" | "cancelled";
+type ColKey = "suggested" | "not_started" | "in_progress" | "awaiting" | "in_review" | "on_hold" | "done" | "cancelled";
 
-const COL_ORDER: ColKey[] = ["suggested", "not_started", "in_progress", "awaiting", "on_hold", "done", "cancelled"];
+const COL_ORDER: ColKey[] = ["suggested", "not_started", "in_progress", "awaiting", "in_review", "on_hold", "done", "cancelled"];
 
 // What lands on a task dropped into each column. `null` = the column rejects
 // the drop (Suggested and Needs-input hold derived states you can't drag INTO —
@@ -59,6 +59,12 @@ const COLS: Record<ColKey, {
     member: (t) => !t.suggested && isAwaiting(t),
     patchFor: (t) => (!t.suggested && isAwaiting(t) ? {} : null),
     noDropWhy: "Needs input is derived from session state — the agent sets it when it asks you a question.",
+  },
+  // Finished auto-advance chain steps waiting for the end-of-chain review.
+  in_review: {
+    label: "In review", always: false,
+    member: (t) => !t.suggested && t.status === "in_review",
+    patchFor: (t) => statusPatch(t, "in_review"),
   },
   on_hold: {
     label: "On hold", always: false,
@@ -110,6 +116,7 @@ function BoardCard({ task, agents, selected, running, blockedBy, chainPosition, 
     : task.status === "done" ? `done · ${relTime(task.updated_at)}`
     : task.status === "cancelled" ? `cancelled · ${relTime(task.updated_at)}`
     : task.status === "on_hold" ? `held · ${relTime(task.updated_at)}`
+    : task.status === "in_review" ? `in review · ${relTime(task.updated_at)}`
     : task.started ? relTime(task.updated_at) : "not started";
   return (
     <article

@@ -13,11 +13,13 @@ export async function POST(req: Request) {
       !body.ids.every((id: unknown) => typeof id === "string" && id.length > 0) ||
       new Set(body.ids).size !== body.ids.length ||
       (body.start_chain !== undefined && typeof body.start_chain !== "boolean") ||
-      (body.confirmed_roots !== undefined && typeof body.confirmed_roots !== "boolean")) {
-    return NextResponse.json({ error: "Unique task ids and optional boolean start_chain/confirmed_roots required" }, { status: 400 });
+      (body.confirmed_roots !== undefined && typeof body.confirmed_roots !== "boolean") ||
+      (body.chain_mode !== undefined && body.chain_mode !== "auto_review")) {
+    return NextResponse.json({ error: "Unique task ids, optional boolean start_chain/confirmed_roots, optional chain_mode \"auto_review\" required" }, { status: 400 });
   }
   try {
-    const result = acceptSuggestedBatch(body.ids, body.start_chain === true, body.confirmed_roots === true);
+    // chain_mode makes the batch one auto-advance chain in `ids` order (lib/chains.ts).
+    const result = acceptSuggestedBatch(body.ids, body.start_chain === true, body.confirmed_roots === true, body.chain_mode);
     for (const task of result.tasks) publishGlobal(task.id, { type: "task_updated" });
     return NextResponse.json(result);
   } catch (error) {

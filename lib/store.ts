@@ -6,7 +6,7 @@ import { getDb } from "./db";
 // break sync route entries at runtime (see the note in that file).
 import { modelContextWindow } from "./agents/capabilities";
 import { SERVICE_PORT_BASE } from "./config";
-import type { Project, Task, Message, PendingMessage, Summary, Session, Priority, Status, MsgRole, TurnUsage, UsageTotals, ToolData, AskQuestion, AskAnswers } from "./types";
+import type { Project, Task, Chain, ChainMode, Message, PendingMessage, Summary, Session, Priority, Status, MsgRole, TurnUsage, UsageTotals, ToolData, AskQuestion, AskAnswers } from "./types";
 export { addInternalUsage, type InternalJob } from "./internalUsage";
 
 // ---------- projects ----------
@@ -232,6 +232,7 @@ export type TaskWithUsage = Task & {
   context_tokens: number;
   context_pct: number;
   depends_on: string[];
+  chain_mode: ChainMode | null; // the task's chain's advance mode (null = not in a chain)
 };
 
 export function listTasks(projectId: string): TaskWithUsage[] {
@@ -251,7 +252,8 @@ export function listTasks(projectId: string): TaskWithUsage[] {
          COALESCE((SELECT SUM(u.cache_creation_tokens) FROM task_usage u WHERE u.task_id = t.id AND u.generation = t.generation), 0) AS session_cache_creation_tokens,
          COALESCE((SELECT u.input_tokens + u.cache_read_tokens + u.cache_creation_tokens
                    FROM task_usage u WHERE u.task_id = t.id
-                   ORDER BY u.created_at DESC, u.rowid DESC LIMIT 1), 0) AS context_tokens
+                   ORDER BY u.created_at DESC, u.rowid DESC LIMIT 1), 0) AS context_tokens,
+         (SELECT c.mode FROM chains c WHERE c.id = t.chain_id) AS chain_mode
        FROM tasks t WHERE t.project_id = ?
        ORDER BY t.suggested ASC, t.position ASC, t.created_at ASC`
     )
@@ -265,6 +267,7 @@ export function listTasks(projectId: string): TaskWithUsage[] {
     session_cache_read_tokens: number;
     session_cache_creation_tokens: number;
     context_tokens: number;
+    chain_mode: ChainMode | null;
   })[];
   // Attach each task's dependency edges in one query (project-scoped via join).
   const edges = db
@@ -410,14 +413,50 @@ export function updateTask(id: string, patch: Partial<Task>): Task | undefined {
       // suggested_by_* are deliberately absent: provenance is written once at
       // creation and never patched (the FK clears it if the proposer is deleted).
       `UPDATE tasks SET title=?, description=?, priority=?, status=?, suggested=?, agent=?, send_context=?, model=?, resolved_model=?, reasoning=?, permission_mode=?,
-        session_id=?, worktree_path=?, work_branch=?, base_sha=?, merged_at=?, pr_url=?, generation=?, started=?, auto_start=?, running=?, awaiting_input=?, updated_at=? WHERE id=?`
+        session_id=?, worktree_path=?, work_branch=?, base_sha=?, merged_at=?, pr_url=?, generation=?, started=?, auto_start=?, running=?, awaiting_input=?,
+        chain_id=?, chain_pos=?, step_summary=?, step_completed_at=?, updated_at=? WHERE id=?`
     )
-    .run(n.title, n.description, n.priority, n.status, n.suggested, n.agent, n.send_context ? 1 : 0, n.model ?? null, n.resolved_model ?? null, n.reasoning ?? null, n.permission_mode ?? null, n.session_id, n.worktree_path, n.work_branch, n.base_sha, n.merged_at, n.pr_url, n.generation, n.started, n.auto_start, n.running, n.awaiting_input, n.updated_at, id);
+    .run(n.title, n.description, n.priority, n.status, n.suggested, n.agent, n.send_context ? 1 : 0, n.model ?? null, n.resolved_model ?? null, n.reasoning ?? null, n.permission_mode ?? null, n.session_id, n.worktree_path, n.work_branch, n.base_sha, n.merged_at, n.pr_url, n.generation, n.started, n.auto_start, n.running, n.awaiting_input,
+      n.chain_id ?? null, n.chain_pos ?? null, n.step_summary ?? "", n.step_completed_at ?? 0, n.updated_at, id);
   return getTask(id);
 }
 
 export function deleteTask(id: string) {
-  getDb().prepare("DELETE FROM tasks WHERE id = ?").run(id);
+  const db = getDb();
+  const chainId = getTask(id)?.chain_id;
+  db.prepare("DELETE FROM tasks WHERE id = ?").run(id);
+  // A chain only exists as its steps: drop the row once its last step is gone.
+  if (chainId) db.prepare("DELETE FROM chains WHERE id = ? AND NOT EXISTS (SELECT 1 FROM tasks WHERE chain_id = ?)").run(chainId, chainId);
+}
+
+// ---------- chains (auto-advance runs of tasks; see lib/chains.ts) ----------
+
+export function getChain(id: string): Chain | undefined {
+  return getDb().prepare("SELECT * FROM chains WHERE id = ?").get(id) as Chain | undefined;
+}
+
+/**
+ * Make `orderedIds` (all in `projectId`) one chain, in that order: insert the
+ * chain row and stamp each member's chain_id/chain_pos. Every step after the
+ * first gets auto_start — advancing is the whole point of the chain. Callers
+ * run this inside their own transaction when it must be atomic with other
+ * writes (acceptSuggestedBatch does).
+ */
+export function createChain(projectId: string, orderedIds: string[], mode: ChainMode, baseBranch: string): Chain {
+  const db = getDb();
+  const chain: Chain = { id: nanoid(), project_id: projectId, mode, base_branch: baseBranch, created_at: Date.now() };
+  db.prepare("INSERT INTO chains (id, project_id, mode, base_branch, created_at) VALUES (?, ?, ?, ?, ?)")
+    .run(chain.id, chain.project_id, chain.mode, chain.base_branch, chain.created_at);
+  orderedIds.forEach((id, i) => updateTask(id, { chain_id: chain.id, chain_pos: i, ...(i > 0 ? { auto_start: 1 } : {}) }));
+  return chain;
+}
+
+/** The step before `task` in its chain (chain_pos - 1), or undefined for a head / non-member. */
+export function previousChainStep(task: Task): Task | undefined {
+  if (!task.chain_id || task.chain_pos == null || task.chain_pos <= 0) return undefined;
+  return getDb()
+    .prepare("SELECT * FROM tasks WHERE chain_id = ? AND chain_pos = ?")
+    .get(task.chain_id, task.chain_pos - 1) as Task | undefined;
 }
 
 export function setTaskStatus(id: string, status: Status) {
@@ -1001,8 +1040,12 @@ export function deleteCommand(id: string) {
   return getDb().prepare("DELETE FROM commands WHERE id = ?").run(id).changes > 0;
 }
 
-/** Accept a reviewed batch in one transaction; any stale member rejects all. */
-export function acceptSuggestedBatch(ids: string[], startChain: boolean, confirmedRoots = false) {
+/**
+ * Accept a reviewed batch in one transaction; any stale member rejects all.
+ * `chainMode` also makes the batch one chain, in `ids` order (createChain) —
+ * the auto-advance composer mode.
+ */
+export function acceptSuggestedBatch(ids: string[], startChain: boolean, confirmedRoots = false, chainMode?: ChainMode) {
   return getDb().transaction(() => {
     const tasks = ids.map((id) => getTask(id));
     if (tasks.some((t) => !t)) throw new Error("One or more suggestions no longer exist");
@@ -1018,6 +1061,7 @@ export function acceptSuggestedBatch(ids: string[], startChain: boolean, confirm
     const roots = rows.filter((t) => !blocked(t)).map((t) => t.id);
     if (startChain && roots.length > 3 && !confirmedRoots)
       return { confirmation_required: true as const, root_ids: roots, tasks: [] };
+    if (chainMode) createChain(rows[0].project_id, ids, chainMode, getProject(rows[0].project_id)?.branch ?? "");
     const fresh = rows.map((t) => ({
       ...updateTask(t.id, { suggested: 0, ...(startChain && blocked(t) ? { auto_start: 1 } : {}) })!,
       depends_on: getTaskDeps(t.id),

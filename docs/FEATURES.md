@@ -98,7 +98,8 @@ whole group into your task list in one transaction), **Dismiss all** (quiet).
 **Start chain** never fires blind — it opens an inline composer on the group: tick which
 members to include, drag rows (or Alt+↑/↓ on the grip) to set the order, pick one agent for
 the whole chain, and choose when each next task starts — **Done** (after the previous task
-is marked done; merging marks it done) or **Immediately** (all in parallel). Launching
+is marked done; merging marks it done), **Auto-advance** (see below) or **Immediately** (all in
+parallel). Launching
 writes the order as ordinary dependency edges — each selected task's in-group edges are
 replaced by a link to the one before it (none for Immediately), edges to tasks outside the
 group are kept — then accepts the batch with auto-start on every member with unfinished
@@ -110,10 +111,37 @@ when their last blocker is marked done; completing an agent turn alone does not
 mark a task done. A group with no ready roots waits for its external blockers.
 
 `POST /api/tasks/accept-batch` accepts `{ ids, start_chain?: boolean,
-confirmed_roots?: boolean }` and returns fresh `tasks`, `root_ids`, and
+confirmed_roots?: boolean, chain_mode?: "auto_review" }` and returns fresh `tasks`, `root_ids`, and
 `confirmation_required`. Missing, changed, or cross-project members reject the
 entire batch. Acceptance is atomic; root launches are separate requests, so a
 failed launch remains accepted and can be retried from the task's session.
+
+### Auto-advance chains (review at end)
+
+The composer's **Auto-advance** mode ("Auto-advance, review at end") runs a chain without
+you merging and marking done after every step. Accepting creates a chain (`chains` table:
+mode `auto_review`, the project's base branch) and stamps each member with its
+`chain_id` / `chain_pos`; every step after the first gets auto-start.
+
+- **The agent says when a step is finished.** Chain steps — and only chain steps — get a
+  `complete_step(summary)` orchestrator tool and a system-prompt paragraph telling them to
+  call it once, at the end, when the work is done and verified. The summary is saved on the
+  task (`step_summary`). Other tasks never see the tool.
+- **Safety checks at turn end.** The runner advances only if `complete_step` was called
+  during *that* turn, the turn ended cleanly (no error — context overflow, dead login,
+  approval block, usage limit — not Stopped, no `/clear` mid-turn), no question is still
+  open, and no follow-up is queued. Anything else pauses the chain: the step stays
+  `in_progress` with awaiting input set, so it shows up in "N need you".
+- **Stacked worktrees, base branch untouched.** A finished step's worktree is committed on
+  its own branch and the step moves to **In review**. The next step's worktree branches from
+  the previous step's branch, and its diff base is the previous step's last commit — so each
+  step's Changes tab shows only that step's work, while the step itself builds on everything
+  before it. Nothing is merged; you review and merge the stack at the end.
+- **In review** unblocks only the next step of the *same* auto-advance chain. To any other
+  dependent, an in-review task is unfinished work and still blocks. Setting a chain step to
+  In review by hand advances the chain the same way.
+
+Deleting a chain's last task removes the chain row; everything is a hard delete.
 
 ### Curating suggestions from the session that proposed them
 

@@ -89,6 +89,11 @@ export function submitAnswer(taskId: string, id: string, answers: AskAnswers): b
   return true;
 }
 
+/** Is any ask still parked for this task? (The chain advance check — lib/chains.ts.) */
+export function hasPendingAsk(taskId: string): boolean {
+  return (registry().get(taskId)?.size ?? 0) > 0;
+}
+
 // ---------- ask outcomes (the ask_user MCP bridge's poll target) ----------
 //
 // The Claude driver delivers an answered ask back to the model in-process (the

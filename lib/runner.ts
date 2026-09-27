@@ -19,6 +19,8 @@ import { isAuthFailure, AUTH_EXPIRED_NOTICE } from "@/lib/authFailure";
 import { isApprovalBlocked, APPROVAL_BLOCKED_NOTICE } from "@/lib/approvalFailure";
 import { isUsageLimit, USAGE_LIMIT_NOTICE } from "@/lib/usageLimit";
 import { markAgentAuthBroken, clearAgentAuthBroken } from "@/lib/agents/connections";
+import { chainAdvanceBlocker } from "@/lib/chains";
+import { hasPendingAsk } from "@/lib/asks";
 import type { Task, Project, ToolData, TurnUsage } from "@/lib/types";
 
 /**
@@ -247,6 +249,10 @@ async function run(task: Task, project: Project, userText: string, syncNote: str
       model: task.model || null,
     });
 
+    // complete_step counts only for the turn it was called in: clear any stamp
+    // left by an earlier turn so the advance check below can't pick it up.
+    if (getTask(id)?.step_completed_at) updateTask(id, { step_completed_at: 0 });
+
     if (syncNote) {
       const m = addMessage(id, gen, "system", syncNote);
       publish(id, { type: "notice", content: syncNote, msgId: m.id, generation: gen, ts: m.created_at });
@@ -393,12 +399,31 @@ async function run(task: Task, project: Project, userText: string, syncNote: str
     // task row when it's still on the generation this turn actually ran in.
     const current = getTask(id);
     const generationAdvanced = !current || current.generation !== gen;
+    // Auto-advance chains: a step that called complete_step during THIS turn,
+    // ended cleanly, and left nothing for the user (no open ask, no queued
+    // follow-up) is finished — it must not land in "N need you". Any other
+    // outcome is a pause: awaiting_input stays set below like every turn that
+    // ends mid-task. See lib/chains.ts; the commit + next-step launch run
+    // detached after this block (finishChainStep).
+    const advanceChain =
+      opened &&
+      chainAdvanceBlocker({
+        task: current,
+        generation: gen,
+        turnStartedAt: startedAt,
+        turnError,
+        stopped,
+        superseded,
+        openAsks: openAsks.size,
+        pendingAsk: hasPendingAsk(id),
+        pendingMessages: listPendingMessages(id).length,
+      }) === null;
     // If the session never opened, keep the task retryable (started stays 0).
     // A turn that actually ran and ended mid-task — whether it finished on its
     // own or was Stopped — is now waiting on the user, so flag awaiting_input
     // (cleared on the next send / done) leaving it cleanly resumable.
     if (!generationAdvanced && !superseded) {
-      updateTask(id, { running: 0, session_id: sessionId, awaiting_input: opened ? 1 : 0 });
+      updateTask(id, { running: 0, session_id: sessionId, awaiting_input: opened && !advanceChain ? 1 : 0 });
     }
     // Keyed by (task_id, generation), so this settles THIS generation's session
     // row and never touches the fresh generation — safe to run either way.
@@ -546,6 +571,14 @@ async function run(task: Task, project: Project, userText: string, syncNote: str
       // follow-up or a successor turn is taking over — that turn will emit its
       // own turn_end.
       publish(id, { type: "turn_end" });
+    }
+    if (advanceChain && current) {
+      // Dynamic import: lib/autoStart.ts imports this module (startTurn), and
+      // the launch it does must never run inside this synchronous block anyway.
+      const completedAt = current.step_completed_at;
+      void import("@/lib/autoStart")
+        .then((m) => m.finishChainStep(id, gen, completedAt))
+        .catch((err) => console.error(`[runner] could not finish chain step ${id}:`, err));
     }
   }
 }

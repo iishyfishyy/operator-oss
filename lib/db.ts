@@ -110,6 +110,9 @@ export function init(db: Database.Database) {
       -- the suggestion outlives its proposer and just falls back to "Other".
       suggested_by_task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL,
       suggested_by_generation INTEGER,
+      -- Auto-advance chains (lib/chains.ts): the chain this task is a step of and
+      -- its 0-based position. Added by migrate() — see there for the FK.
+      -- step_summary / step_completed_at record the agent's complete_step call.
       created_at  INTEGER NOT NULL,
       updated_at  INTEGER NOT NULL
     );
@@ -208,6 +211,20 @@ export function init(db: Database.Database) {
       additions  INTEGER NOT NULL DEFAULT 0,
       deletions  INTEGER NOT NULL DEFAULT 0,
       merged_at  INTEGER NOT NULL
+    );
+
+    -- An auto-advance chain: an ordered run of tasks where each next step starts
+    -- when the previous one calls complete_step, stacked on the previous step's
+    -- branch (lib/chains.ts). mode is the advance policy ('auto_review' today);
+    -- base_branch is the project branch the first step branched from. Deleting
+    -- the project cascades the chain away, and a chain's tasks go with it
+    -- (tasks.chain_id is ON DELETE CASCADE) — hard delete, like everything else.
+    CREATE TABLE IF NOT EXISTS chains (
+      id          TEXT PRIMARY KEY,
+      project_id  TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      mode        TEXT NOT NULL DEFAULT 'auto_review',
+      base_branch TEXT NOT NULL DEFAULT '',
+      created_at  INTEGER NOT NULL
     );
 
     -- Task ordering: a task "depends on" (is blocked by) another. While any
@@ -438,6 +455,16 @@ export function migrate(db: Database.Database) {
   if (!taskCols.includes("suggested_by_task_id"))
     db.exec("ALTER TABLE tasks ADD COLUMN suggested_by_task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL");
   if (!taskCols.includes("suggested_by_generation")) db.exec("ALTER TABLE tasks ADD COLUMN suggested_by_generation INTEGER");
+
+  // Auto-advance chains: membership + position, and the complete_step record.
+  // The chains table itself is CREATE IF NOT EXISTS above. chain_id cascades:
+  // deleting a chain hard-deletes its steps (a chain only exists as its steps).
+  if (!taskCols.includes("chain_id"))
+    db.exec("ALTER TABLE tasks ADD COLUMN chain_id TEXT REFERENCES chains(id) ON DELETE CASCADE");
+  if (!taskCols.includes("chain_pos")) db.exec("ALTER TABLE tasks ADD COLUMN chain_pos INTEGER");
+  if (!taskCols.includes("step_summary")) db.exec("ALTER TABLE tasks ADD COLUMN step_summary TEXT NOT NULL DEFAULT ''");
+  if (!taskCols.includes("step_completed_at")) db.exec("ALTER TABLE tasks ADD COLUMN step_completed_at INTEGER NOT NULL DEFAULT 0");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_tasks_chain ON tasks(chain_id)");
 
   // Orphan-reaping pid tracking for managed services (added after the services
   // table shipped; see lib/services.ts restoreServices).

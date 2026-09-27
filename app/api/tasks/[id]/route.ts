@@ -101,7 +101,9 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   // Flipping to done may be the last blocker some auto-start dependent was
   // waiting on. Fire-and-forget: the launch runs detached (worktree creation
   // can take seconds) and must never delay or fail this status change.
-  if (task.status === "done" && prevStatus !== "done") maybeAutoStartDependents(id);
+  // A hand-set in_review does the same for the next step of its own
+  // auto-advance chain (the blocker rule scopes it — lib/chainRules.ts).
+  if ((task.status === "done" || task.status === "in_review") && prevStatus !== task.status) maybeAutoStartDependents(id);
   return NextResponse.json({ ...task, depends_on: getTaskDeps(id) });
 }
 
