@@ -9,6 +9,7 @@ import { ProjectsColumn } from "./orchestrator/ProjectsColumn";
 import { TasksColumn } from "./orchestrator/TasksColumn";
 import { BoardWorkspace } from "./orchestrator/TaskBoard";
 import { SessionView } from "./orchestrator/SessionView";
+import { ChainReview } from "./orchestrator/ChainReview";
 import { SuggestionContext, useSuggestionActions } from "./orchestrator/Transcript";
 import { ProjectLanding } from "./orchestrator/ProjectLanding";
 import { SettingsView } from "./orchestrator/SettingsView";
@@ -115,6 +116,11 @@ export default function Orchestrator() {
   const [commandDraft, setCommandDraft] = useState<CommandDraft | null>(null);
   const [clearRequest, setClearRequest] = useState<string | null>(null);
   useEffect(() => setClearRequest(null), [selTask]);
+  // The chain review (app/orchestrator/ChainReview.tsx) takes over the session
+  // pane while open. Picking a task (or another project) closes it.
+  const [reviewChain, setReviewChain] = useState<string | null>(null);
+  useEffect(() => setReviewChain(null), [selTask, selProj]);
+  const chainInView = reviewChain && project && o.realTasks.some((t) => t.chain_id === reviewChain) ? reviewChain : null;
   const requestClear = (taskId: string) => setClearRequest(taskId);
   const confirmClear = () => {
     if (!clearRequest) return;
@@ -187,7 +193,7 @@ export default function Orchestrator() {
   // selection state, so the titlebar "needs you" pill (which drives selection)
   // navigates correctly from any level.
   const mobilePane: "projects" | "tasks" | "session" | "settings" | "insights" =
-    o.view === "settings" ? "settings" : o.view === "insights" ? "insights" : !project ? "projects" : !task ? "tasks" : "session";
+    o.view === "settings" ? "settings" : o.view === "insights" ? "insights" : !project ? "projects" : !task && !chainInView ? "tasks" : "session";
 
   const projectsColumn = (
     <ProjectsColumn
@@ -211,6 +217,7 @@ export default function Orchestrator() {
       view={o.taskView} onSetView={setTaskView} onMoveTask={o.moveTask}
       onSelectTask={o.setSelTask} onNewTask={() => o.setModal("task")} onEditContext={() => o.setModal("context")}
       onShowSessions={() => o.setModal("sessions")} onShowRecap={() => o.setSelTask(null)} onEditTask={o.setEditId}
+      reviewChainId={chainInView} onReviewChain={setReviewChain}
       onStartSuggestion={o.startSuggestion} onAcceptSuggestion={o.acceptSuggestion}
       onAcceptSuggestions={o.acceptSuggestions} onDismissSuggestions={o.queueDismiss} onLaunchChain={o.launchChain}
       pendingDismiss={o.pendingDismiss} onUndoDismiss={o.undoDismiss} onOpenParent={(id) => o.goToTask(project.id, id)}
@@ -234,7 +241,18 @@ export default function Orchestrator() {
     <div className="col col-session">
       {project?.seeded === 1 && !isMobile && <WelcomeCoach />}
       <div className="session-body">
-        {task && project ? (
+        {chainInView && project ? (
+          <ChainReview
+            key={chainInView}
+            chainId={chainInView}
+            tasks={o.realTasks}
+            running={o.running}
+            onClose={() => setReviewChain(null)}
+            onOpenTask={(id) => { setReviewChain(null); o.setSelTask(id); }}
+            onRunTurn={(taskId, text) => void o.runTurn(taskId, text, false)}
+            onMerged={o.onMerged}
+          />
+        ) : task && project ? (
           <SessionView
             commandDraft={commandDraft} onCommandDraftUsed={() => setCommandDraft(null)}
             key={task.id}

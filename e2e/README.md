@@ -39,6 +39,7 @@ npx playwright test e2e/03-views.spec.ts   # one spec (post-01 specs self-onboar
   | `e2e:fail=<message>` | end the turn with an error event |
   | `e2e:suggest=<title>` | file a suggested task the way the real drivers do: a `suggest_task` tool card whose result carries the created id (so the transcript's suggestion chip renders), then the `suggested` event; one per line for a batch |
   | `e2e:ask=<question>\|<opt>\|<opt>` | park on an AskUserQuestion card until answered (a Stop dismisses it), then run the rest — so `e2e:ask=… e2e:sleep=3000` keeps working 3s after the answer |
+  | `e2e:complete=<summary>` | call `complete_step` (auto-advance chain steps) after the work is committed |
   | *(none)* | append the prompt to `AGENT_NOTES.md` (so every turn has a diff) |
 
 ## Specs
@@ -55,6 +56,10 @@ npx playwright test e2e/03-views.spec.ts   # one spec (post-01 specs self-onboar
 `07-commands.spec.ts` covers preset creation/edit/deletion, slash-menu keyboard navigation,
 expanded transcript messages, and command-palette insertion. The test environment enables
 the optional command palette.
+
+`08-chain-review.spec.ts` runs a 3-step auto-advance chain to In review, then drives the
+Chains-to-review card, per-step and Combined diffs, and Merge chain (all steps land on
+main, every step done).
 
 The suite runs serially (one shared app instance + SQLite DB). Every spec after
 01 calls `ensureOnboarded()` in `beforeAll` and creates its own uniquely-named

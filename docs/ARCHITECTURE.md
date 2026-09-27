@@ -143,6 +143,20 @@ env so the bridge registers it (→ `/api/internal/agent-tools/complete-step`). 
 worktree stacked on this step's branch. The blocker rule shared by the server and the client
 lives in `lib/chainRules.ts`.
 
+The end-of-chain review lives in `lib/chainMerge.ts` (routes under `app/api/chains/[id]/`).
+Because steps are stacked, landing a chain is one `mergeTask` of the target step's branch
+(the last step, or `through`) into `chains.base_branch`, run under the task lock of
+**every** step (taken in chain order) so the "nothing running" check is atomic with the
+git work. Before merging it verifies the stack (each earlier branch is an ancestor of the
+next, no uncommitted edits below the target) and reads each step's own line stats
+(`base_sha` → `stepOwnTip`, which peels base-branch merges off the tip so a conflict
+resolution doesn't inflate them); after a successful merge each step gets `merged_at`,
+status `done`, its `base_sha` advanced to what landed, and its own `task_merges` row. The
+conflict path reuses `prepareWorktreeMerge` on the target step's worktree; a retry sees
+the staged merge and finishes it with `completeWorktreeMerge`. Later steps are never
+rebased. The tasks-column card is derived client-side (`app/orchestrator/chains.ts`) from
+rows the global event stream keeps live.
+
 `suggest_task` / `expose_service` / `ask_user` are the same orchestrator tools every driver
 exposes. The Claude driver mounts the first two as an in-process SDK MCP server
 (`createSdkMcpServer`) and gets asks natively via its AskUserQuestion hook; the portable
