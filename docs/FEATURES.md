@@ -143,6 +143,48 @@ mode `auto_review`, the project's base branch) and stamps each member with its
 
 Deleting a chain's last task removes the chain row; everything is a hard delete.
 
+### Chain review (merge the whole stack at once)
+
+Once any step of an auto-advance chain reaches **In review**, the tasks column shows a
+**Chains to review** card: a segment per step (done / in review / running / paused /
+not started) and a one-line progress label. It's derived from the task rows the
+`/api/events` stream already keeps live, so it updates without polling, and it stays
+until every step is done or cancelled. **Review chain** opens the review in the session
+pane:
+
+- **Steps** — each step in order with its title, status, `complete_step` summary, and +/−
+  lines. Expanding a step shows its own diff (the regular Changes viewer, read-only): its
+  diff base is the step's `base_sha`, the previous step's last commit, so it shows only
+  that step's work. **Open** jumps to the step's session.
+- **Combined** — the last step's branch against the chain's base branch: everything the
+  chain would land.
+- **Merge chain** merges the last step's branch — which contains every step — into the
+  chain's base branch with **one** merge commit, then marks every step merged and
+  **done** and records one Insights row per step with that step's own line counts (read
+  before the merge, since worktrees don't outlive their tasks). Steps turning done
+  auto-start any dependents outside the chain, as a manual Done would.
+- **Merge up to here** (per step) merges that step's branch and marks steps 1..k done.
+  **Later steps keep their stack**: nothing is rebased. Step k+1 still descends from step
+  k's tip, which is now in the base branch, so its diff still shows only its own work and
+  merging it later lands just the remaining commits. (Rebasing would rewrite branches
+  under live worktrees and agent sessions for no gain.)
+- Merging is refused while **any** step of the chain is running, when a step in range
+  hasn't run yet or was cancelled, and when the stack is broken: an earlier step got more
+  commits (or has uncommitted edits) after the next step branched from it, so landing the
+  last branch would silently drop that work. The error names the step; merge up to it
+  first.
+- **Conflicts** use the existing AI flow on the target step's worktree: **Fix with AI**
+  trial-merges the base branch into it (`prepareWorktreeMerge`) and streams the
+  resolution prompt as a turn on that step (a clean trial merge just lands). When the turn
+  finishes, **Accept & merge chain** completes the staged merge and lands every step;
+  **Discard resolution** aborts it. Resolving by hand in the step's terminal works too.
+
+API: `GET /api/chains/[id]` (steps + stats + per-step merge eligibility + any staged
+resolution), `GET /api/chains/[id]/diff[?through=taskId]` (the Combined diff, same shape
+as the task diff route), `POST /api/chains/[id]/merge` with `{ through?: taskId }`, and
+`POST /api/chains/[id]/merge/prepare` with the same body (the conflict path). All under
+the normal middleware auth.
+
 ### Curating suggestions from the session that proposed them
 
 The link runs the other way too. In the proposing task's transcript, every `suggest_task`

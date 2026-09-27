@@ -548,18 +548,21 @@ export interface MergeResult {
 // a failure just omits the stats. Binary files count 0 ("-" in numstat).
 async function mergeLineStats(dir: string, from = "ORIG_HEAD", to = "HEAD"): Promise<{ additions: number; deletions: number } | null> {
   try {
-    const out = await git(dir, ["diff", "--numstat", from, to]);
-    let additions = 0, deletions = 0;
-    for (const line of out.split("\n")) {
-      const m = line.match(/^(\d+|-)\t(\d+|-)\t/);
-      if (!m) continue;
-      if (m[1] !== "-") additions += parseInt(m[1], 10);
-      if (m[2] !== "-") deletions += parseInt(m[2], 10);
-    }
-    return { additions, deletions };
+    return sumNumstat(await git(dir, ["diff", "--numstat", from, to]));
   } catch {
     return null;
   }
+}
+
+function sumNumstat(out: string): { additions: number; deletions: number } {
+  let additions = 0, deletions = 0;
+  for (const line of out.split("\n")) {
+    const m = line.match(/^(\d+|-)\t(\d+|-)\t/);
+    if (!m) continue;
+    if (m[1] !== "-") additions += parseInt(m[1], 10);
+    if (m[2] !== "-") deletions += parseInt(m[2], 10);
+  }
+  return { additions, deletions };
 }
 
 // Best-effort teardown of the throwaway merge worktree. Never throws.
@@ -1136,4 +1139,60 @@ export async function completeWorktreeMerge(input: {
   // subsequent "discard merge" doesn't try to unwind an already-merged commit.
   if (result.ok) await clearMergeAbortMarker(worktreePath);
   return result;
+}
+
+// ---------- stacked chains (lib/chainMerge.ts) ----------
+//
+// An auto-advance chain's steps are stacked branches: step N+1 branched from
+// step N's tip, so the last step's branch holds every step. These are the small
+// read-only probes the chain review/merge needs on top of mergeTask.
+
+/** A ref's commit sha, or "" when it doesn't resolve. */
+export async function revParse(repoPath: string, ref: string): Promise<string> {
+  if (!ref) return "";
+  return git(repoPath, ["rev-parse", "--verify", "-q", `${ref}^{commit}`]).catch(() => "");
+}
+
+/** True when `ancestor` is reachable from `descendant` (a commit is its own ancestor). */
+export async function isAncestor(repoPath: string, ancestor: string, descendant: string): Promise<boolean> {
+  if (!ancestor || !descendant) return false;
+  return git(repoPath, ["merge-base", "--is-ancestor", ancestor, descendant]).then(() => true).catch(() => false);
+}
+
+/** True when the worktree has uncommitted (or untracked) changes. */
+export async function worktreeDirty(worktreePath: string): Promise<boolean> {
+  return (await git(worktreePath, ["status", "--porcelain"]).catch(() => "")).trim().length > 0;
+}
+
+/**
+ * The tip of a step's OWN work: its branch tip with any merges of the base
+ * branch peeled off the top. A conflict resolution (prepareWorktreeMerge) or a
+ * sync lands as a merge commit whose second parent is already in the base
+ * branch — that's the base coming in, not the step's work, and counting it
+ * would inflate the step's line stats with everything the base gained since.
+ */
+export async function stepOwnTip(repoPath: string, ref: string, baseBranch: string): Promise<string> {
+  let tip = await revParse(repoPath, ref);
+  for (let i = 0; tip && i < 20; i++) {
+    const parents = (await git(repoPath, ["rev-list", "--parents", "-n", "1", tip]).catch(() => "")).split(" ").filter(Boolean);
+    if (parents.length < 3 || !baseBranch || !(await isAncestor(repoPath, parents[2], baseBranch))) break;
+    tip = parents[1];
+  }
+  return tip;
+}
+
+/** Line stats between two commits (binary files count 0), or null when unreadable. */
+export async function commitRangeLineStats(repoPath: string, from: string, to: string): Promise<{ additions: number; deletions: number } | null> {
+  if (!from || !to) return null;
+  return mergeLineStats(repoPath, from, to);
+}
+
+/** Line stats of a worktree's tracked changes (committed + uncommitted) versus `from`. */
+export async function worktreeLineStats(worktreePath: string, from: string): Promise<{ additions: number; deletions: number } | null> {
+  if (!from) return null;
+  try {
+    return sumNumstat(await git(worktreePath, ["diff", "--numstat", from]));
+  } catch {
+    return null;
+  }
 }

@@ -148,6 +148,8 @@ export default function TaskChanges({
   onMerged,
   onPrCreated,
   onResolveWithAI,
+  diffUrl,
+  readOnly,
 }: {
   taskId: string;
   running?: boolean;
@@ -155,8 +157,16 @@ export default function TaskChanges({
   onMerged?: () => void;
   onPrCreated?: (url: string) => void;
   onResolveWithAI?: (taskId: string) => Promise<ResolveResult>;
+  // Diff from somewhere other than the task's own route (the chain review's
+  // Combined tab: /api/chains/[id]/diff). Same payload shape.
+  diffUrl?: string;
+  // Review-only: no Merge / PR / conflict actions (the chain review merges the
+  // whole stack from its own toolbar; a step merged alone would drag the steps
+  // below it along).
+  readOnly?: boolean;
 }) {
-  const [data, setData] = useState<DiffResp | null>(() => diffCache.get(taskId) ?? null);
+  const url = diffUrl ?? `/api/tasks/${taskId}/diff`;
+  const [data, setData] = useState<DiffResp | null>(() => diffCache.get(url) ?? null);
   const [loading, setLoading] = useState(true);
   const [merging, setMerging] = useState(false);
   const [prBusy, setPrBusy] = useState(false);
@@ -176,16 +186,16 @@ export default function TaskChanges({
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const r = await fetch(`/api/tasks/${taskId}/diff`, { cache: "no-store" });
+      const r = await fetch(url, { cache: "no-store" });
       const j: DiffResp = await r.json();
-      if (!j.error) diffCache.set(taskId, j); // errors are worth retrying, not replaying
+      if (!j.error) diffCache.set(url, j); // errors are worth retrying, not replaying
       setData(j);
     } catch (e) {
       setData({ isolated: false, files: [], isDirty: false, ahead: 0, error: e instanceof Error ? e.message : String(e) });
     } finally {
       setLoading(false);
     }
-  }, [taskId]);
+  }, [url]);
 
   useEffect(() => {
     setMergeRes(null);
@@ -195,9 +205,9 @@ export default function TaskChanges({
     setBinaryConflicts([]);
     // Task switched without a remount: show the new task's cached diff (or the
     // skeleton), never the previous task's stale files, while we revalidate.
-    setData(diffCache.get(taskId) ?? null);
+    setData(diffCache.get(url) ?? null);
     load();
-  }, [taskId, load]);
+  }, [url, load]);
 
   // The diff moves while the agent works — refetch when a turn finishes so a
   // just-written change appears without a manual Refresh (same trigger the
@@ -403,7 +413,9 @@ export default function TaskChanges({
         <button className="tc-btn" onClick={load} disabled={loading || merging || resolving}>
           {loading ? "…" : "Refresh"}
         </button>
-        {reviewing ? (
+        {readOnly ? (
+          reviewing && <span className="tc-merged faint">Conflict resolution staged</span>
+        ) : reviewing ? (
           <>
             <button className="tc-btn" onClick={doAbort} disabled={merging || resolving}>
               Discard
@@ -442,7 +454,7 @@ export default function TaskChanges({
         )}
       </div>
 
-      {reviewing && (
+      {reviewing && !readOnly && (
         <div className="tc-mergebar review">
           Conflicts resolved — review the merged result below, then <b>Accept &amp; merge</b> or <b>Discard</b>.
           {data.unresolved && data.unresolved.length > 0 && (

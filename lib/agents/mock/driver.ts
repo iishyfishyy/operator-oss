@@ -17,6 +17,9 @@
 //   e2e:ask=<question>|<opt>|<opt>  park on an AskUserQuestion card until the
 //                                   user answers (a Stop dismisses it), then
 //                                   keep working — mirrors the Claude hook
+//   e2e:complete=<summary>          call complete_step (auto-advance chain
+//                                   steps) through the same shared logic the
+//                                   real tools use, after the work is committed
 // With no directives, the turn appends the prompt to AGENT_NOTES.md — so every
 // plain turn still produces a diff to view and merge.
 
@@ -34,6 +37,7 @@ import type {
 import { createSuggestedTask } from "@/lib/agentTools";
 import { describeToolUse, parseSuggestedTaskId } from "@/lib/agents/shared";
 import { waitForAnswer } from "@/lib/asks";
+import { recordStepComplete } from "@/lib/chains";
 import { MOCK_CAPABILITIES } from "./capabilities";
 
 const MOCK_EMAIL = "e2e@example.com";
@@ -148,6 +152,14 @@ export const mockDriver: AgentDriver = {
       execFileSync("git", ["commit", "-m", `mock: ${task.title}`], { cwd, stdio: "ignore" });
     } catch {
       // not a repo / nothing to commit — fine
+    }
+
+    const complete = instructionText.match(/e2e:complete=([^\n]+)/)?.[1];
+    if (complete) {
+      const id = `mock-tool-${++toolN}`;
+      yield { type: "tool", id, title: "Complete step", detail: complete.trim() };
+      const r = recordStepComplete(task.id, complete.trim());
+      yield { type: "tool_result", id, content: r.text, isError: !r.ok };
     }
 
     for (const m of instructionText.matchAll(/e2e:suggest=([^\n]+)/g)) {

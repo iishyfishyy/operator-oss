@@ -11,6 +11,8 @@ import { TaskBoard } from "./TaskBoard";
 import { countNewSuggestions, groupSuggestions, isNewSuggestion } from "./suggestions";
 import { SuggestionGroup, SuggestionRow, TrayHeader, UndoToast, outsideBlockerTitles, useTrayView, type ChainLaunch } from "./SuggestionGroup";
 import type { PendingDismiss } from "./useOrchestrator";
+import { ChainCard } from "./ChainReview";
+import { chainsForReview } from "./chains";
 
 function TaskCard({ task, agents, selected, running, blockedBy, onSelect }: { task: TaskRow; agents: AgentsBundle; selected: boolean; running: boolean; blockedBy?: string[]; onSelect: () => void }) {
   const sessionCount = task.started ? task.generation : Math.max(0, task.generation - 1);
@@ -91,12 +93,14 @@ function useCollapsed(key: string, def: boolean) {
   return [collapsed, toggle] as const;
 }
 
-export function TasksColumn({ project, agents, tasks, suggested, selTaskId, running, blockedBy, width, loading, view, onSetView, onMoveTask, onSelectTask, onNewTask, onEditContext, onShowSessions, onShowRecap, onEditTask, onStartSuggestion, onAcceptSuggestion, onDismissSuggestions, onAcceptSuggestions, onLaunchChain, pendingDismiss, onUndoDismiss, onOpenParent, traySeenAt, traySeenReady, onTrayViewed, onCollapse, mobile, onBack }: {
+export function TasksColumn({ project, agents, tasks, suggested, selTaskId, running, blockedBy, width, loading, view, onSetView, onMoveTask, onSelectTask, onNewTask, onEditContext, onShowSessions, onShowRecap, onEditTask, reviewChainId, onReviewChain, onStartSuggestion, onAcceptSuggestion, onDismissSuggestions, onAcceptSuggestions, onLaunchChain, pendingDismiss, onUndoDismiss, onOpenParent, traySeenAt, traySeenReady, onTrayViewed, onCollapse, mobile, onBack }: {
   project: ProjectRow; agents: AgentsBundle; tasks: TaskRow[]; suggested: TaskRow[]; selTaskId: string | null; running: Set<string>; blockedBy: Map<string, string[]>; width: number; loading?: boolean;
   view: TaskView; onSetView: (v: TaskView) => void;
   onMoveTask: (id: string, patch: Partial<Pick<TaskRow, "status" | "suggested">>, orderedIds: string[]) => void;
   onSelectTask: (id: string) => void; onNewTask: () => void; onEditContext: () => void; onShowSessions: () => void; onShowRecap: () => void;
   onEditTask: (id: string) => void; onCollapse: () => void;
+  // Auto-advance chains with a step In review get a card that opens the chain review.
+  reviewChainId?: string | null; onReviewChain?: (chainId: string) => void;
   onStartSuggestion: (id: string) => void; onAcceptSuggestion: (id: string) => void;
   onAcceptSuggestions: (ids: string[], start: boolean) => Promise<void>;
   // Every tray dismissal (one row, a group, or all stale groups) is undoable:
@@ -142,6 +146,8 @@ export function TasksColumn({ project, agents, tasks, suggested, selTaskId, runn
   const canSearch = tasks.length + suggested.length >= SEARCH_MIN;
   const noMatches = q && shown.length === 0 && shownSuggested.length === 0;
   const toast = pendingDismiss?.projectId === project.id ? pendingDismiss : null;
+  // Derived from the live task rows (kept current by /api/events) — no fetch.
+  const reviewChains = onReviewChain ? chainsForReview(tasks, running) : [];
   // The tray sits ABOVE the task list: it's the inbox of proposed work, and a
   // folded tray costs one line. Searching always unfolds it so matches show.
   const trayOpen = !trayCollapsed || !!q;
@@ -222,6 +228,12 @@ export function TasksColumn({ project, agents, tasks, suggested, selTaskId, runn
           {tray}
           {tasks.length === 0 && <div className="empty" style={{ padding: "30px 16px" }}><div className="e-t">No tasks yet</div><div className="e-s">Create one to start an agent session.</div></div>}
           {noMatches && <div className="search-empty">No tasks match “{query.trim()}”.</div>}
+          {reviewChains.length > 0 && (
+            <>
+              <div className="task-group-h">Chains to review <span className="gcount">{reviewChains.length}</span><span className="gline" /></div>
+              {reviewChains.map((c) => <ChainCard key={c.id} chain={c} running={running} active={c.id === reviewChainId} onReview={() => onReviewChain!(c.id)} />)}
+            </>
+          )}
           <TaskGroup label="Needs your input" tasks={needsYou} agents={agents} selTaskId={selTaskId} running={running} blockedBy={blockedBy} onSelect={onSelectTask} accent />
           <TaskGroup label="In progress" tasks={groups.a} agents={agents} selTaskId={selTaskId} running={running} blockedBy={blockedBy} onSelect={onSelectTask} />
           <TaskGroup label="In review" tasks={groups.v} agents={agents} selTaskId={selTaskId} running={running} blockedBy={blockedBy} onSelect={onSelectTask} />

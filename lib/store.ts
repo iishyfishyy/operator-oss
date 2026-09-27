@@ -451,6 +451,13 @@ export function createChain(projectId: string, orderedIds: string[], mode: Chain
   return chain;
 }
 
+/** Every step of a chain, in chain order (the review panel + chain merge read this). */
+export function listChainSteps(chainId: string): Task[] {
+  return getDb()
+    .prepare("SELECT * FROM tasks WHERE chain_id = ? ORDER BY chain_pos ASC, created_at ASC")
+    .all(chainId) as Task[];
+}
+
 /** The step before `task` in its chain (chain_pos - 1), or undefined for a head / non-member. */
 export function previousChainStep(task: Task): Task | undefined {
   if (!task.chain_id || task.chain_pos == null || task.chain_pos <= 0) return undefined;
@@ -765,6 +772,13 @@ export function recordTaskMerge(input: {
        VALUES (?, ?, ?, ?, ?, ?, ?)`
     )
     .run(nanoid(), input.project_id, input.task_id, input.agent || "claude", input.additions, input.deletions, Date.now());
+}
+
+/** Lines a task has landed across all its recorded merges (task_merges). */
+export function taskMergeTotals(taskId: string): { additions: number; deletions: number } {
+  return getDb()
+    .prepare("SELECT COALESCE(SUM(additions), 0) AS additions, COALESCE(SUM(deletions), 0) AS deletions FROM task_merges WHERE task_id = ?")
+    .get(taskId) as { additions: number; deletions: number };
 }
 
 const ZERO_USAGE: UsageTotals = {
