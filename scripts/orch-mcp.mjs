@@ -15,6 +15,8 @@
  *   ORCH_PROJECT_ID  the owning project (tasks/services are created under it)
  *   ORCH_BASE_URL    the app's loopback origin (e.g. http://127.0.0.1:3000)
  *   SERVICE_TOKEN    the per-instance secret the internal endpoints require
+ *   ORCH_COMPLETE_STEP  "1" when the task is a step of an auto-advance chain —
+ *                    only then is complete_step registered (lib/chains.ts)
  *
  * Tool names / descriptions / param docs come from lib/agentToolDefs.mjs so this
  * bridge and the in-process server never drift. Plain .mjs: this file AND
@@ -23,7 +25,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { SUGGEST_TASK, EXPOSE_SERVICE, ASK_USER } from "../lib/agentToolDefs.mjs";
+import { SUGGEST_TASK, EXPOSE_SERVICE, ASK_USER, COMPLETE_STEP } from "../lib/agentToolDefs.mjs";
 
 const TASK_ID = process.env.ORCH_TASK_ID || "";
 const PROJECT_ID = process.env.ORCH_PROJECT_ID || "";
@@ -134,6 +136,20 @@ server.registerTool(
     }
   }
 );
+
+if (process.env.ORCH_COMPLETE_STEP === "1") {
+  server.registerTool(
+    COMPLETE_STEP.name,
+    {
+      description: COMPLETE_STEP.description,
+      inputSchema: { summary: z.string().describe(COMPLETE_STEP.params.summary) },
+    },
+    async ({ summary }) => {
+      const data = await callInternal("complete-step", { summary });
+      return { content: [{ type: "text", text: data.text }] };
+    }
+  );
+}
 
 const transport = new StdioServerTransport();
 await server.connect(transport);

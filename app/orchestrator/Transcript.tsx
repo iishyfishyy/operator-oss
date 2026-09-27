@@ -66,6 +66,7 @@ const STATUS_BADGE: Record<string, string> = {
   not_started: "added",
   in_progress: "in progress",
   on_hold: "on hold",
+  in_review: "in review",
   done: "done",
   cancelled: "cancelled",
 };

@@ -38,4 +38,8 @@ describe("codex orchestrator MCP bridge config", () => {
     expect(server.command).toBe(process.execPath);
     expect(server.args[0]).toMatch(/scripts[/\\]orch-mcp\.mjs$/);
   });
+
+  it("mounts complete_step only for an auto-advance chain step", () => {
+    expect(server.env).not.toHaveProperty("ORCH_COMPLETE_STEP");
+  });
 });

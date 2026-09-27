@@ -7,6 +7,7 @@
 import type { Project, Task, AskQuestion, AskAnswers, ToolPeek, DiffLine, ToolSuggestion } from "../types";
 import { listSummaries } from "../store";
 import { suggestionPolicy } from "../suggestionPolicy";
+import { isAutoAdvanceTask } from "../chains";
 
 // The generic opening turn, used only when a task has no description: a fresh
 // agent session still needs a user turn to begin, and with nothing but a title
@@ -165,6 +166,20 @@ export function buildProjectContext(project: Project, task: Task): string {
       `CRA/webpack-dev-server is pre-cleared via env. ORCH_PUBLIC_HOST is injected into services ` +
       `the orchestrator starts.`
   );
+  // complete_step is mounted only for a step of an auto-advance chain, so it's
+  // only ever mentioned there (lib/chains.ts).
+  if (isAutoAdvanceTask(task)) {
+    lines.push(
+      `\n---\nThis task is one step of an auto-advance chain: when it's finished, the orchestrator ` +
+        `commits your work and starts the next step on top of it, and the user reviews the whole ` +
+        `chain at the end. When — and only when — this step's work is fully done and verified, call ` +
+        `the \`complete_step(summary)\` MCP tool once, as your last action, with a short summary of ` +
+        `what changed and anything the next step should know. Don't commit, merge or push yourself. ` +
+        `If you're blocked on a decision only the user can make, ask (using ${askTool}) instead of ` +
+        `calling \`complete_step\` — the chain pauses on this step until they answer. Never ask a ` +
+        `question after calling it.`
+    );
+  }
   return lines.join("\n");
 }
 
@@ -333,6 +348,7 @@ export function describeToolUse(
         const title = typeof input?.title === "string" ? input.title : "";
         return { title: `✦ Suggested a task`, detail: clip(input), suggestion: { title } };
       }
+      if (name.includes("complete_step")) return { title: `✓ Marked step complete`, detail: clip(input?.summary ?? input) };
       if (name.includes("expose_service")) return { title: `🔌 Exposed ${String(input?.name ?? "service")} :${String(input?.port ?? "")}`, detail: clip(input) };
       return { title: `⚙ ${name}`, detail: clip(input) };
   }

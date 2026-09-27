@@ -6,6 +6,7 @@ import { withTaskLock } from "@/lib/taskLock";
 import { subscribe, publish } from "@/lib/events";
 import { sseOpened, sseClosed } from "@/lib/idle";
 import { ensureWorktree } from "@/lib/git";
+import { worktreeBaseFor } from "@/lib/chains";
 import { MAX_MESSAGE_CHARS } from "@/lib/promptLimits";
 import { buildOpeningPrompt } from "@/lib/agents/shared";
 import type { TaskStreamEvent } from "@/lib/types";
@@ -114,7 +115,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       // point — a second POST landing in this window queues instead of double-running.
       if (!fresh.worktree_path || !fs.existsSync(fresh.worktree_path)) {
         try {
-          const wt = await ensureWorktree(project.repo_path, fresh.id, project.branch);
+          // An auto-advance chain step stacks on the previous step's branch
+          // (lib/chains.ts) — also when the user starts it by hand.
+          const wt = await ensureWorktree(project.repo_path, fresh.id, worktreeBaseFor(fresh, project));
           if (wt) {
             fresh.worktree_path = wt.path;
             fresh.work_branch = wt.branch;

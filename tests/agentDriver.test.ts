@@ -63,12 +63,16 @@ vi.mock("@openai/codex-sdk", () => {
 
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { createProject, createTask, getTask, listMessages, getTaskUsage, listProjectSessions, updateProject, addPendingMessage, deleteProject } from "@/lib/store";
+import { createProject, createTask, getTask, listMessages, getTaskUsage, listProjectSessions, updateProject, addPendingMessage, deleteProject, setTaskDeps, acceptSuggestedBatch } from "@/lib/store";
+import { recordStepComplete } from "@/lib/agentTools";
+import { orchestratorMcpConfig } from "@/lib/agents/codex/driver";
+import { tmpDir } from "./helpers";
+import { POST as completeStepRoute } from "@/app/api/internal/agent-tools/complete-step/route";
 import { getDriver, listDrivers, DEFAULT_AGENT } from "@/lib/agents/registry";
 import { DEFAULT_CODEX_MODEL } from "@/lib/agents/codex/pricing";
 import { startResumeTurn } from "@/lib/runner";
 import { subscribe, subscribeGlobal } from "@/lib/events";
-import type { StreamEvent, TaskStreamEvent, ToolData } from "@/lib/types";
+import type { StreamEvent, TaskStreamEvent, ToolData, Task } from "@/lib/types";
 
 // Collect every event the runner publishes for a task until turn_end.
 function collectEvents(taskId: string): { events: TaskStreamEvent[]; done: Promise<void> } {
@@ -376,6 +380,63 @@ describe("queue drain re-reads the project (no stale snapshot)", () => {
     expect(calls).toBe(1);
     expect(events.map((e) => e.type).slice(-1)).toEqual(["turn_end"]);
     expect(getTask(task.id)).toBeUndefined();
+  });
+});
+
+// complete_step is one tool with three entry points (the Claude driver's
+// in-process MCP server, the stdio bridge → /api/internal/agent-tools/complete-step,
+// and the shared recordStepComplete both call). Pin that every driver reaches
+// the same advance: a scripted turn that calls it ends the step cleanly.
+describe("complete_step through the runner", () => {
+  async function chainOfTwo(name: string) {
+    // A working dir, or auto-start refuses to launch the next step (same
+    // precondition as the POST route).
+    const project = createProject({ name, repo_path: tmpDir("chain-") });
+    const a = createTask({ project_id: project.id, title: "Step A", description: "", suggested: true });
+    const b = createTask({ project_id: project.id, title: "Step B", description: "", suggested: true });
+    setTaskDeps(b.id, [a.id]);
+    acceptSuggestedBatch([a.id, b.id], true, false, "auto_review");
+    return { project, a: getTask(a.id)!, b: getTask(b.id)! };
+  }
+
+  it("a turn that calls complete_step moves the step to in_review (not 'needs you') and starts the next", async () => {
+    const { project, a, b } = await chainOfTwo("CompleteStep");
+    runTurnMock.mockImplementation(async function* (task: { id: string }) {
+      yield { type: "session", sessionId: `s-${task.id}` };
+      // What the MCP handler / the bridge endpoint run on a complete_step call.
+      if (task.id === a.id) recordStepComplete(task.id, "A done");
+      yield { type: "done", sessionId: `s-${task.id}` };
+    });
+    const { done } = collectEvents(a.id);
+    await startResumeTurn(a, project, "go");
+    await done;
+    await vi.waitFor(() => expect(getTask(a.id)!.status).toBe("in_review"));
+    expect(getTask(a.id)).toMatchObject({ awaiting_input: 0, step_summary: "A done" });
+    // The next step auto-started (its own turn, which didn't complete → paused).
+    await vi.waitFor(() => expect(getTask(b.id)!.started).toBe(1));
+    await vi.waitFor(() => expect(getTask(b.id)!.awaiting_input).toBe(1));
+    expect(getTask(b.id)!.status).toBe("in_progress");
+  });
+
+  it("the bridge endpoint records it, and refuses a task outside a chain", async () => {
+    const { a } = await chainOfTwo("CompleteStepRoute");
+    const post = (body: unknown) =>
+      completeStepRoute(new Request("http://localhost/api/internal/agent-tools/complete-step", { method: "POST", body: JSON.stringify(body) }) as never);
+    const ok = await (await post({ taskId: a.id, summary: "via bridge" })).json();
+    expect(ok.ok).toBe(true);
+    expect(getTask(a.id)!.step_summary).toBe("via bridge");
+
+    const project = createProject({ name: "NoChainRoute" });
+    const solo = createTask({ project_id: project.id, title: "Solo", description: "" });
+    expect((await (await post({ taskId: solo.id, summary: "x" })).json()).ok).toBe(false);
+  });
+
+  it("codex mounts the bridge's complete_step only for a chain step", async () => {
+    const { project, a } = await chainOfTwo("CompleteStepCodex");
+    const env = (t: Task) => (orchestratorMcpConfig(project, t) as Record<string, any>).mcp_servers.orchestrator.env;
+    expect(env(a).ORCH_COMPLETE_STEP).toBe("1");
+    const solo = createTask({ project_id: project.id, title: "Solo", description: "" });
+    expect(env(solo)).not.toHaveProperty("ORCH_COMPLETE_STEP");
   });
 });
 

@@ -1,5 +1,21 @@
 export type Priority = "hi" | "med" | "lo";
-export type Status = "not_started" | "in_progress" | "on_hold" | "done" | "cancelled";
+// in_review: an auto-advance chain step that finished (complete_step) and is
+// waiting for the end-of-chain review. It only unblocks later steps of the SAME
+// auto-advance chain; to everything else it still reads as unfinished.
+export type Status = "not_started" | "in_progress" | "on_hold" | "in_review" | "done" | "cancelled";
+
+// How a chain's steps advance. Only one mode creates a chain row today:
+// auto_review — each step starts once the previous one calls complete_step,
+// stacked on the previous step's branch; nothing merges until the user reviews.
+export type ChainMode = "auto_review";
+
+export interface Chain {
+  id: string;
+  project_id: string;
+  mode: ChainMode;
+  base_branch: string; // the project branch the chain's first step branched from
+  created_at: number;
+}
 export type MsgRole = "user" | "assistant" | "tool" | "system" | "session_break";
 
 export interface Project {
@@ -59,6 +75,10 @@ export interface Task {
   auto_start: number; // 1 = start automatically when the last unfinished blocker is marked done (lib/autoStart.ts)
   suggested_by_task_id: string | null; // task whose session proposed this one via suggest_task (null = user-created, or the proposer was deleted)
   suggested_by_generation: number | null; // the proposer's /clear generation at the time (its "session N")
+  chain_id: string | null; // the chain this task is a step of (chains table; null = not in one)
+  chain_pos: number | null; // 0-based step index within its chain
+  step_summary: string; // the summary the agent passed to complete_step ("" = never called)
+  step_completed_at: number; // when complete_step was last called (0 = never) — the runner's "finished this turn" signal
   running: number; // 1 while a Claude turn is actively streaming
   awaiting_input: number; // 1 when it's your turn: Claude's turn ended mid-task, or it's parked on an AskUserQuestion
   created_at: number;

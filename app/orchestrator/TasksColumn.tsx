@@ -127,6 +127,7 @@ export function TasksColumn({ project, agents, tasks, suggested, selTaskId, runn
   const groups = {
     a: shown.filter((t) => t.status === "in_progress" && !isAwaiting(t)),
     h: shown.filter((t) => t.status === "on_hold" && !isAwaiting(t)),
+    v: shown.filter((t) => t.status === "in_review"),
     r: shown.filter((t) => t.status === "not_started"),
     g: shown.filter((t) => t.status === "done").sort((a, b) => b.updated_at - a.updated_at),
     x: shown.filter((t) => t.status === "cancelled").sort((a, b) => b.updated_at - a.updated_at),
@@ -223,6 +224,7 @@ export function TasksColumn({ project, agents, tasks, suggested, selTaskId, runn
           {noMatches && <div className="search-empty">No tasks match “{query.trim()}”.</div>}
           <TaskGroup label="Needs your input" tasks={needsYou} agents={agents} selTaskId={selTaskId} running={running} blockedBy={blockedBy} onSelect={onSelectTask} accent />
           <TaskGroup label="In progress" tasks={groups.a} agents={agents} selTaskId={selTaskId} running={running} blockedBy={blockedBy} onSelect={onSelectTask} />
+          <TaskGroup label="In review" tasks={groups.v} agents={agents} selTaskId={selTaskId} running={running} blockedBy={blockedBy} onSelect={onSelectTask} />
           <TaskGroup label="On hold" tasks={groups.h} agents={agents} selTaskId={selTaskId} running={running} blockedBy={blockedBy} onSelect={onSelectTask} />
           <TaskGroup label="Not started" tasks={groups.r} agents={agents} selTaskId={selTaskId} running={running} blockedBy={blockedBy} onSelect={onSelectTask} />
           <TaskGroup label="Done" tasks={groups.g} agents={agents} selTaskId={selTaskId} running={running} blockedBy={blockedBy} onSelect={onSelectTask} collapsible collapsed={doneCollapsed && !q} onToggle={toggleDone} />

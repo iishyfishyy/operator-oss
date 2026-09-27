@@ -1,6 +1,7 @@
 // Pure formatting + derivation helpers shared across the orchestrator modules.
 import type { Msg, TaskRow, AgentCapabilities, AgentInfo } from "./types";
 import type { InternalUsageEstimate } from "./types";
+import { depBlocks } from "@/lib/chainRules";
 
 // Compact token count: 1234 → "1.2k", 1_200_000 → "1.2M".
 export function fmtTokens(n: number): string {
@@ -261,14 +262,15 @@ export const isAwaiting = (t: TaskRow) =>
 export const isThinking = (t: TaskRow, running: boolean) =>
   running && !t.awaiting_input;
 
-// The titles of a task's unfinished blockers (dependencies not yet 'done'). A
-// task with any of these is "blocked" and can't be started until they complete.
-// A cancelled dependency doesn't block — it's terminal and will never finish,
-// so waiting on it would deadlock the dependent task forever.
+// The titles of a task's unfinished blockers. A task with any of these is
+// "blocked" and can't be started until they complete. The rule is shared with
+// the server's auto-start (lib/chainRules.ts): done/cancelled never block, and
+// an in_review step only counts as finished for the next step of its own
+// auto-advance chain.
 export const blockerTitles = (t: TaskRow, byId: Map<string, TaskRow>): string[] =>
   (t.depends_on ?? [])
     .map((id) => byId.get(id))
-    .filter((b): b is TaskRow => !!b && b.status !== "done" && b.status !== "cancelled")
+    .filter((b): b is TaskRow => !!b && depBlocks(b, t))
     .map((b) => b.title);
 
 // add/del/ctx class for a diff line's sign — shared by the peek and full views.

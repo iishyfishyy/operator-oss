@@ -61,6 +61,10 @@ export interface TaskRow {
   auto_start: number; // 1 = start automatically when the last unfinished blocker is marked done
   suggested_by_task_id: string | null; // task whose session proposed this suggestion (null = user-created / proposer deleted)
   suggested_by_generation: number | null; // the proposer's session number (/clear generation) at the time
+  chain_id?: string | null; // the chain this task is a step of (null = none)
+  chain_pos?: number | null; // 0-based step index within that chain
+  chain_mode?: string | null; // the chain's advance mode ("auto_review"), joined in by listTasks
+  step_summary?: string; // what the agent reported via complete_step ("" = not yet)
   created_at: number; // ms epoch the row was created — the tray's freshness/"new" signal
   context_tokens: number; // latest turn's input-side tokens ≈ current context-window occupancy
   context_pct: number; // context_tokens as a percent (0–100) of the model's window
@@ -204,11 +208,11 @@ export type UtilityAgentT = { id: string | null; configured: string; fallback: b
 export type AgentLoginT = ClaudeLoginT & { code?: string | null };
 
 // ---------- status maps (DB status -> design's r/a/g classes + labels) ----------
-export const SCLS: Record<Status, "r" | "a" | "g" | "h" | "x"> = { not_started: "r", in_progress: "a", on_hold: "h", done: "g", cancelled: "x" };
-export const SLABEL: Record<Status, string> = { not_started: "Not started", in_progress: "In progress", on_hold: "On hold", done: "Done", cancelled: "Cancelled" };
+export const SCLS: Record<Status, "r" | "a" | "g" | "h" | "v" | "x"> = { not_started: "r", in_progress: "a", on_hold: "h", in_review: "v", done: "g", cancelled: "x" };
+export const SLABEL: Record<Status, string> = { not_started: "Not started", in_progress: "In progress", on_hold: "On hold", in_review: "In review", done: "Done", cancelled: "Cancelled" };
 export const AWAIT_LABEL = "Needs your input";
-export const SSUB: Record<Status, string> = { not_started: "no session yet", in_progress: "session active or paused", on_hold: "paused — pick up later", done: "work complete / merged", cancelled: "abandoned — won't be finished" };
-export const STATUSES: Status[] = ["not_started", "in_progress", "on_hold", "done", "cancelled"];
+export const SSUB: Record<Status, string> = { not_started: "no session yet", in_progress: "session active or paused", on_hold: "paused — pick up later", in_review: "chain step finished — awaiting your review", done: "work complete / merged", cancelled: "abandoned — won't be finished" };
+export const STATUSES: Status[] = ["not_started", "in_progress", "on_hold", "in_review", "done", "cancelled"];
 export const PLABEL: Record<Priority, string> = { hi: "High", med: "Medium", lo: "Low" };
 export const PRIORITIES: Priority[] = ["hi", "med", "lo"];
 

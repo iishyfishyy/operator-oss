@@ -398,6 +398,7 @@ button{font-family:inherit;color:inherit;cursor:pointer;border:none;background:n
 .sdot.a{background:var(--amber);box-shadow:0 0 7px var(--amber);}  /* in progress (paused) */
 .sdot.g{background:var(--green);box-shadow:var(--glow-green);}     /* done / merged */
 .sdot.h{background:#8b7fd6;box-shadow:0 0 7px rgba(139,127,214,.55);}  /* on hold — paused */
+.sdot.v{background:#4fb3a9;box-shadow:0 0 7px rgba(79,179,169,.55);}  /* in review — finished chain step */
 .sdot.x{background:transparent;border:1.5px solid var(--ink-4);box-sizing:border-box;}  /* cancelled — hollow */
 .sdot.b{background:var(--blue);box-shadow:var(--glow-blue);}       /* live / working */
 .sdot.c{background:var(--coral);box-shadow:var(--glow-coral);}     /* needs you */
@@ -465,6 +466,7 @@ button{font-family:inherit;color:inherit;cursor:pointer;border:none;background:n
 .bcol.k-awaiting .bcol-rule{background:linear-gradient(90deg,var(--blue),var(--blue-soft));}
 .bcol.k-in_progress .bcol-rule{background:linear-gradient(90deg,var(--amber),var(--amber-soft));}
 .bcol.k-on_hold .bcol-rule{background:linear-gradient(90deg,#8b7fd6,transparent);}
+.bcol.k-in_review .bcol-rule{background:linear-gradient(90deg,#4fb3a9,transparent);}
 .bcol.k-done .bcol-rule{background:linear-gradient(90deg,var(--green),var(--green-soft));}
 .bcol-body{flex:1;min-height:60px;overflow-y:auto;padding:0 4px 18px;display:flex;flex-direction:column;gap:8px;}
 .b-slot{display:flex;flex-direction:column;gap:8px;flex:0 0 auto;}
@@ -729,7 +731,7 @@ button{font-family:inherit;color:inherit;cursor:pointer;border:none;background:n
 .sx-sel{height:26px;min-width:0;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--surface-2);padding:0 9px;font:inherit;font-size:11.5px;color:var(--ink-2);}
 .sx-sel.static{display:inline-flex;align-items:center;}
 .sx-radio{display:flex;gap:2px;background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r-sm);padding:2px;}
-.sx-radio button{font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-4);padding:4px 8px;border-radius:5px;}
+.sx-radio button{white-space:nowrap;font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--ink-4);padding:4px 6px;border-radius:5px;}
 .sx-radio button:hover{color:var(--ink-2);}
 .sx-radio button.on{background:var(--raise);color:var(--ink);box-shadow:var(--sh-1);}
 .sx-hint{font-size:11px;color:var(--ink-4);line-height:1.45;}

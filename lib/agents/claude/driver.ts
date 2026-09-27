@@ -16,8 +16,9 @@ import { claudeCapabilities } from "./capabilities";
 import { cachedModels } from "../modelCatalog";
 import { resolveReasoning } from "../reasoning";
 import { getSetting } from "../../store";
-import { createSuggestedTask, registerExposedService, resolveTitleRefs, type SuggestSource } from "../../agentTools";
-import { SUGGEST_TASK, EXPOSE_SERVICE } from "../../agentToolDefs.mjs";
+import { createSuggestedTask, registerExposedService, resolveTitleRefs, recordStepComplete, type SuggestSource } from "../../agentTools";
+import { SUGGEST_TASK, EXPOSE_SERVICE, COMPLETE_STEP } from "../../agentToolDefs.mjs";
+import { isAutoAdvanceTask } from "../../chains";
 import { waitForAnswer } from "../../asks";
 import { CLAUDE_CLI_PATH as CLAUDE_PATH } from "../../config";
 import { isUsageLimit } from "../../usageLimit";
@@ -45,14 +46,30 @@ import { claudeUsage } from "./usage";
 import { isBedrockConfigured, bedrockAuthRefreshCommand } from "./provider";
 import { startBedrockRefresh, getBedrockRefresh, cancelBedrockRefresh } from "./bedrock-auth";
 
-function orchestratorServer(project: Project, source: SuggestSource, onSuggest: (title: string) => void, onExpose: (info: { name: string; url: string }) => void) {
+function orchestratorServer(project: Project, source: SuggestSource, onSuggest: (title: string) => void, onExpose: (info: { name: string; url: string }) => void, chainStep: boolean) {
   // Titles created this session, so `blocked_by` can reference earlier suggestions
   // by title (not just id) — friendlier for the model when planning a roadmap.
   const createdByTitle = new Map<string, string>();
+  // complete_step exists only for a step of an auto-advance chain (lib/chains.ts);
+  // everywhere else the model never sees it.
+  const stepTools = chainStep
+    ? [
+        tool(
+          COMPLETE_STEP.name,
+          COMPLETE_STEP.description,
+          { summary: z.string().describe(COMPLETE_STEP.params.summary) },
+          async (args: { summary: string }) => {
+            const { text } = recordStepComplete(source.taskId, args.summary);
+            return { content: [{ type: "text" as const, text }] };
+          }
+        ),
+      ]
+    : [];
   return createSdkMcpServer({
     name: "orchestrator",
     version: "1.0.0",
     tools: [
+      ...stepTools,
       tool(
         EXPOSE_SERVICE.name,
         EXPOSE_SERVICE.description,
@@ -218,7 +235,8 @@ async function* runTurn(
           // that did the thinking (a /clear can only land between turns).
           { taskId: task.id, generation: task.generation },
           (t) => suggested.push(t),
-          ({ name, url }) => queue.push({ type: "notice", content: `Service "${name}" is live at ${url}` })
+          ({ name, url }) => queue.push({ type: "notice", content: `Service "${name}" is live at ${url}` }),
+          isAutoAdvanceTask(task)
         ),
       },
       // Lets the Stop button interrupt the stream mid-turn (see lib/abort.ts).

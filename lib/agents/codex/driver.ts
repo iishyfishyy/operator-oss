@@ -31,6 +31,7 @@ import { getSetting, setSetting, getThreadUsageCum, setThreadUsageCum } from "..
 import { CODEX_APPROVAL_POLICY, CODEX_CLI_PATH, INTERNAL_BASE_URL, ORCH_MCP_SCRIPT } from "../../config";
 import { isApprovalDowngrade, isApprovalBlocked, isSandboxPolicyBlocked, CODEX_FULL_ACCESS_BLOCKED_NOTICE } from "../../approvalFailure";
 import { buildProjectContext } from "../shared";
+import { isAutoAdvanceTask } from "../../chains";
 import { mapThreadEvent, newState, ZERO_CUM, type CodexCum } from "./events";
 import { resolveCodexModel } from "./pricing";
 import { codexStatus, verifyCodexTurn, startCodexLogin, getCodexLogin, submitCodexCode, cancelCodexLogin, codexApiKey } from "./auth";
@@ -68,6 +69,8 @@ export function orchestratorMcpConfig(project: Project, task: Task): CodexOption
           ORCH_PROJECT_ID: project.id,
           ORCH_BASE_URL: INTERNAL_BASE_URL,
           SERVICE_TOKEN: process.env.SERVICE_TOKEN || "",
+          // Mount complete_step only for an auto-advance chain step (lib/chains.ts).
+          ...(isAutoAdvanceTask(task) ? { ORCH_COMPLETE_STEP: "1" } : {}),
         },
       },
     },

@@ -34,6 +34,8 @@ beforeAll(async () => {
       if (req.url?.endsWith("/suggest-task")) {
         const id = `id-${nextId++}`;
         res.end(JSON.stringify({ ok: true, id, title: body.title, text: `Suggested "${body.title}" (id: ${id}).` }));
+      } else if (req.url?.endsWith("/complete-step")) {
+        res.end(JSON.stringify({ ok: true, text: `Step recorded: ${body.summary}` }));
       } else if (req.url?.endsWith("/expose-service")) {
         const url = `http://localhost:${body.port}`;
         res.end(JSON.stringify({ ok: true, name: body.name, url, text: `Registered "${body.name}" at ${url}.` }));
@@ -50,7 +52,7 @@ beforeAll(async () => {
 
 afterAll(() => new Promise<void>((r) => server.close(() => r())));
 
-async function connectBridge() {
+async function connectBridge(extraEnv: Record<string, string> = {}) {
   const transport = new StdioClientTransport({
     command: process.execPath,
     args: [SCRIPT],
@@ -60,6 +62,7 @@ async function connectBridge() {
       ORCH_BASE_URL: baseUrl,
       SERVICE_TOKEN: "smoke-token",
       PATH: process.env.PATH || "",
+      ...extraEnv,
     },
   });
   const client = new Client({ name: "test", version: "1.0.0" });
@@ -120,6 +123,21 @@ describe("orch-mcp stdio bridge", () => {
       expect(res.content[0].text).toContain("http://localhost:4300");
       const call = calls.find((c) => c.path.endsWith("/expose-service"))!;
       expect(call.body).toMatchObject({ projectId: "proj-abc", name: "dev", port: 4300 });
+      expect(call.token).toBe("smoke-token");
+    } finally {
+      await close();
+    }
+  });
+
+  it("registers complete_step only when the driver flags a chain step, and proxies it", async () => {
+    const { client, close } = await connectBridge({ ORCH_COMPLETE_STEP: "1" });
+    try {
+      const { tools } = await client.listTools();
+      expect(tools.map((t) => t.name)).toContain("complete_step");
+      const res = await client.callTool({ name: "complete_step", arguments: { summary: "all green" } });
+      expect((res.content as { text: string }[])[0].text).toBe("Step recorded: all green");
+      const call = calls.find((c) => c.path.endsWith("/complete-step"))!;
+      expect(call.body).toMatchObject({ taskId: "task-xyz", summary: "all green" });
       expect(call.token).toBe("smoke-token");
     } finally {
       await close();
