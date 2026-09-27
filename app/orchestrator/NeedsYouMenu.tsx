@@ -12,7 +12,7 @@ import type { NeedsYouRow } from "./types";
 // Picking a row jumps straight to that task (in its project). Rows are fetched fresh
 // on open so the ages and membership are always current; the longest-waiting task
 // sits at the top (server orders by waiting_since ASC).
-export function NeedsYouMenu({ onJump, onClose }: { onJump: (projectId: string, taskId: string) => void; onClose: () => void }) {
+export function NeedsYouMenu({ onJump, onClose }: { onJump: (projectId: string, taskId: string, chainId: string | null) => void; onClose: () => void }) {
   const [rows, setRows] = useState<NeedsYouRow[] | null>(null);
 
   useEffect(() => {
@@ -36,14 +36,14 @@ export function NeedsYouMenu({ onJump, onClose }: { onJump: (projectId: string, 
             <button
               key={r.id}
               className="ny-row"
-              onClick={() => { onJump(r.project_id, r.id); onClose(); }}
+              onClick={() => { onJump(r.project_id, r.id, r.chain_id ?? null); onClose(); }}
             >
               <span className="ny-proj" style={{ background: r.project_color }} title={r.project_name}>
                 {(r.project_icon || r.project_name[0] || "?").toUpperCase()}
               </span>
               <span className="ny-text">
                 <span className="ny-title">{r.title}</span>
-                <span className="ny-sub">{r.project_name} · waiting for {waitedFor(r.waiting_since)}</span>
+                <span className="ny-sub">{r.project_name} · {r.chain_id ? "chain ready for review · " : ""}waiting for {waitedFor(r.waiting_since)}</span>
               </span>
             </button>
           ))

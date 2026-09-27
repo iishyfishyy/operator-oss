@@ -65,6 +65,7 @@ export interface TaskRow {
   chain_pos?: number | null; // 0-based step index within that chain
   chain_mode?: string | null; // the chain's advance mode ("auto_review"), joined in by listTasks
   step_summary?: string; // what the agent reported via complete_step ("" = not yet)
+  step_pause?: string; // why this chain step paused the chain ("" = not paused)
   created_at: number; // ms epoch the row was created — the tray's freshness/"new" signal
   context_tokens: number; // latest turn's input-side tokens ≈ current context-window occupancy
   context_pct: number; // context_tokens as a percent (0–100) of the model's window
@@ -79,6 +80,7 @@ export interface NeedsYouRow {
   project_color: string;
   project_icon: string;
   waiting_since: number;
+  chain_id: string | null; // set on a chain-awaiting-review row (id is its last In-review step)
 }
 // A row in the ⌘K palette's session search: any real task across the active
 // projects plus enough of its project to label it. Mirrors lib/store.ts

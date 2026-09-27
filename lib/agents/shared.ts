@@ -177,7 +177,8 @@ export function buildProjectContext(project: Project, task: Task): string {
         `what changed and anything the next step should know. Don't commit, merge or push yourself. ` +
         `If you're blocked on a decision only the user can make, ask (using ${askTool}) instead of ` +
         `calling \`complete_step\` — the chain pauses on this step until they answer. Never ask a ` +
-        `question after calling it.`
+        `question after calling it. The call only counts for the turn it's made in: if the user follows ` +
+        `up (an answer, "continue", or review feedback), call it again once that follow-up is done.`
     );
   }
   return lines.join("\n");

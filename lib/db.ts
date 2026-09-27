@@ -227,6 +227,26 @@ export function init(db: Database.Database) {
       created_at  INTEGER NOT NULL
     );
 
+    -- A "Send back" from the chain review (lib/chainActions.ts): the user's
+    -- feedback, run as a fix-up turn on the chain's last step (its worktree
+    -- carries every step). about_task_id is the step the feedback names (NULL =
+    -- the whole chain; nulled if that step is later deleted — about_pos keeps
+    -- the label). start_sha is the last step's HEAD when the fix-up began, so
+    -- the review can show the fix-up's own lines. completed_at = 0 while open.
+    CREATE TABLE IF NOT EXISTS chain_fixups (
+      id            TEXT PRIMARY KEY,
+      chain_id      TEXT NOT NULL REFERENCES chains(id) ON DELETE CASCADE,
+      task_id       TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+      about_task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL,
+      about_pos     INTEGER,
+      feedback      TEXT NOT NULL,
+      summary       TEXT NOT NULL DEFAULT '',
+      start_sha     TEXT NOT NULL DEFAULT '',
+      created_at    INTEGER NOT NULL,
+      completed_at  INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS idx_chain_fixups_chain ON chain_fixups(chain_id);
+
     -- Task ordering: a task "depends on" (is blocked by) another. While any
     -- depends_on_id task isn't 'done', the dependent task is shown as blocked and
     -- can't be started. Both sides cascade-delete with their task. CREATE IF NOT
@@ -464,6 +484,8 @@ export function migrate(db: Database.Database) {
   if (!taskCols.includes("chain_pos")) db.exec("ALTER TABLE tasks ADD COLUMN chain_pos INTEGER");
   if (!taskCols.includes("step_summary")) db.exec("ALTER TABLE tasks ADD COLUMN step_summary TEXT NOT NULL DEFAULT ''");
   if (!taskCols.includes("step_completed_at")) db.exec("ALTER TABLE tasks ADD COLUMN step_completed_at INTEGER NOT NULL DEFAULT 0");
+  // Why a chain step's last turn paused the chain ("" = not paused) — the chain card shows it.
+  if (!taskCols.includes("step_pause")) db.exec("ALTER TABLE tasks ADD COLUMN step_pause TEXT NOT NULL DEFAULT ''");
   db.exec("CREATE INDEX IF NOT EXISTS idx_tasks_chain ON tasks(chain_id)");
 
   // Orphan-reaping pid tracking for managed services (added after the services

@@ -72,13 +72,18 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   // task"), not the kickoff the task got on day one. buildProjectContext
   // supplies the task metadata and now includes the summary, so the resume
   // turn itself doesn't repeat it.
+  //
+  // A finished auto-advance chain step (In review) STAYS In review: later
+  // steps are already stacked on it and the chain review reads that status —
+  // a /clear there is just a fresh context for follow-ups, not new work.
   const next = updateTask(id, {
     generation: gen + 1,
     session_id: null,
     started: 0,
     running: 0,
     awaiting_input: 0,
-    status: "in_progress",
+    step_pause: "",
+    status: cur.chain_id && cur.status === "in_review" ? "in_review" : "in_progress",
   });
 
   // Discard any follow-ups queued against the OLD generation. They were lined up

@@ -34,3 +34,7 @@ export function depBlocks(dep: BlockerLike, dependent: DependentLike): boolean {
   }
   return true;
 }
+
+/** What "Continue" on a paused chain step sends: resume, and say how to finish. */
+export const CONTINUE_STEP_PROMPT =
+  "Continue this step. When — and only when — its work is fully done and verified, call `complete_step` with a short summary so the chain can move on.";

@@ -19,7 +19,7 @@ import { isAuthFailure, AUTH_EXPIRED_NOTICE } from "@/lib/authFailure";
 import { isApprovalBlocked, APPROVAL_BLOCKED_NOTICE } from "@/lib/approvalFailure";
 import { isUsageLimit, USAGE_LIMIT_NOTICE } from "@/lib/usageLimit";
 import { markAgentAuthBroken, clearAgentAuthBroken } from "@/lib/agents/connections";
-import { chainAdvanceBlocker } from "@/lib/chains";
+import { chainAdvanceBlocker, isAutoAdvanceTask, pauseReason } from "@/lib/chains";
 import { hasPendingAsk } from "@/lib/asks";
 import type { Task, Project, ToolData, TurnUsage } from "@/lib/types";
 
@@ -250,8 +250,10 @@ async function run(task: Task, project: Project, userText: string, syncNote: str
     });
 
     // complete_step counts only for the turn it was called in: clear any stamp
-    // left by an earlier turn so the advance check below can't pick it up.
-    if (getTask(id)?.step_completed_at) updateTask(id, { step_completed_at: 0 });
+    // left by an earlier turn so the advance check below can't pick it up —
+    // and any pause reason, since the step is moving again (lib/chains.ts).
+    const before = getTask(id);
+    if (before?.step_completed_at || before?.step_pause) updateTask(id, { step_completed_at: 0, step_pause: "" });
 
     if (syncNote) {
       const m = addMessage(id, gen, "system", syncNote);
@@ -405,9 +407,9 @@ async function run(task: Task, project: Project, userText: string, syncNote: str
     // outcome is a pause: awaiting_input stays set below like every turn that
     // ends mid-task. See lib/chains.ts; the commit + next-step launch run
     // detached after this block (finishChainStep).
-    const advanceChain =
-      opened &&
-      chainAdvanceBlocker({
+    const blocker = !opened
+      ? null
+      : chainAdvanceBlocker({
         task: current,
         generation: gen,
         turnStartedAt: startedAt,
@@ -417,13 +419,17 @@ async function run(task: Task, project: Project, userText: string, syncNote: str
         openAsks: openAsks.size,
         pendingAsk: hasPendingAsk(id),
         pendingMessages: listPendingMessages(id).length,
-      }) === null;
+      });
+    const advanceChain = opened && blocker === null;
+    // A chain step that pauses records why, for the chain card (only for a
+    // step still in its chain — never for a plain task or a deleted one).
+    const pause = opened && current?.chain_id && isAutoAdvanceTask(current) ? pauseReason(blocker) : "";
     // If the session never opened, keep the task retryable (started stays 0).
     // A turn that actually ran and ended mid-task — whether it finished on its
     // own or was Stopped — is now waiting on the user, so flag awaiting_input
     // (cleared on the next send / done) leaving it cleanly resumable.
     if (!generationAdvanced && !superseded) {
-      updateTask(id, { running: 0, session_id: sessionId, awaiting_input: opened && !advanceChain ? 1 : 0 });
+      updateTask(id, { running: 0, session_id: sessionId, awaiting_input: opened && !advanceChain ? 1 : 0, ...(pause ? { step_pause: pause } : {}) });
     }
     // Keyed by (task_id, generation), so this settles THIS generation's session
     // row and never touches the fresh generation — safe to run either way.

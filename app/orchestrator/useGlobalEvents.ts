@@ -49,7 +49,7 @@ export function useGlobalEvents({ selProjRef, setTaskRunning, setTasks, setProje
       // the client already optimistically flipped to in_progress; the session-
       // open event re-fires turn_started with the settled status moments later.
       const status = ev.running && ev.status === "not_started" && t.status === "in_progress" ? t.status : ev.status;
-      return { ...t, running: ev.running ? 1 : 0, awaiting_input: ev.awaiting_input ? 1 : 0, status };
+      return { ...t, running: ev.running ? 1 : 0, awaiting_input: ev.awaiting_input ? 1 : 0, status, step_pause: ev.step_pause };
     }));
     // Project badge + titlebar pill: the event carries the project's fresh
     // awaiting count, so no /api/projects refetch is needed.

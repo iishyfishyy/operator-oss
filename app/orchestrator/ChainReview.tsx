@@ -11,20 +11,38 @@ import { Markdown } from "../Markdown";
 import { StatusDot, Skel, ErrNote } from "./shared";
 import { SLABEL, AWAIT_LABEL, type TaskRow } from "./types";
 import { chainProgressLabel, stepState, type ChainSummary } from "./chains";
-import type { ChainView, ChainStepView, ChainMergeOutcome, ChainPrepareOutcome } from "@/lib/chainMerge";
+import type { ChainView, ChainStepView, ChainFixupView, ChainMergeOutcome, ChainPrepareOutcome } from "@/lib/chainMerge";
+import type { RebaseOutcome } from "@/lib/chainActions";
 
-export function ChainCard({ chain, running, active, onReview }: { chain: ChainSummary; running: Set<string>; active: boolean; onReview: () => void }) {
+export function ChainCard({ chain, running, active, onReview, onOpenStep, onContinue }: {
+  chain: ChainSummary; running: Set<string>; active: boolean; onReview: () => void;
+  onOpenStep?: (id: string) => void; // jump to the paused step's session
+  onContinue?: (id: string) => void; // resume a paused step (auto-advance picks back up once it calls complete_step)
+}) {
   const first = chain.steps[0];
+  const paused = chain.pausedStep;
+  // An open question is answered in the session, not continued past.
+  const canContinue = !!paused && !!onContinue && !running.has(paused.id) && !paused.running && chain.pauseReason !== "Waiting on your answer";
   return (
     <div className={`chain-card ${active ? "sel" : ""}`}>
       <div className="chain-top">
         {Icon.git()}
         <span className="chain-title" title={chain.steps.map((s) => s.title).join(" → ")}>{first?.title ?? "Chain"}</span>
+        {chain.awaitsReview && <span className="chain-ready" title="Every step finished — waiting for your review">Ready for review</span>}
         <span className="chain-count">{chain.total} steps</span>
       </div>
       <div className="chain-bar" aria-hidden>
         {chain.steps.map((s) => <span key={s.id} className={`chain-seg st-${stepState(s, running)}`} title={`${(s.chain_pos ?? 0) + 1}. ${s.title}`} />)}
       </div>
+      {paused && (
+        <div className="chain-pause">
+          <span className="chain-pause-txt" title={paused.title}>
+            ⏸ Step {(paused.chain_pos ?? 0) + 1} paused — {chain.pauseReason}
+          </span>
+          {onOpenStep && <button className="chain-link" onClick={() => onOpenStep(paused.id)}>Jump to step</button>}
+          {canContinue && <button className="chain-link" onClick={() => onContinue!(paused.id)}>Continue</button>}
+        </div>
+      )}
       <div className="chain-foot">
         <span className="chain-prog">{chainProgressLabel(chain)}</span>
         <button className="btn btn-accent btn-sm" onClick={onReview}>Review chain</button>
@@ -58,6 +76,11 @@ export function ChainReview({ chainId, tasks, running, onClose, onOpenTask, onRu
   const [busy, setBusy] = useState(false);
   const [res, setRes] = useState<MergeState>(null);
   const [manualOpen, setManualOpen] = useState(false);
+  const [sendOpen, setSendOpen] = useState(false);
+  const [feedback, setFeedback] = useState("");
+  const [about, setAbout] = useState("");
+  // The outcome of a Send back / Discard / Rebase, shown in the action bar.
+  const [note, setNote] = useState<{ ok: boolean; text: string; conflicts?: string[] } | null>(null);
 
   // Event-driven refresh: the steps' live status/running/awaiting flags come
   // from the global stream; when any of them moves, re-read the chain view.
@@ -79,7 +102,7 @@ export function ChainReview({ chainId, tasks, running, onClose, onOpenTask, onRu
   }, [chainId]);
 
   useEffect(() => { void load(); }, [load, sig]);
-  useEffect(() => { setRes(null); setOpen(new Set()); setTab("steps"); }, [chainId]);
+  useEffect(() => { setRes(null); setOpen(new Set()); setTab("steps"); setNote(null); setSendOpen(false); }, [chainId]);
 
   const steps = view?.steps ?? [];
   const stepOf = (id?: string | null) => steps.find((s) => s.id === id);
@@ -94,6 +117,7 @@ export function ChainReview({ chainId, tasks, running, onClose, onOpenTask, onRu
   const merge = async (through?: string) => {
     setBusy(true);
     setRes(null);
+    setNote(null);
     setManualOpen(false);
     try {
       const out = await postJson<ChainMergeOutcome>(`/api/chains/${chainId}/merge`, { through });
@@ -137,6 +161,68 @@ export function ChainReview({ chainId, tasks, running, onClose, onOpenTask, onRu
     try {
       await fetch(`/api/tasks/${resolution.taskId}/merge/abort`, { method: "POST" });
       setRes(null);
+    } finally {
+      setBusy(false);
+      void load();
+    }
+  };
+
+  // Send back: the feedback runs as a fix-up turn on the chain's last step
+  // (server-side, through the normal resume path). It shows up as a trailing
+  // Fix-up entry; when it calls complete_step the chain is back in review.
+  const sendBack = async () => {
+    setBusy(true);
+    setNote(null);
+    try {
+      const out = await postJson<{ ok: boolean; error?: string; taskId?: string }>(`/api/chains/${chainId}/send-back`, { feedback, about: about || undefined });
+      if (out.ok) {
+        setFeedback("");
+        setAbout("");
+        setSendOpen(false);
+        setNote({ ok: true, text: `Sent back — a fix-up is running on step ${(stepOf(out.taskId)?.chain_pos ?? 0) + 1}. The chain comes back to review when it finishes.` });
+      } else setNote({ ok: false, text: `⚠ ${out.error || "could not send back"}` });
+    } finally {
+      setBusy(false);
+      void load();
+    }
+  };
+
+  const discardFrom = async (s: ChainStepView) => {
+    const doomed = steps.filter((x) => x.chain_pos >= s.chain_pos);
+    const msg = `Delete ${doomed.length === 1 ? `step ${s.chain_pos + 1}` : `steps ${s.chain_pos + 1}–${doomed[doomed.length - 1].chain_pos + 1}`} of this chain?\n\n` +
+      doomed.map((x) => `${x.chain_pos + 1}. ${x.title}`).join("\n") +
+      `\n\nTheir sessions, worktrees and branches are removed for good. Earlier steps stay reviewable and mergeable.`;
+    if (!window.confirm(msg)) return;
+    setBusy(true);
+    setNote(null);
+    try {
+      const out = await postJson<{ ok: boolean; error?: string; deleted?: string[] }>(`/api/chains/${chainId}/discard`, { from: s.id });
+      setNote(out.ok ? { ok: true, text: `Discarded ${out.deleted?.length ?? 0} step(s).` } : { ok: false, text: `⚠ ${out.error || "could not discard"}` });
+      if (out.ok && doomed.length === steps.length) onClose();
+    } finally {
+      setBusy(false);
+      void load();
+    }
+  };
+
+  const rebase = async () => {
+    setBusy(true);
+    setNote(null);
+    try {
+      const out = await postJson<RebaseOutcome & { error?: string }>(`/api/chains/${chainId}/rebase`, {});
+      setNote(out.ok
+        ? { ok: true, text: `Rebased ${out.rebased.length} step(s) onto ${view?.baseBranch ?? "the base branch"}.` }
+        : { ok: false, text: `⚠ ${out.error || "rebase failed"}`, conflicts: "conflicts" in out ? out.conflicts : undefined });
+    } finally {
+      setBusy(false);
+      void load();
+    }
+  };
+
+  const backToReview = async (taskId: string) => {
+    setBusy(true);
+    try {
+      await fetch(`/api/tasks/${taskId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: "in_review" }) });
     } finally {
       setBusy(false);
       void load();
@@ -187,6 +273,15 @@ export function ChainReview({ chainId, tasks, running, onClose, onOpenTask, onRu
             {busy ? "Merging…" : resolution ? "Accept & merge chain" : primary && primary.id !== steps[steps.length - 1]?.id ? `Merge through step ${primary.chain_pos + 1}` : "Merge chain"}
           </button>
         )}
+        {!allMerged && (
+          <button
+            className={`tc-btn ${sendOpen ? "on" : ""}`}
+            onClick={() => setSendOpen((v) => !v)}
+            title={view.sendBackBlocker ?? "Write feedback and run it as a fix-up turn on the last step"}
+          >
+            Send back
+          </button>
+        )}
         <button className="icon-btn" onClick={onClose} title="Close chain review" aria-label="Close chain review">{Icon.x()}</button>
       </div>
       <div className="chr-progress">
@@ -195,6 +290,54 @@ export function ChainReview({ chainId, tasks, running, onClose, onOpenTask, onRu
         {stats.paused > 0 && ` · ${stats.paused} paused`}
         {stats.waiting > 0 && ` · ${stats.waiting} not started`}
       </div>
+
+      {sendOpen && (
+        <div className="chr-send">
+          <textarea
+            className="chr-send-text" rows={3} value={feedback} autoFocus
+            placeholder="What should change? The agent works on the last step's worktree, which has every step's changes."
+            onChange={(e) => setFeedback(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && feedback.trim() && !view.sendBackBlocker) void sendBack(); }}
+          />
+          <div className="chr-send-row">
+            <label className="chr-send-about">
+              About
+              <select value={about} onChange={(e) => setAbout(e.target.value)}>
+                <option value="">the whole chain</option>
+                {steps.filter((x) => !x.merged).map((x) => <option key={x.id} value={x.id}>step {x.chain_pos + 1}: {x.title}</option>)}
+              </select>
+            </label>
+            <span className="tc-spacer" />
+            {view.sendBackBlocker && <span className="chr-send-why">{view.sendBackBlocker}</span>}
+            <button className="tc-btn" onClick={() => setSendOpen(false)} disabled={busy}>Cancel</button>
+            <button className="tc-btn primary" onClick={sendBack} disabled={busy || !feedback.trim() || !!view.sendBackBlocker}>Send back</button>
+          </div>
+        </div>
+      )}
+
+      {view.warnings.map((w) => <div key={w} className="tc-mergebar review">⚠ {w}</div>)}
+
+      {view.baseMoved && !allMerged && (
+        <div className="tc-mergebar review">
+          <code>{baseBranch}</code> moved {view.baseMoved.behind} commit{view.baseMoved.behind === 1 ? "" : "s"} ahead since this chain branched.{" "}
+          {view.baseMoved.conflicts.length > 0
+            ? `Merging would conflict in ${view.baseMoved.conflicts.length} file(s) — merge and use Fix with AI, or try rebasing the stack.`
+            : "Rebase the stack onto it to review and test against the latest code before merging."}
+          {view.baseMoved.conflicts.length > 0 && <div className="tc-conflicts">{view.baseMoved.conflicts.join("\n")}</div>}
+          <div className="tc-conflict-actions">
+            <button className="tc-btn" onClick={rebase} disabled={busy || stats.running > 0} title={stats.running > 0 ? "Wait for the running step to finish" : `Replay every unmerged step onto ${baseBranch}; all or nothing`}>
+              Rebase stack onto {baseBranch}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {note && (
+        <div className={`tc-mergebar ${note.ok ? "ok" : "bad"}`}>
+          {note.text}
+          {note.conflicts && note.conflicts.length > 0 && <div className="tc-conflicts">{note.conflicts.join("\n")}</div>}
+        </div>
+      )}
 
       {resolution && resolutionStep && (
         <div className="tc-mergebar review">
@@ -252,7 +395,11 @@ export function ChainReview({ chainId, tasks, running, onClose, onOpenTask, onRu
             <StepRow
               key={s.id} step={s} isLast={s.id === steps[steps.length - 1]?.id} expanded={open.has(s.id)} busy={busy}
               onToggle={() => toggle(s.id)} onOpen={() => onOpenTask(s.id)} onMergeThrough={() => merge(s.id)}
+              onDiscard={() => discardFrom(s)}
             />
+          ))}
+          {view.fixups.map((f) => (
+            <FixupRow key={f.id} fixup={f} busy={busy} onOpen={() => onOpenTask(f.taskId)} onBackToReview={() => backToReview(f.taskId)} />
           ))}
         </div>
       )}
@@ -260,12 +407,12 @@ export function ChainReview({ chainId, tasks, running, onClose, onOpenTask, onRu
   );
 }
 
-function StepRow({ step: s, isLast, expanded, busy, onToggle, onOpen, onMergeThrough }: {
+function StepRow({ step: s, isLast, expanded, busy, onToggle, onOpen, onMergeThrough, onDiscard }: {
   step: ChainStepView; isLast: boolean; expanded: boolean; busy: boolean;
-  onToggle: () => void; onOpen: () => void; onMergeThrough: () => void;
+  onToggle: () => void; onOpen: () => void; onMergeThrough: () => void; onDiscard: () => void;
 }) {
   const awaiting = s.status === "in_progress" && s.awaiting_input;
-  const label = s.merged ? "Merged" : awaiting ? AWAIT_LABEL : s.running ? "Running" : SLABEL[s.status];
+  const label = s.merged ? "Merged" : awaiting ? (s.step_pause ? `Paused — ${s.step_pause}` : AWAIT_LABEL) : s.running ? "Running" : SLABEL[s.status];
   return (
     <div className={`chr-step ${s.merged ? "merged" : ""}`}>
       <div className="chr-srow">
@@ -283,6 +430,11 @@ function StepRow({ step: s, isLast, expanded, busy, onToggle, onOpen, onMergeThr
             Merge up to here
           </button>
         )}
+        {!s.merged && (
+          <button className="tc-btn danger" onClick={onDiscard} disabled={busy} title={isLast ? "Delete this step (session, worktree and branch)" : "Delete this step and every step after it (sessions, worktrees and branches)"}>
+            {isLast ? "Discard" : "Discard from here"}
+          </button>
+        )}
       </div>
       {s.step_summary ? (
         <div className="chr-sum"><Markdown>{s.step_summary}</Markdown></div>
@@ -294,6 +446,28 @@ function StepRow({ step: s, isLast, expanded, busy, onToggle, onOpen, onMergeThr
           <TaskChanges taskId={s.id} running={s.running} readOnly />
         </div>
       )}
+    </div>
+  );
+}
+
+function FixupRow({ fixup: f, busy, onOpen, onBackToReview }: { fixup: ChainFixupView; busy: boolean; onOpen: () => void; onBackToReview: () => void }) {
+  const label = f.state === "running" ? "Running" : f.state === "paused" ? AWAIT_LABEL : "Done";
+  return (
+    <div className="chr-step fixup">
+      <div className="chr-srow">
+        <span className="chr-fix-tag">Fix-up</span>
+        <span className="chr-stitle">
+          on step {f.stepPos + 1}{f.aboutPos != null ? ` · about step ${f.aboutPos + 1}${f.aboutTitle ? ` (${f.aboutTitle})` : ""}` : " · whole chain"}
+        </span>
+        <span className={`slabel ${f.state === "paused" ? "await" : ""}`}>{label}</span>
+        <span className="tc-cnt"><b className="add">+{f.additions}</b> <b className="del">−{f.deletions}</b></span>
+        <button className="tc-btn" onClick={onOpen} title="Open the session the fix-up runs in">Open</button>
+        {f.state === "paused" && (
+          <button className="tc-btn" onClick={onBackToReview} disabled={busy} title="You're done with this fix-up — put the chain back in review">Back to review</button>
+        )}
+      </div>
+      <div className="chr-sum chr-fix-fb">“{f.feedback}”</div>
+      {f.summary ? <div className="chr-sum"><Markdown>{f.summary}</Markdown></div> : <div className="chr-sum faint">{f.state === "done" ? "Finished without a summary." : "Working on it…"}</div>}
     </div>
   );
 }

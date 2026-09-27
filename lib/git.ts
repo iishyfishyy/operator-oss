@@ -1196,3 +1196,45 @@ export async function worktreeLineStats(worktreePath: string, from: string): Pro
     return null;
   }
 }
+
+/**
+ * Replay the current branch of `worktreePath` from `upstream` onto `onto`
+ * (`git rebase --onto`). A conflict aborts the rebase, leaving the branch as it
+ * was, and reports the conflicted files. Needs a clean worktree. Falls back to
+ * a local committer identity when none is configured, like commitWorktree.
+ */
+export async function rebaseWorktreeOnto(
+  worktreePath: string,
+  onto: string,
+  upstream: string
+): Promise<{ ok: true; tip: string } | { ok: false; error: string; conflicts: string[] }> {
+  const hasIdentity = !!(await git(worktreePath, ["config", "user.email"]).catch(() => ""));
+  const ident = hasIdentity ? [] : ["-c", "user.name=Orchestrator", "-c", "user.email=orchestrator@local"];
+  try {
+    await git(worktreePath, [...ident, "rebase", "--onto", onto, upstream]);
+    return { ok: true, tip: await git(worktreePath, ["rev-parse", "HEAD"]) };
+  } catch (e) {
+    const conflicts = (await git(worktreePath, ["diff", "--name-only", "--diff-filter=U"]).catch(() => ""))
+      .split("\n")
+      .filter(Boolean);
+    await git(worktreePath, ["rebase", "--abort"]).catch(() => "");
+    return { ok: false, error: e instanceof Error ? e.message.split("\n")[0] : String(e), conflicts };
+  }
+}
+
+/** Point the worktree's current branch back at `sha` (the rebase rollback). */
+export async function resetWorktreeHard(worktreePath: string, sha: string): Promise<void> {
+  await git(worktreePath, ["reset", "--hard", sha]);
+}
+
+/** Commits on `ref` that `from` lacks (`git rev-list --count from..ref`). */
+export async function countCommits(repoPath: string, from: string, ref: string): Promise<number> {
+  if (!from || !ref) return 0;
+  return parseInt(await git(repoPath, ["rev-list", "--count", `${from}..${ref}`]).catch(() => "0"), 10) || 0;
+}
+
+/** True when `from..HEAD` in the worktree contains a merge commit (a rebase would drop it). */
+export async function hasMergeCommits(worktreePath: string, from: string): Promise<boolean> {
+  if (!from) return false;
+  return (await git(worktreePath, ["rev-list", "--merges", "-n", "1", `${from}..HEAD`]).catch(() => "")).length > 0;
+}

@@ -11,7 +11,7 @@
 // SDK-free on purpose (pinned in tests/importGraph.test.ts): lib/agentTools.ts,
 // lib/agents/shared.ts and the runner all read these rules.
 
-import { getChain, getTask, updateTask, previousChainStep } from "./store";
+import { getChain, getTask, updateTask, previousChainStep, openChainFixup, setChainFixupSummary } from "./store";
 import { AUTO_ADVANCE_MODE } from "./chainRules";
 import type { Project, Task } from "./types";
 
@@ -54,6 +54,17 @@ export function recordStepComplete(taskId: string, summary: string): { ok: boole
   if (!isAutoAdvanceTask(task)) {
     return { ok: false, text: "This task isn't part of an auto-advance chain, so there is no step to complete. Just finish your reply." };
   }
+  // A review "Send back" fix-up reports into its own record — the step's
+  // original summary is what the review shows for the step itself.
+  const fixup = openChainFixup(taskId);
+  if (fixup) {
+    setChainFixupSummary(fixup.id, summary.trim());
+    updateTask(taskId, { step_completed_at: Date.now() });
+    return {
+      ok: true,
+      text: "Fix-up recorded as complete. When this turn ends the orchestrator commits your work and puts the chain back in review. Finish your reply now.",
+    };
+  }
   updateTask(taskId, { step_summary: summary.trim(), step_completed_at: Date.now() });
   return {
     ok: true,
@@ -89,9 +100,68 @@ export function chainAdvanceBlocker(s: TurnEndState): string | null {
   if (s.superseded) return "superseded by a newer turn";
   if (s.stopped) return "stopped";
   if (s.turnError) return "turn failed";
-  if (!t.step_completed_at || t.step_completed_at < s.turnStartedAt) return "complete_step not called this turn";
+  // An open question first: it's the more useful pause reason when the turn
+  // also never called complete_step.
   if (s.openAsks > 0 || s.pendingAsk) return "open question";
+  if (!t.step_completed_at || t.step_completed_at < s.turnStartedAt) return "complete_step not called this turn";
   if (s.pendingMessages > 0) return "queued messages";
   if (t.status !== "in_progress") return `status is ${t.status}`;
   return null;
+}
+
+/**
+ * The chain card's wording for a blocker that leaves the step waiting on the
+ * user, or "" for one that isn't a pause (the step moved on, was deleted or
+ * /clear'd, or a queued follow-up is about to run as the next turn).
+ */
+export function pauseReason(blocker: string | null): string {
+  switch (blocker) {
+    case "open question":
+      return "Waiting on your answer";
+    case "turn failed":
+      return "The turn hit an error";
+    case "complete_step not called this turn":
+      return "Ended without calling complete_step";
+    case "stopped":
+      return "Stopped";
+    default:
+      return "";
+  }
+}
+
+/**
+ * The fix-up turn a chain review "Send back" runs on the chain's LAST step:
+ * its worktree already stacks every step, so the fix lands where the whole
+ * chain merges from, with nothing to rebase. Names the step the feedback is
+ * about (with that step's summary) so the agent knows where to look.
+ */
+export function buildFixupPrompt(input: {
+  feedback: string;
+  steps: Pick<Task, "chain_pos" | "title" | "step_summary">[];
+  about?: Pick<Task, "chain_pos" | "title" | "step_summary"> | null;
+  last: Pick<Task, "chain_pos" | "title">;
+}): string {
+  const n = (t: Pick<Task, "chain_pos">) => (t.chain_pos ?? 0) + 1;
+  const lines = [
+    `Review feedback on this auto-advance chain — a fix-up turn.`,
+    ``,
+    `Your worktree is the chain's last step (step ${n(input.last)}, "${input.last.title}"), and its branch contains every step's committed changes:`,
+    ...input.steps.map((s) => `  ${n(s)}. ${s.title}`),
+  ];
+  if (input.about) {
+    lines.push(``, `The feedback is about step ${n(input.about)}, "${input.about.title}".`);
+    if (input.about.step_summary.trim()) lines.push(`That step's summary: ${input.about.step_summary.trim()}`);
+  } else {
+    lines.push(``, `The feedback is about the chain as a whole.`);
+  }
+  lines.push(
+    ``,
+    `Feedback:`,
+    input.feedback.trim(),
+    ``,
+    `Make the fix here, in this worktree — don't commit, merge or push. When the fix is done and verified, call ` +
+      `\`complete_step\` with a short summary of what you changed; the chain then goes back to the user's review. ` +
+      `If you need a decision from the user first, ask instead.`
+  );
+  return lines.join("\n");
 }

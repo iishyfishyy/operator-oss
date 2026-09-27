@@ -131,7 +131,15 @@ mode `auto_review`, the project's base branch) and stamps each member with its
   during *that* turn, the turn ended cleanly (no error — context overflow, dead login,
   approval block, usage limit — not Stopped, no `/clear` mid-turn), no question is still
   open, and no follow-up is queued. Anything else pauses the chain: the step stays
-  `in_progress` with awaiting input set, so it shows up in "N need you".
+  `in_progress` with awaiting input set, so it shows up in "N need you". The reason is saved
+  on the step (`step_pause`: waiting on your answer / the turn hit an error / ended without
+  calling `complete_step` / stopped), and the chain card shows it with **Jump to step** and,
+  unless the step is waiting on an answer, **Continue** (a resume turn asking the agent to
+  finish and call `complete_step`).
+- **Resuming picks auto-advance back up.** A `complete_step` call only counts for the turn
+  it's made in, so answering, pressing Continue, or sending any follow-up runs a new turn.
+  When that turn calls it and ends cleanly, the chain advances as usual. The system prompt
+  tells the agent to call it again after a follow-up.
 - **Stacked worktrees, base branch untouched.** A finished step's worktree is committed on
   its own branch and the step moves to **In review**. The next step's worktree branches from
   the previous step's branch, and its diff base is the previous step's last commit — so each
@@ -141,7 +149,14 @@ mode `auto_review`, the project's base branch) and stamps each member with its
   dependent, an in-review task is unfinished work and still blocks. Setting a chain step to
   In review by hand advances the chain the same way.
 
-Deleting a chain's last task removes the chain row; everything is a hard delete.
+Deleting a chain's last task removes the chain row; everything is a hard delete. Deleting a
+step **mid-chain** keeps the chain going: the next step (if it hasn't started) is re-linked
+to the nearest step before the gap, stacks on that step's branch, and starts right away if
+that step has already finished. If a later step had *already* stacked on the deleted one,
+its branch still carries the deleted work. The review flags it, and merging is refused
+until you **Rebase stack** (which replays each step from its own base, dropping the deleted
+step's commits) or discard from that step. `/clear` on a finished (In review) step keeps it
+In review. Later steps are stacked on it, so the fresh context is only for follow-ups.
 
 ### Chain review (merge the whole stack at once)
 
@@ -179,8 +194,44 @@ pane:
   finishes, **Accept & merge chain** completes the staged merge and lands every step;
   **Discard resolution** aborts it. Resolving by hand in the step's terminal works too.
 
+- **Send back** (header) opens a feedback box with an optional **About** step. The
+  feedback runs as a **fix-up turn on the last unmerged step**. Its worktree already
+  contains every step, so nothing is rebased. The prompt names the step the feedback is
+  about, with that step's `complete_step` summary. It goes through the normal resume path,
+  so you can watch it in that step's session. When the fix-up calls `complete_step`, it is
+  committed as its own `Fix-up: …` commit and the chain is back in review. If it pauses
+  instead, answer it in the session or press **Back to review** (the same as setting the
+  step to In review by hand). Fix-ups appear as trailing **Fix-up** entries under the
+  steps, each with its feedback, summary, state, and its own +/− lines (from the last
+  step's HEAD when it started). A fix-up's summary is stored on the fix-up, so the step's
+  own summary is kept. Only one fix-up can be open at a time.
+- **Discard from here** (per unmerged step; **Discard** on the last one) asks for
+  confirmation, then hard-deletes that step and every step after it. Their turns are
+  stopped and their worktrees **and branches** are removed. Earlier steps stay reviewable
+  and mergeable. A range that holds a merged step is refused.
+- **Base branch moved.** When the chain's base branch has commits the stack doesn't, a
+  banner shows how far behind the stack is (and any predicted merge conflicts). It offers
+  **Rebase stack onto <base>**, which replays every unmerged step in order (`git rebase
+  --onto`, each step onto the rebased tip of the one before, starting from its own
+  `base_sha`) and moves each `base_sha` forward so per-step diffs still show only that
+  step's work. The rebase is all or nothing: a conflict resets every step already
+  rebased, names the conflicting step, and points you to merging with **Fix with AI**.
+  Every step must be idle and committed first. A step whose branch contains a merge
+  commit (for example, a manual Sync with the base) is refused. A rebase would drop the
+  merge, and any edits made inside it would silently disappear, so merge the chain instead. You can also just merge without rebasing,
+  since the merge handles a moved base.
+
+A chain that has finished every step (at least one In review, the rest In review, done,
+or cancelled, nothing running) **counts once in "N need you"** and in the project badge.
+The server's `awaiting_count` includes it, so it arrives on the `/api/events` stream like
+any task's count. It is also listed in the need-you dropdown as "Review chain: …", and
+picking it opens the review. The card says **Ready for review**. A paused step is counted
+as itself, never twice.
+
 API: `GET /api/chains/[id]` (steps + stats + per-step merge eligibility + any staged
-resolution), `GET /api/chains/[id]/diff[?through=taskId]` (the Combined diff, same shape
+resolution + fix-ups + Send-back eligibility + base-moved state + stack warnings),
+`POST /api/chains/[id]/send-back` with `{ feedback, about?: taskId }`,
+`POST /api/chains/[id]/discard` with `{ from: taskId }`, `POST /api/chains/[id]/rebase`, `GET /api/chains/[id]/diff[?through=taskId]` (the Combined diff, same shape
 as the task diff route), `POST /api/chains/[id]/merge` with `{ through?: taskId }`, and
 `POST /api/chains/[id]/merge/prepare` with the same body (the conflict path). All under
 the normal middleware auth.

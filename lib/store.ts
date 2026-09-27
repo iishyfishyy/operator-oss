@@ -6,7 +6,7 @@ import { getDb } from "./db";
 // break sync route entries at runtime (see the note in that file).
 import { modelContextWindow } from "./agents/capabilities";
 import { SERVICE_PORT_BASE } from "./config";
-import type { Project, Task, Chain, ChainMode, Message, PendingMessage, Summary, Session, Priority, Status, MsgRole, TurnUsage, UsageTotals, ToolData, AskQuestion, AskAnswers } from "./types";
+import type { Project, Task, Chain, ChainFixup, ChainMode, Message, PendingMessage, Summary, Session, Priority, Status, MsgRole, TurnUsage, UsageTotals, ToolData, AskQuestion, AskAnswers } from "./types";
 export { addInternalUsage, type InternalJob } from "./internalUsage";
 
 // ---------- projects ----------
@@ -21,12 +21,25 @@ export { addInternalUsage, type InternalJob } from "./internalUsage";
 // dropdown can never disagree.
 const NEEDS_YOU = "t.suggested = 0 AND t.status = 'in_progress' AND t.awaiting_input = 1";
 
+// The chain half of "needs you" (over chains aliased `c`): an auto-advance
+// chain that has finished every step and is waiting for its review — at least
+// one step In review, and every step In review / done / cancelled with no turn
+// live. It counts ONCE per chain, not per step. A paused step is already
+// counted by NEEDS_YOU (and makes the chain not-finished here), so nothing is
+// counted twice. Mirrored client-side by chainAwaitsReview
+// (app/orchestrator/chains.ts) for the selected project's live count.
+const CHAIN_AWAITS_REVIEW = `c.mode = 'auto_review'
+  AND EXISTS (SELECT 1 FROM tasks s WHERE s.chain_id = c.id AND s.status = 'in_review')
+  AND NOT EXISTS (SELECT 1 FROM tasks s WHERE s.chain_id = c.id
+    AND (s.running = 1 OR s.status NOT IN ('in_review', 'done', 'cancelled')))`;
+
 export function listProjects(): (Project & { task_count: number; last_activity: number; awaiting_count: number; cost_usd: number })[] {
   return getDb()
     .prepare(
       `SELECT p.*,
          (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id AND t.suggested = 0) AS task_count,
-         (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id AND ${NEEDS_YOU}) AS awaiting_count,
+         (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id AND ${NEEDS_YOU})
+           + (SELECT COUNT(*) FROM chains c WHERE c.project_id = p.id AND ${CHAIN_AWAITS_REVIEW}) AS awaiting_count,
          COALESCE((SELECT SUM(u.cost_usd) FROM task_usage u WHERE u.project_id = p.id), 0) AS cost_usd,
          (SELECT MAX(ts) FROM (
             SELECT MAX(updated_at) AS ts FROM tasks WHERE project_id = p.id
@@ -64,6 +77,9 @@ export function listRunningTaskIds(): string[] {
 // message of the paused turn), falling back to the task's updated_at when a task
 // is awaiting with no messages yet; the UI renders it as "waiting for <duration>".
 // Longest-waiting first, so the most-stale task sits at the top of the list.
+// A chain waiting for its review (CHAIN_AWAITS_REVIEW) is one row too: `id` is
+// its last In-review step (the jump target), `chain_id` marks it, and it's
+// been waiting since its last step settled.
 export function listNeedsYou(): {
   id: string;
   project_id: string;
@@ -72,15 +88,28 @@ export function listNeedsYou(): {
   project_color: string;
   project_icon: string;
   waiting_since: number;
+  chain_id: string | null;
 }[] {
   return getDb()
     .prepare(
       `SELECT t.id, t.project_id, t.title,
          p.name AS project_name, p.color AS project_color, p.icon AS project_icon,
-         COALESCE((SELECT MAX(m.created_at) FROM messages m WHERE m.task_id = t.id), t.updated_at) AS waiting_since
+         COALESCE((SELECT MAX(m.created_at) FROM messages m WHERE m.task_id = t.id), t.updated_at) AS waiting_since,
+         NULL AS chain_id
        FROM tasks t
        JOIN projects p ON p.id = t.project_id
        WHERE ${NEEDS_YOU} AND p.deprecated = 0
+       UNION ALL
+       SELECT
+         (SELECT s.id FROM tasks s WHERE s.chain_id = c.id AND s.status = 'in_review' ORDER BY s.chain_pos DESC LIMIT 1),
+         c.project_id,
+         'Review chain: ' || COALESCE((SELECT s.title FROM tasks s WHERE s.chain_id = c.id ORDER BY s.chain_pos ASC LIMIT 1), ''),
+         p.name, p.color, p.icon,
+         (SELECT MAX(s.updated_at) FROM tasks s WHERE s.chain_id = c.id),
+         c.id
+       FROM chains c
+       JOIN projects p ON p.id = c.project_id
+       WHERE ${CHAIN_AWAITS_REVIEW} AND p.deprecated = 0
        ORDER BY waiting_since ASC`
     )
     .all() as ReturnType<typeof listNeedsYou>;
@@ -92,8 +121,11 @@ export function listNeedsYou(): {
 // the project badge without refetching the project list.
 export function countAwaiting(projectId: string): number {
   const row = getDb()
-    .prepare(`SELECT COUNT(*) AS n FROM tasks t WHERE t.project_id = ? AND ${NEEDS_YOU}`)
-    .get(projectId) as { n: number };
+    .prepare(
+      `SELECT (SELECT COUNT(*) FROM tasks t WHERE t.project_id = ? AND ${NEEDS_YOU})
+            + (SELECT COUNT(*) FROM chains c WHERE c.project_id = ? AND ${CHAIN_AWAITS_REVIEW}) AS n`
+    )
+    .get(projectId, projectId) as { n: number };
   return row.n;
 }
 
@@ -414,10 +446,10 @@ export function updateTask(id: string, patch: Partial<Task>): Task | undefined {
       // creation and never patched (the FK clears it if the proposer is deleted).
       `UPDATE tasks SET title=?, description=?, priority=?, status=?, suggested=?, agent=?, send_context=?, model=?, resolved_model=?, reasoning=?, permission_mode=?,
         session_id=?, worktree_path=?, work_branch=?, base_sha=?, merged_at=?, pr_url=?, generation=?, started=?, auto_start=?, running=?, awaiting_input=?,
-        chain_id=?, chain_pos=?, step_summary=?, step_completed_at=?, updated_at=? WHERE id=?`
+        chain_id=?, chain_pos=?, step_summary=?, step_completed_at=?, step_pause=?, updated_at=? WHERE id=?`
     )
     .run(n.title, n.description, n.priority, n.status, n.suggested, n.agent, n.send_context ? 1 : 0, n.model ?? null, n.resolved_model ?? null, n.reasoning ?? null, n.permission_mode ?? null, n.session_id, n.worktree_path, n.work_branch, n.base_sha, n.merged_at, n.pr_url, n.generation, n.started, n.auto_start, n.running, n.awaiting_input,
-      n.chain_id ?? null, n.chain_pos ?? null, n.step_summary ?? "", n.step_completed_at ?? 0, n.updated_at, id);
+      n.chain_id ?? null, n.chain_pos ?? null, n.step_summary ?? "", n.step_completed_at ?? 0, n.step_pause ?? "", n.updated_at, id);
   return getTask(id);
 }
 
@@ -458,12 +490,61 @@ export function listChainSteps(chainId: string): Task[] {
     .all(chainId) as Task[];
 }
 
-/** The step before `task` in its chain (chain_pos - 1), or undefined for a head / non-member. */
+/**
+ * The nearest surviving step before `task` in its chain, or undefined for a head
+ * / non-member. Nearest, not chain_pos - 1: a deleted middle step leaves a gap,
+ * and the step after it stacks on whatever came before.
+ */
 export function previousChainStep(task: Task): Task | undefined {
   if (!task.chain_id || task.chain_pos == null || task.chain_pos <= 0) return undefined;
   return getDb()
-    .prepare("SELECT * FROM tasks WHERE chain_id = ? AND chain_pos = ?")
-    .get(task.chain_id, task.chain_pos - 1) as Task | undefined;
+    .prepare("SELECT * FROM tasks WHERE chain_id = ? AND chain_pos < ? ORDER BY chain_pos DESC LIMIT 1")
+    .get(task.chain_id, task.chain_pos) as Task | undefined;
+}
+
+/** The nearest surviving step after `task` in its chain. */
+export function nextChainStep(task: Pick<Task, "chain_id" | "chain_pos">): Task | undefined {
+  if (!task.chain_id || task.chain_pos == null) return undefined;
+  return getDb()
+    .prepare("SELECT * FROM tasks WHERE chain_id = ? AND chain_pos > ? ORDER BY chain_pos ASC LIMIT 1")
+    .get(task.chain_id, task.chain_pos) as Task | undefined;
+}
+
+// ---------- chain fix-ups (review "Send back"; see lib/chainActions.ts) ----------
+
+export function addChainFixup(input: Omit<ChainFixup, "id" | "summary" | "created_at" | "completed_at">): ChainFixup {
+  const f: ChainFixup = { ...input, id: nanoid(), summary: "", created_at: Date.now(), completed_at: 0 };
+  getDb()
+    .prepare(
+      `INSERT INTO chain_fixups (id, chain_id, task_id, about_task_id, about_pos, feedback, summary, start_sha, created_at, completed_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    .run(f.id, f.chain_id, f.task_id, f.about_task_id, f.about_pos, f.feedback, f.summary, f.start_sha, f.created_at, f.completed_at);
+  return f;
+}
+
+export function listChainFixups(chainId: string): ChainFixup[] {
+  return getDb().prepare("SELECT * FROM chain_fixups WHERE chain_id = ? ORDER BY created_at ASC, rowid ASC").all(chainId) as ChainFixup[];
+}
+
+/** The fix-up still open on this step (at most one — sendBack refuses a second). */
+export function openChainFixup(taskId: string): ChainFixup | undefined {
+  return getDb()
+    .prepare("SELECT * FROM chain_fixups WHERE task_id = ? AND completed_at = 0 ORDER BY created_at DESC LIMIT 1")
+    .get(taskId) as ChainFixup | undefined;
+}
+
+export function deleteChainFixup(id: string): void {
+  getDb().prepare("DELETE FROM chain_fixups WHERE id = ?").run(id);
+}
+
+export function setChainFixupSummary(id: string, summary: string): void {
+  getDb().prepare("UPDATE chain_fixups SET summary = ? WHERE id = ?").run(summary, id);
+}
+
+/** Close every open fix-up on this step (it's back in review). */
+export function completeChainFixups(taskId: string): number {
+  return getDb().prepare("UPDATE chain_fixups SET completed_at = ? WHERE task_id = ? AND completed_at = 0").run(Date.now(), taskId).changes;
 }
 
 export function setTaskStatus(id: string, status: Status) {

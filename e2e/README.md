@@ -59,7 +59,10 @@ the optional command palette.
 
 `08-chain-review.spec.ts` runs a 3-step auto-advance chain to In review, then drives the
 Chains-to-review card, per-step and Combined diffs, and Merge chain (all steps land on
-main, every step done).
+main, every step done). A second test covers phase 3: the chain counts in `awaiting_count`
+while it waits for review, then **Send back** (a fix-up with `e2e:` directives in the
+feedback runs on the last step and shows as a Fix-up entry), **Discard from here** on step
+2 (the confirm dialog is accepted), and a merge of the one step left.
 
 The suite runs serially (one shared app instance + SQLite DB). Every spec after
 01 calls `ensureOnboarded()` in `beforeAll` and creates its own uniquely-named
