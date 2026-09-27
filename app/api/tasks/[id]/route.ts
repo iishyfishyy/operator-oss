@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { getTask, getProject, updateTask, deleteTask, listMessages, getTaskUsage, getGenerationUsage, getTaskContext, getTaskDeps, setTaskDeps, countAwaiting } from "@/lib/store";
+import { getTask, getProject, updateTask, deleteTask, listMessages, getTaskUsage, getGenerationUsage, getTaskContext, getTaskDeps, setTaskDeps, countAwaiting, completeChainFixups } from "@/lib/store";
+import { relinkAfterStepDelete } from "@/lib/chainActions";
 import { removeWorktree } from "@/lib/git";
 import { removeTaskUploads } from "@/lib/uploads";
 import { abortTurn } from "@/lib/abort";
@@ -77,8 +78,12 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       allowed.session_id = null;
     }
   }
-  // A manual status change is the user taking the wheel — clear the "your turn" flag.
-  if ("status" in allowed) allowed.awaiting_input = 0;
+  // A manual status change is the user taking the wheel — clear the "your turn"
+  // flag (and a chain step's pause reason with it).
+  if ("status" in allowed) {
+    allowed.awaiting_input = 0;
+    allowed.step_pause = "";
+  }
   // Cancelling means "stop working on this": kill any in-flight turn. The
   // runner's finally block settles running=0 and discards the parked queue.
   // (The worktree is kept — Cancelled ≠ Delete — so the diff stays reviewable
@@ -97,6 +102,9 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   // A manual status change settles status + awaiting_input outside any turn, so
   // no runner publish will follow — announce it ourselves or every other tab's
   // "needs you" badges keep counting this task until their next reconnect.
+  // Hand-setting a chain step back to In review is the user finishing its
+  // review fix-up themselves ("the chain goes back to review").
+  if (task.status === "in_review") completeChainFixups(id);
   if ("status" in allowed) publishGlobal(id, { type: "task_updated" });
   // Flipping to done may be the last blocker some auto-start dependent was
   // waiting on. Fire-and-forget: the launch runs detached (worktree creation
@@ -125,6 +133,9 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
     }
     removeTaskUploads(id);
     deleteTask(id);
+    // A step deleted mid-chain: re-link the step after it to the one before,
+    // and advance if that one already finished (lib/chainActions.ts).
+    if (task?.chain_id) relinkAfterStepDelete(task);
     // Publish AFTER the hard delete, carrying the project id + its recomputed
     // awaiting count: the row is gone, so /api/events' usual re-read-the-task
     // enrichment would drop the event and freeze the project's badge in every

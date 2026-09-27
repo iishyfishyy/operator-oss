@@ -153,9 +153,27 @@ next, no uncommitted edits below the target) and reads each step's own line stat
 resolution doesn't inflate them); after a successful merge each step gets `merged_at`,
 status `done`, its `base_sha` advanced to what landed, and its own `task_merges` row. The
 conflict path reuses `prepareWorktreeMerge` on the target step's worktree; a retry sees
-the staged merge and finishes it with `completeWorktreeMerge`. Later steps are never
-rebased. The tasks-column card is derived client-side (`app/orchestrator/chains.ts`) from
-rows the global event stream keeps live.
+the staged merge and finishes it with `completeWorktreeMerge`. Merging never rebases later
+steps. The tasks-column card is derived client-side (`app/orchestrator/chains.ts`) from
+rows the global event stream keeps live. Those events carry each task's `step_pause`, so
+a paused step's reason is live too.
+
+The review actions live in `lib/chainActions.ts`, all under the same every-step locks.
+**Send back** records a `chain_fixups` row (feedback, the step it's about, the last step's
+HEAD as `start_sha`), claims the last step's turn slot, and launches the fix-up through
+`startResumeTurn`. While a fix-up is open, `recordStepComplete` writes the summary to the
+fix-up instead of `step_summary`. `finishChainStep` commits it as `Fix-up: …` and closes it.
+So does a manual status change to In review. **Discard from step k** runs the task DELETE
+route's teardown for k..n, last first. **Rebase stack** runs `rebaseWorktreeOnto` for each
+unmerged step and rolls everything back with `reset --hard` on any conflict. It refuses up front when a step's `base_sha..HEAD` contains a merge commit (`hasMergeCommits`), because `rebase --onto` would drop it along with any edits made inside it.
+`relinkAfterStepDelete` (called by the task DELETE route) adds a dependency from the next
+unstarted step to the nearest earlier one. `previousChainStep` skips gaps, so the next step
+stacks there. `orphanedStackProblems` (checked by the view and the merge) catches a step
+that stacked on a step that was later deleted: after a gap, its `base_sha` is no longer
+reachable from the step before it. The runner saves `pauseReason(blocker)` into
+`tasks.step_pause` when a chain step's turn pauses, and clears it when the next turn starts.
+The "needs you" count adds `CHAIN_AWAITS_REVIEW` (`lib/store.ts`, mirrored by
+`chainAwaitsReview` on the client) to the task predicate, once per finished chain.
 
 `suggest_task` / `expose_service` / `ask_user` are the same orchestrator tools every driver
 exposes. The Claude driver mounts the first two as an in-process SDK MCP server

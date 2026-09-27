@@ -16,6 +16,19 @@ export interface Chain {
   base_branch: string; // the project branch the chain's first step branched from
   created_at: number;
 }
+/** A chain review "Send back" run as a fix-up turn on the chain's last step (lib/chainActions.ts). */
+export interface ChainFixup {
+  id: string;
+  chain_id: string;
+  task_id: string; // the step the fix-up turn ran on (the chain's last step)
+  about_task_id: string | null; // the step the feedback is about (null = the whole chain)
+  about_pos: number | null; // that step's chain_pos when sent (survives its deletion)
+  feedback: string;
+  summary: string; // the fix-up turn's complete_step summary ("" = not yet)
+  start_sha: string; // the last step's HEAD when the fix-up began
+  created_at: number;
+  completed_at: number; // 0 while open
+}
 export type MsgRole = "user" | "assistant" | "tool" | "system" | "session_break";
 
 export interface Project {
@@ -79,6 +92,7 @@ export interface Task {
   chain_pos: number | null; // 0-based step index within its chain
   step_summary: string; // the summary the agent passed to complete_step ("" = never called)
   step_completed_at: number; // when complete_step was last called (0 = never) — the runner's "finished this turn" signal
+  step_pause: string; // why this chain step's last turn paused the chain ("" = not paused; lib/chains.ts pauseReason)
   running: number; // 1 while a Claude turn is actively streaming
   awaiting_input: number; // 1 when it's your turn: Claude's turn ended mid-task, or it's parked on an AskUserQuestion
   created_at: number;
@@ -292,7 +306,9 @@ export type GlobalTaskEvent = {
   running: boolean;
   awaiting_input: boolean;
   status: Status;
-  /** In-progress tasks awaiting the user across this task's project. */
+  /** A chain step's pause reason ("" = not paused) — the chain card shows it. */
+  step_pause: string;
+  /** Tasks awaiting the user (plus chains awaiting review) across this task's project. */
   awaiting_count: number;
 };
 

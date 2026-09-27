@@ -20,7 +20,7 @@
 // merge routes keep with the turn-launch path (lib/taskLock.ts).
 
 import fs from "node:fs";
-import { getChain, getProject, listChainSteps, updateTask, recordTaskMerge, taskMergeTotals } from "@/lib/store";
+import { getChain, getProject, listChainSteps, listChainFixups, updateTask, recordTaskMerge, taskMergeTotals } from "@/lib/store";
 import {
   mergeTask,
   completeWorktreeMerge,
@@ -32,6 +32,7 @@ import {
   stepOwnTip,
   commitRangeLineStats,
   worktreeLineStats,
+  worktreeSyncStatus,
   type MergeResult,
   type PrepareMergeResult,
 } from "@/lib/git";
@@ -39,7 +40,7 @@ import { hasTurn } from "@/lib/abort";
 import { withTaskLock } from "@/lib/taskLock";
 import { publishGlobal } from "@/lib/events";
 import { maybeAutoStartDependents } from "@/lib/autoStart";
-import type { Chain, Project, Status, Task } from "@/lib/types";
+import type { Chain, ChainFixup, Project, Status, Task } from "@/lib/types";
 
 /** A validation failure the routes turn into an HTTP error (never a git outcome). */
 export class ChainError extends Error {
@@ -51,9 +52,9 @@ export class ChainError extends Error {
 /** A step is merged once the chain (or the user) landed it AND it's done. */
 export const stepMerged = (t: Pick<Task, "status" | "merged_at">) => t.status === "done" && !!t.merged_at;
 
-const stepRunning = (t: Task) => !!t.running || hasTurn(t.id);
+export const stepRunning = (t: Task) => !!t.running || hasTurn(t.id);
 
-const stepLabel = (t: Pick<Task, "chain_pos" | "title">) => `step ${(t.chain_pos ?? 0) + 1} ("${t.title}")`;
+export const stepLabel = (t: Pick<Task, "chain_pos" | "title">) => `step ${(t.chain_pos ?? 0) + 1} ("${t.title}")`;
 
 /**
  * Why the chain can't merge through `target` right now, or null when it may.
@@ -74,6 +75,29 @@ export function chainMergeBlocker(steps: Task[], target: Task, running: (t: Task
   return null;
 }
 
+/** The step a Send back runs on: the chain's last unmerged step (its branch stacks every step). */
+export function sendBackTarget(steps: Task[]): Task | undefined {
+  return [...steps].reverse().find((s) => !stepMerged(s));
+}
+
+/**
+ * Why the chain can't be sent back right now, or null when it may. Pure over
+ * the rows, like chainMergeBlocker: the panel shows it on the button and the
+ * route re-checks it under the locks.
+ */
+export function sendBackBlocker(steps: Task[], fixups: ChainFixup[], running: (t: Task) => boolean = stepRunning): string | null {
+  const last = sendBackTarget(steps);
+  if (!last) return "every step is already merged";
+  const live = steps.find(running);
+  if (live) return `${stepLabel(live)} is running — wait for it to finish`;
+  if (last.status === "not_started") return `${stepLabel(last)} hasn't run yet — the chain isn't finished`;
+  if (last.status === "cancelled") return `${stepLabel(last)} was cancelled — discard it first`;
+  if (!last.worktree_path) return `${stepLabel(last)} has no worktree to run a fix-up in`;
+  if (fixups.some((f) => f.task_id === last.id && !f.completed_at))
+    return `a fix-up is still open on ${stepLabel(last)} — finish it in its session, or set the step back to In review`;
+  return null;
+}
+
 /** The last step that has a branch — what "Merge chain" and the Combined diff target by default. */
 export function defaultTarget(steps: Task[]): Task | undefined {
   return [...steps].reverse().find((s) => s.work_branch && s.worktree_path) ?? steps[steps.length - 1];
@@ -91,6 +115,8 @@ export interface ChainStepView {
   work_branch: string;
   merged_at: number;
   merged: boolean;
+  /** Why this step's last turn paused the chain ("" = not paused). */
+  step_pause: string;
   additions: number;
   deletions: number;
   /** Why "Merge up to here" is disabled (null = allowed). */
@@ -106,6 +132,29 @@ export interface ChainView {
   targetId: string | null;
   /** A conflict resolution staged in some step's worktree, awaiting the retry. */
   resolution: { taskId: string; unresolved: string[] } | null;
+  /** Review "Send back" fix-ups, oldest first — the trailing entries of the Steps list. */
+  fixups: ChainFixupView[];
+  /** The step a Send back would run on, and why it can't right now (null = it can). */
+  sendBackTargetId: string | null;
+  sendBackBlocker: string | null;
+  /** The base branch gained commits the stack doesn't have (null = up to date). */
+  baseMoved: { behind: number; conflicts: string[] } | null;
+  /** Stack problems worth a banner (a step built on a since-deleted step). */
+  warnings: string[];
+}
+
+export interface ChainFixupView {
+  id: string;
+  taskId: string;
+  stepPos: number; // the step it ran on
+  aboutPos: number | null; // the step the feedback was about (null = whole chain)
+  aboutTitle: string;
+  feedback: string;
+  summary: string;
+  state: "running" | "paused" | "done";
+  additions: number;
+  deletions: number;
+  created_at: number;
 }
 
 async function stepStats(repoPath: string, step: Task, baseBranch: string): Promise<{ additions: number; deletions: number }> {
@@ -146,6 +195,7 @@ export async function getChainView(chainId: string): Promise<ChainView | undefin
         work_branch: s.work_branch,
         merged_at: s.merged_at,
         merged: stepMerged(s),
+        step_pause: s.step_pause ?? "",
         additions,
         deletions,
         mergeBlocker: chainMergeBlocker(steps, s),
@@ -168,7 +218,79 @@ export async function getChainView(chainId: string): Promise<ChainView | undefin
     paused: steps.filter((s) => s.status === "in_progress" && !stepRunning(s)).length,
     waiting: steps.filter((s) => s.status === "not_started").length,
   };
-  return { chain, baseBranch, steps: views, stats, targetId: defaultTarget(steps)?.id ?? null, resolution };
+  const fixups = listChainFixups(chainId);
+  const target = defaultTarget(steps);
+  const [fixupViews, baseMoved, warnings] = await Promise.all([
+    Promise.all(fixups.map((f) => fixupView(repo, f, fixups, steps))),
+    repo && target && !stepMerged(target) ? baseMovedFor(repo, target, baseBranch) : null,
+    repo ? orphanedStackProblems(repo, steps, baseBranch) : [],
+  ]);
+  return {
+    chain, baseBranch, steps: views, stats, targetId: target?.id ?? null, resolution,
+    fixups: fixupViews,
+    sendBackTargetId: sendBackTarget(steps)?.id ?? null,
+    sendBackBlocker: sendBackBlocker(steps, fixups),
+    baseMoved,
+    warnings,
+  };
+}
+
+async function fixupView(repo: string, f: ChainFixup, all: ChainFixup[], steps: Task[]): Promise<ChainFixupView> {
+  const step = steps.find((s) => s.id === f.task_id);
+  const about = steps.find((s) => s.id === f.about_task_id);
+  const state: ChainFixupView["state"] = f.completed_at ? "done" : step && stepRunning(step) ? "running" : "paused";
+  // Its own lines: from where it started to where the next fix-up on the same
+  // step started (or the step's current tip / working tree for the latest one).
+  let stats: { additions: number; deletions: number } | null = null;
+  if (step && f.start_sha && repo) {
+    const later = all.find((g) => g.task_id === f.task_id && g.created_at > f.created_at && g.start_sha);
+    if (later) stats = await commitRangeLineStats(repo, f.start_sha, later.start_sha);
+    else if (step.worktree_path && fs.existsSync(step.worktree_path)) stats = await worktreeLineStats(step.worktree_path, f.start_sha);
+    else if (step.work_branch) stats = await commitRangeLineStats(repo, f.start_sha, step.work_branch);
+  }
+  return {
+    id: f.id,
+    taskId: f.task_id,
+    stepPos: step?.chain_pos ?? 0,
+    aboutPos: f.about_pos,
+    aboutTitle: about?.title ?? "",
+    feedback: f.feedback,
+    summary: f.summary,
+    state,
+    additions: stats?.additions ?? 0,
+    deletions: stats?.deletions ?? 0,
+    created_at: f.created_at,
+  };
+}
+
+// Has the base branch moved on since the stack branched? Read-only (merge-tree
+// conflict prediction, never touches a worktree) — the panel offers "Rebase
+// stack" when it has.
+async function baseMovedFor(repo: string, target: Task, baseBranch: string): Promise<ChainView["baseMoved"]> {
+  if (!target.worktree_path || !target.work_branch || !fs.existsSync(target.worktree_path)) return null;
+  const st = await worktreeSyncStatus({ repoPath: repo, worktreePath: target.worktree_path, workBranch: target.work_branch, baseBranch });
+  if (st.mergeInProgress || st.behind === 0) return null;
+  return { behind: st.behind, conflicts: st.conflicts };
+}
+
+/**
+ * Steps built on a step that has since been deleted. A step's base_sha is the
+ * tip it branched from; after a gap in chain_pos, that tip should still be
+ * reachable from the nearest surviving step before it (or the base branch for
+ * the head). When it isn't, the step's branch still carries the deleted
+ * step's commits — and merging it would land work the user threw away.
+ */
+export async function orphanedStackProblems(repo: string, steps: Task[], baseBranch: string): Promise<string[]> {
+  const out: string[] = [];
+  for (let i = 0; i < steps.length; i++) {
+    const s = steps[i], prev = steps[i - 1];
+    const gap = prev ? (s.chain_pos ?? 0) !== (prev.chain_pos ?? 0) + 1 : (s.chain_pos ?? 0) > 0;
+    if (!gap || !s.base_sha || !s.work_branch || stepMerged(s)) continue;
+    const anchor = prev ? prev.work_branch : baseBranch;
+    if (anchor && !(await isAncestor(repo, s.base_sha, anchor)))
+      out.push(`${stepLabel(s)} was built on a step that has since been deleted, so its branch still carries that step's commits — rebase the stack to drop them, or discard from ${stepLabel(s)}`);
+  }
+  return out;
 }
 
 interface ChainCtx {
@@ -183,7 +305,7 @@ interface ChainCtx {
 
 // Take every step's task lock, in chain order, then run fn. The order is fixed
 // so two chain operations can never hold each other's locks.
-async function withStepLocks<T>(ids: string[], fn: () => Promise<T>): Promise<T> {
+export async function withStepLocks<T>(ids: string[], fn: () => Promise<T>): Promise<T> {
   if (ids.length === 0) return fn();
   const [head, ...rest] = ids;
   return withTaskLock(head, () => withStepLocks(rest, fn));
@@ -207,7 +329,7 @@ async function underChainLock<T>(chainId: string, throughId: string | undefined,
     if (!fs.existsSync(target.worktree_path)) throw new ChainError(400, `${stepLabel(target)}'s worktree no longer exists`);
     const range = steps.filter((s) => (s.chain_pos ?? 0) <= (target.chain_pos ?? 0) && !stepMerged(s));
     const baseBranch = chain.base_branch || project.branch;
-    const problem = await stackProblem(project.repo_path, range);
+    const problem = (await stackProblem(project.repo_path, range)) ?? (await orphanedStackProblems(project.repo_path, range, baseBranch))[0] ?? null;
     if (problem) throw new ChainError(409, problem);
     const first = range[0];
     const span = first.id === target.id ? `step ${(target.chain_pos ?? 0) + 1}` : `steps ${(first.chain_pos ?? 0) + 1}–${(target.chain_pos ?? 0) + 1}`;

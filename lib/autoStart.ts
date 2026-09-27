@@ -27,6 +27,8 @@ import {
   updateTask,
   addMessage,
   listAutoStartCandidates,
+  openChainFixup,
+  completeChainFixups,
 } from "@/lib/store";
 import { startTurn } from "@/lib/runner";
 import { claimTurn, unregisterTurn } from "@/lib/abort";
@@ -168,9 +170,13 @@ export async function finishChainStep(taskId: string, generation: number, comple
     if (task.generation !== generation || task.step_completed_at !== completedAt) return;
     if (task.status !== "in_progress" || task.running || hasTurn(taskId)) return;
 
+    // A review "Send back" fix-up finishing (lib/chainActions.ts) commits as its
+    // own commit and puts the chain back in review.
+    const fixup = openChainFixup(taskId);
     if (task.worktree_path && fs.existsSync(task.worktree_path)) {
-      const summary = task.step_summary.trim();
-      const message = `${task.title}${summary ? `\n\n${summary}` : ""}\n\n(orchestrator chain step ${(task.chain_pos ?? 0) + 1}, task ${task.id})`;
+      const summary = (fixup ? fixup.summary : task.step_summary).trim();
+      const head = fixup ? `Fix-up: ${fixup.feedback.split("\n")[0].slice(0, 72)}` : task.title;
+      const message = `${head}${summary ? `\n\n${summary}` : ""}\n\n(orchestrator chain step ${(task.chain_pos ?? 0) + 1}, task ${task.id})`;
       try {
         await commitWorktree(task.worktree_path, message);
       } catch (err) {
@@ -183,8 +189,11 @@ export async function finishChainStep(taskId: string, generation: number, comple
       }
     }
 
-    updateTask(taskId, { status: "in_review", awaiting_input: 0 });
-    const note = `✓ Step complete — committed on ${task.work_branch || "the working tree"} and moved to In review.`;
+    updateTask(taskId, { status: "in_review", awaiting_input: 0, step_pause: "" });
+    completeChainFixups(taskId);
+    const note = fixup
+      ? `✓ Fix-up complete — committed on ${task.work_branch || "the working tree"}; the chain is back in review.`
+      : `✓ Step complete — committed on ${task.work_branch || "the working tree"} and moved to In review.`;
     const m = addMessage(taskId, generation, "system", note);
     publish(taskId, { type: "notice", content: note, msgId: m.id, generation, ts: m.created_at });
     publishGlobal(taskId, { type: "task_updated" });

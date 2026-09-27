@@ -14,6 +14,7 @@ import { useGlobalEvents } from "./useGlobalEvents";
 import { usePrefs } from "./usePrefs";
 import { useRecaps } from "./useRecaps";
 import { planChainDeps, type ChainAdvance } from "./suggestions";
+import { countChainsAwaitingReview } from "./chains";
 
 // How long a tray dismissal can be undone before its delete is sent.
 const UNDO_MS = 6000;
@@ -94,9 +95,12 @@ export function useOrchestrator() {
   // state (so its count reflects awaiting_input as it changes mid-turn); other
   // projects come from the server-computed awaiting_count on the project list.
   const liveAwaiting = useMemo(() => realTasks.filter((t) => isAwaiting(t)), [realTasks]);
+  // A chain that finished every step and waits for its review counts once too
+  // (the server's awaiting_count includes it the same way — lib/store.ts).
+  const liveChainsAwaiting = useMemo(() => countChainsAwaitingReview(realTasks, running), [realTasks, running]);
   const needsYouTotal = useMemo(
-    () => activeProjects.reduce((n, p) => n + (p.id === selProj ? liveAwaiting.length : p.awaiting_count), 0),
-    [activeProjects, selProj, liveAwaiting]
+    () => activeProjects.reduce((n, p) => n + (p.id === selProj ? liveAwaiting.length + liveChainsAwaiting : p.awaiting_count), 0),
+    [activeProjects, selProj, liveAwaiting, liveChainsAwaiting]
   );
 
   const setTaskRunning = (id: string, on: boolean) =>

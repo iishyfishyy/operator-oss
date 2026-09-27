@@ -93,7 +93,7 @@ function useCollapsed(key: string, def: boolean) {
   return [collapsed, toggle] as const;
 }
 
-export function TasksColumn({ project, agents, tasks, suggested, selTaskId, running, blockedBy, width, loading, view, onSetView, onMoveTask, onSelectTask, onNewTask, onEditContext, onShowSessions, onShowRecap, onEditTask, reviewChainId, onReviewChain, onStartSuggestion, onAcceptSuggestion, onDismissSuggestions, onAcceptSuggestions, onLaunchChain, pendingDismiss, onUndoDismiss, onOpenParent, traySeenAt, traySeenReady, onTrayViewed, onCollapse, mobile, onBack }: {
+export function TasksColumn({ project, agents, tasks, suggested, selTaskId, running, blockedBy, width, loading, view, onSetView, onMoveTask, onSelectTask, onNewTask, onEditContext, onShowSessions, onShowRecap, onEditTask, reviewChainId, onReviewChain, onContinueStep, onStartSuggestion, onAcceptSuggestion, onDismissSuggestions, onAcceptSuggestions, onLaunchChain, pendingDismiss, onUndoDismiss, onOpenParent, traySeenAt, traySeenReady, onTrayViewed, onCollapse, mobile, onBack }: {
   project: ProjectRow; agents: AgentsBundle; tasks: TaskRow[]; suggested: TaskRow[]; selTaskId: string | null; running: Set<string>; blockedBy: Map<string, string[]>; width: number; loading?: boolean;
   view: TaskView; onSetView: (v: TaskView) => void;
   onMoveTask: (id: string, patch: Partial<Pick<TaskRow, "status" | "suggested">>, orderedIds: string[]) => void;
@@ -101,6 +101,8 @@ export function TasksColumn({ project, agents, tasks, suggested, selTaskId, runn
   onEditTask: (id: string) => void; onCollapse: () => void;
   // Auto-advance chains with a step In review get a card that opens the chain review.
   reviewChainId?: string | null; onReviewChain?: (chainId: string) => void;
+  // "Continue" on a chain card's paused step: resume it so auto-advance can pick back up.
+  onContinueStep?: (taskId: string) => void;
   onStartSuggestion: (id: string) => void; onAcceptSuggestion: (id: string) => void;
   onAcceptSuggestions: (ids: string[], start: boolean) => Promise<void>;
   // Every tray dismissal (one row, a group, or all stale groups) is undoable:
@@ -231,7 +233,12 @@ export function TasksColumn({ project, agents, tasks, suggested, selTaskId, runn
           {reviewChains.length > 0 && (
             <>
               <div className="task-group-h">Chains to review <span className="gcount">{reviewChains.length}</span><span className="gline" /></div>
-              {reviewChains.map((c) => <ChainCard key={c.id} chain={c} running={running} active={c.id === reviewChainId} onReview={() => onReviewChain!(c.id)} />)}
+              {reviewChains.map((c) => (
+                <ChainCard
+                  key={c.id} chain={c} running={running} active={c.id === reviewChainId} onReview={() => onReviewChain!(c.id)}
+                  onOpenStep={onSelectTask} onContinue={onContinueStep}
+                />
+              ))}
             </>
           )}
           <TaskGroup label="Needs your input" tasks={needsYou} agents={agents} selTaskId={selTaskId} running={running} blockedBy={blockedBy} onSelect={onSelectTask} accent />

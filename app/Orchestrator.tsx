@@ -10,6 +10,7 @@ import { TasksColumn } from "./orchestrator/TasksColumn";
 import { BoardWorkspace } from "./orchestrator/TaskBoard";
 import { SessionView } from "./orchestrator/SessionView";
 import { ChainReview } from "./orchestrator/ChainReview";
+import { CONTINUE_STEP_PROMPT } from "@/lib/chainRules";
 import { SuggestionContext, useSuggestionActions } from "./orchestrator/Transcript";
 import { ProjectLanding } from "./orchestrator/ProjectLanding";
 import { SettingsView } from "./orchestrator/SettingsView";
@@ -119,7 +120,13 @@ export default function Orchestrator() {
   // The chain review (app/orchestrator/ChainReview.tsx) takes over the session
   // pane while open. Picking a task (or another project) closes it.
   const [reviewChain, setReviewChain] = useState<string | null>(null);
-  useEffect(() => setReviewChain(null), [selTask, selProj]);
+  // A "need you" jump to a chain awaiting review opens its review once the
+  // selection change below has run (it would otherwise close it again).
+  const pendingChainRef = useRef<string | null>(null);
+  useEffect(() => {
+    setReviewChain(pendingChainRef.current);
+    pendingChainRef.current = null;
+  }, [selTask, selProj]);
   const chainInView = reviewChain && project && o.realTasks.some((t) => t.chain_id === reviewChain) ? reviewChain : null;
   const requestClear = (taskId: string) => setClearRequest(taskId);
   const confirmClear = () => {
@@ -218,6 +225,7 @@ export default function Orchestrator() {
       onSelectTask={o.setSelTask} onNewTask={() => o.setModal("task")} onEditContext={() => o.setModal("context")}
       onShowSessions={() => o.setModal("sessions")} onShowRecap={() => o.setSelTask(null)} onEditTask={o.setEditId}
       reviewChainId={chainInView} onReviewChain={setReviewChain}
+      onContinueStep={(id) => void o.runTurn(id, CONTINUE_STEP_PROMPT, false)}
       onStartSuggestion={o.startSuggestion} onAcceptSuggestion={o.acceptSuggestion}
       onAcceptSuggestions={o.acceptSuggestions} onDismissSuggestions={o.queueDismiss} onLaunchChain={o.launchChain}
       pendingDismiss={o.pendingDismiss} onUndoDismiss={o.undoDismiss} onOpenParent={(id) => o.goToTask(project.id, id)}
@@ -463,7 +471,11 @@ export default function Orchestrator() {
               </button>
               {needsYouOpen && (
                 <NeedsYouMenu
-                  onJump={(projectId, taskId) => o.goToTask(projectId, taskId)}
+                  onJump={(projectId, taskId, chainId) => {
+                    pendingChainRef.current = chainId;
+                    o.goToTask(projectId, taskId);
+                    if (chainId) setReviewChain(chainId);
+                  }}
                   onClose={() => setNeedsYouOpen(false)}
                 />
               )}
