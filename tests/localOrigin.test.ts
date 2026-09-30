@@ -4,6 +4,7 @@ import {
   localHttpRequestAllowed,
   localWebSocketRequestAllowed,
   safeRedirectPath,
+  sameOriginHttpRequestAllowed,
 } from "../lib/auth/local-origin.mjs";
 
 const emptyEnv = {};
@@ -101,6 +102,120 @@ describe("local origin boundary", () => {
     };
     expect(localHttpRequestAllowed(
       { host: "operator.example.com", origin: "https://operator.example.com", secFetchSite: "same-origin" },
+      env,
+    )).toBe(false);
+  });
+});
+
+/* The HTTP half of the Cloudflare Access boundary. The JWT proves identity, not
+ * intent, and `CF_Authorization` is SameSite=None — so without this a hostile
+ * page can drive the victim's browser into any mutating route and the edge will
+ * stamp a valid assertion on it.
+ *
+ * The audit that decided this (see lib/auth/local-origin.mjs) killed the
+ * comfortable assumption that CORS already blocked it. Two independent holes:
+ * `Request.json()` ignores Content-Type while `text/plain` is CORS-safelisted,
+ * so every JSON route parses a preflight-free body; and many routes ignore the
+ * body outright and act on the path alone. Both are pinned below as the shapes
+ * an attacker actually sends, so deleting the check fails a test that names the
+ * attack rather than one that merely asserts a boolean.
+ *
+ * This rule is NARROWER than localHttpRequestAllowed on purpose, and the
+ * navigation case below is the reason. Do not converge them.
+ */
+describe("authenticated (Access) mode HTTP origin boundary", () => {
+  it("allows a cross-site top-level navigation — the reason this is not the local rule", () => {
+    // Someone clicking a link to the instance from an email or a wiki. The
+    // browser sends no Origin; Sec-Fetch-Site IS cross-site, which is exactly
+    // what local mode rejects. Rejecting it here would be a real UX regression
+    // (people do link to a tunnel hostname; nobody links to localhost).
+    expect(sameOriginHttpRequestAllowed(
+      { host: "orch.example.com", origin: null },
+      emptyEnv,
+    )).toBe(true);
+    // The local rule, for contrast — this is the "fix" the next person will be
+    // tempted by, and this line is what it would cost.
+    expect(localHttpRequestAllowed(
+      { host: "orch.example.com", origin: null, secFetchSite: "cross-site" },
+      emptyEnv,
+    )).toBe(false);
+  });
+
+  it("allows raw non-browser callers that omit Origin", () => {
+    // curl, the Docker HEALTHCHECK, and the stdio MCP bridge's server-to-server
+    // calls into /api/internal/agent-tools/*.
+    expect(sameOriginHttpRequestAllowed({ host: "127.0.0.1:3000", origin: null }, emptyEnv)).toBe(true);
+    expect(sameOriginHttpRequestAllowed({ host: "orch.example.com", origin: undefined }, emptyEnv)).toBe(true);
+  });
+
+  it("allows the app's own same-origin XHR", () => {
+    expect(sameOriginHttpRequestAllowed(
+      { host: "orch.example.com", origin: "https://orch.example.com" },
+      emptyEnv,
+    )).toBe(true);
+  });
+
+  it("rejects the cross-site form post that needs no preflight", () => {
+    // <form method="post" action="https://orch.example.com/api/tasks/X/merge">
+    // — the body is ignored by that route, so the form needs no fields at all.
+    expect(sameOriginHttpRequestAllowed(
+      { host: "orch.example.com", origin: "https://evil.example" },
+      emptyEnv,
+    )).toBe(false);
+  });
+
+  it("rejects the text/plain fetch that smuggles JSON past CORS", () => {
+    // fetch("https://orch.example.com/api/tasks/X/messages", {method:"POST",
+    //   mode:"no-cors", credentials:"include",
+    //   headers:{"content-type":"text/plain"}, body:'{"text":"…"}'})
+    // text/plain is CORS-safelisted so this never preflights, and req.json()
+    // parses it regardless of Content-Type. Same header shape as above — which
+    // is the point: one Origin check covers every simple-request variant.
+    expect(sameOriginHttpRequestAllowed(
+      { host: "orch.example.com", origin: "http://localhost:5173" },
+      emptyEnv,
+    )).toBe(false);
+  });
+
+  it("rejects an opaque Origin rather than treating it as absent", () => {
+    // A sandboxed iframe or a cross-origin-redirected POST sends "null". It is
+    // present-but-unattributable, so it must fall on the reject side of the
+    // absent-Origin allowance above.
+    expect(sameOriginHttpRequestAllowed(
+      { host: "orch.example.com", origin: "null" },
+      emptyEnv,
+    )).toBe(false);
+  });
+
+  it("distinguishes port, and is scheme-blind by construction", () => {
+    // Port is part of the comparison: another service on the same host is not us.
+    expect(sameOriginHttpRequestAllowed(
+      { host: "orch.example.com:3000", origin: "https://orch.example.com:4173" },
+      emptyEnv,
+    )).toBe(false);
+    // Scheme is NOT, and cannot be: the Host header carries no scheme, so there
+    // is nothing to compare against. It costs nothing here — for
+    // http://<same-host> to be a different origin an attacker must already own
+    // DNS or the network path for the tunnel hostname, which defeats Access
+    // itself long before this check matters. An operator who wants the scheme
+    // pinned sets PUBLIC_BASE_URL, which is a full origin.
+    expect(sameOriginHttpRequestAllowed(
+      { host: "orch.example.com", origin: "http://orch.example.com" },
+      emptyEnv,
+    )).toBe(true);
+  });
+
+  it("falls back to PUBLIC_BASE_URL when the proxy rewrites Host", () => {
+    // Cloudflare Tunnel's httpHostHeader: the browser's Origin is the public
+    // hostname while Host is the internal one, so the two legitimately differ
+    // and the operator names the public origin in PUBLIC_BASE_URL.
+    const env = { PUBLIC_BASE_URL: "https://orch.example.com" };
+    expect(sameOriginHttpRequestAllowed(
+      { host: "internal-app:3000", origin: "https://orch.example.com" },
+      env,
+    )).toBe(true);
+    expect(sameOriginHttpRequestAllowed(
+      { host: "internal-app:3000", origin: "https://evil.example" },
       env,
     )).toBe(false);
   });
