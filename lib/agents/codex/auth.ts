@@ -13,7 +13,7 @@
 import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { promisify } from "node:util";
 import os from "node:os";
-import { CODEX_CLI_PATH } from "../../config";
+import { codexCommand } from "./cli";
 import { hasOpenAiKey, looksLikeOpenAiKey, setOpenAiKey, clearOpenAiKey } from "../../openai-key";
 import type { AgentApiKeyAuth, AgentAuthStatus, AgentLoginSession, AgentVerifyResult } from "../types";
 import type { TurnUsage } from "../../types";
@@ -23,11 +23,9 @@ import { codexUsage, type CodexTokenUsage } from "./usage";
 
 const run = promisify(execFile);
 
-// The concrete binary to shell out to. When CODEX_CLI_PATH is unset we rely on
-// `codex` being on PATH (the Docker image installs it globally next to
-// `claude`); the turn driver additionally lets the SDK auto-resolve its bundled
-// binary, but both read the same ~/.codex/auth.json so auth state is shared.
-const CODEX = CODEX_CLI_PATH || "codex";
+// Same CLI the turns run (lib/agents/codex/cli.ts), resolved per call so an
+// auto-update takes effect without a restart.
+const codex = (...argv: string[]) => { const c = codexCommand(); return [c.command, [...c.args, ...argv]] as const; };
 
 // Strip ANSI colour/escape sequences so our regexes see plain text.
 const stripAnsi = (s: string) =>
@@ -54,7 +52,7 @@ export async function codexStatus(): Promise<AgentAuthStatus> {
   // is present the honest status is API-key billing, whatever the CLI says.
   if (hasOpenAiKey()) return apiKeyStatus();
   try {
-    const { stdout, stderr } = await run(CODEX, ["login", "status"], { timeout: 20_000, env: process.env });
+    const { stdout, stderr } = await run(...codex("login", "status"), { timeout: 20_000, env: process.env });
     const text = stripAnsi(`${stdout}\n${stderr}`);
     if (/logged in|signed in/i.test(text)) {
       const method = text.match(/(?:logged|signed) in (?:using|with)\s*(.+)/i)?.[1]?.trim() ?? null;
@@ -92,8 +90,7 @@ export async function verifyCodexTurn(): Promise<AgentVerifyResult> {
   const started = Date.now();
   try {
     const { stdout } = await run(
-      CODEX,
-      ["exec", "--json", "--skip-git-repo-check", "--sandbox", "read-only", "Reply with exactly: OK"],
+      ...codex("exec", "--json", "--skip-git-repo-check", "--sandbox", "read-only", "Reply with exactly: OK"),
       { timeout: 90_000, env: process.env, maxBuffer: 4 * 1024 * 1024, cwd: os.homedir() }
     );
     const { output, usage } = parseVerifyEvents(stdout);
@@ -200,7 +197,7 @@ export async function startCodexLogin(): Promise<AgentLoginSession> {
   g.__orchCodexLogin = st;
 
   try {
-    st.proc = spawn(CODEX, ["login", "--device-auth"], {
+    st.proc = spawn(...codex("login", "--device-auth"), {
       cwd: os.homedir(),
       env: process.env,
       stdio: ["ignore", "pipe", "pipe"],

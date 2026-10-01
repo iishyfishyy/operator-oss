@@ -3,7 +3,8 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { createHash } from "node:crypto";
-import { DB_DIR, CLAUDE_CLI_PATH, CODEX_CLI_PATH } from "../config";
+import { DB_DIR, CLAUDE_CLI_PATH } from "../config";
+import { codexIdentityFile } from "./codex/cli";
 import type { AgentModelOption } from "./types";
 
 export type DiscoveredModels = { models: AgentModelOption[]; defaultModel?: string };
@@ -26,7 +27,7 @@ function identity(agent: string): string {
   const files = agent === "claude" ? ["settings.json", ".credentials.json"] : ["config.toml", "auth.json"];
   const env = Object.entries(process.env).filter(([k]) => /^(ANTHROPIC_|CLAUDE_|OPENAI_|CODEX_|AWS_)/.test(k)).sort();
   // Only the digest is persisted, never credentials or configuration contents.
-  return createHash("sha256").update(JSON.stringify([DB_DIR, env, files.map(f => stamp(path.join(home, f))), stamp(agent === "claude" ? CLAUDE_CLI_PATH : CODEX_CLI_PATH || path.join(process.cwd(), "node_modules/@openai/codex/package.json"))])).digest("hex");
+  return createHash("sha256").update(JSON.stringify([DB_DIR, env, files.map(f => stamp(path.join(home, f))), stamp(agent === "claude" ? CLAUDE_CLI_PATH : codexIdentityFile())])).digest("hex");
 }
 const fileFor = (agent: string) => path.join(DB_DIR, `model-catalog-${agent}.json`);
 export function validModels(models: unknown): models is AgentModelOption[] {

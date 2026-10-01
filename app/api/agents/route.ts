@@ -4,6 +4,7 @@ import { listDrivers, DEFAULT_AGENT } from "@/lib/agents/registry";
 import { getSetting } from "@/lib/store";
 import { getAgentConnection, getAgentAuthBroken } from "@/lib/agents/connections";
 import { resolveUtilityAgent } from "@/lib/agents/oneshots";
+import { maybeUpdateCodex } from "@/lib/agents/codex/cli";
 
 export const dynamic = "force-dynamic";
 
@@ -17,6 +18,8 @@ export const dynamic = "force-dynamic";
 // page load. `authenticated` mirrors `connected` for the run-control pickers.
 async function response(force = false) {
   const drivers = listDrivers();
+  // Background, throttled: a newer CLI is what unlocks newly released models.
+  maybeUpdateCodex();
   await Promise.all(drivers.map(async d => {
     if (!d.discoverModels || d.configuredProvider?.() === "bedrock") return;
     if (!d.apiKey?.has() && !getAgentConnection(d.id)) return;

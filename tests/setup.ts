@@ -17,6 +17,8 @@ process.env.ORCH_WORKTREES_DIR = path.join(root, "worktrees");
 delete process.env.ORCH_DEBUG_PROMPTS;
 process.env.ORCH_DB_DIR = path.join(root, "db");
 process.env.CLAUDE_CONFIG_DIR = path.join(root, "claude");
+// Never reach the npm registry for a Codex CLI update from the suite.
+process.env.ORCH_CODEX_AUTO_UPDATE = "0";
 
 // Control plane v2: isolate its SQLite db and pin the seams to their in-process
 // mocks. Set here (before the module graph loads) so lib/control-plane/config.ts
