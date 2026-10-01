@@ -29,7 +29,7 @@
     "highlight.js": "^11.11.1",
     "jose": "^6.2.3",
     "nanoid": "^5.1.16",
-    "next": "15.5.22",
+    "next": "15.5.27",
     "node-pty": "^1.1.0",
     "react": "19.1.0",
     "react-dom": "19.1.0",
@@ -48,7 +48,8 @@
     "@types/ws": "^8.18.1",
     "concurrently": "^9.2.1",
     "typescript": "5.8.2",
-    "vitest": "^3.2.6"
+    "vite": "^8.3.1",
+    "vitest": "^5.0.3"
   },
   "overrides": {
     "postcss": "^8.5.23",
