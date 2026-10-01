@@ -28,7 +28,8 @@ import { codexCapabilities } from "./capabilities";
 import { cachedModels } from "../modelCatalog";
 import { resolveReasoning } from "../reasoning";
 import { getSetting, setSetting, getThreadUsageCum, setThreadUsageCum } from "../../store";
-import { CODEX_APPROVAL_POLICY, CODEX_CLI_PATH, INTERNAL_BASE_URL, ORCH_MCP_SCRIPT } from "../../config";
+import { CODEX_APPROVAL_POLICY, INTERNAL_BASE_URL, ORCH_MCP_SCRIPT } from "../../config";
+import { codexSdkPath } from "./cli";
 import { isApprovalDowngrade, isApprovalBlocked, isSandboxPolicyBlocked, CODEX_FULL_ACCESS_BLOCKED_NOTICE } from "../../approvalFailure";
 import { buildProjectContext } from "../shared";
 import { isAutoAdvanceTask } from "../../chains";
@@ -183,7 +184,7 @@ async function* runTurn(
   };
 
   const codex = new Codex({
-    codexPathOverride: CODEX_CLI_PATH || undefined,
+    codexPathOverride: codexSdkPath(),
     config: orchestratorMcpConfig(project, task),
   });
   const thread = task.session_id ? codex.resumeThread(task.session_id, threadOptions) : codex.startThread(threadOptions);
@@ -262,7 +263,7 @@ const ONESHOT_MAX_ITEMS_EXPLORE = 120;
 // a failed helper turn never rejects into the recap/refresh jobs — mirrors the
 // Claude driver. Usage received before an error or max-items abort is retained.
 async function oneShot(project: Project, prompt: string, maxItems: number, mode: SandboxMode = "read-only"): Promise<OneShotResult> {
-  const codex = new Codex({ codexPathOverride: CODEX_CLI_PATH || undefined });
+  const codex = new Codex({ codexPathOverride: codexSdkPath() });
   const threadOptions: ThreadOptions = {
     workingDirectory: project.repo_path || process.cwd(),
     skipGitRepoCheck: true,

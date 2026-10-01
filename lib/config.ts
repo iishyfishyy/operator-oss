@@ -31,12 +31,18 @@ export const CLAUDE_CLI_PATH =
 
 /**
  * Path to the `codex` binary the Codex driver drives (via @openai/codex-sdk).
- * Empty = let the SDK auto-resolve the binary bundled with its @openai/codex
- * dependency, and let the auth helpers fall back to `codex` on PATH (the Docker
- * image installs it globally next to `claude`). Set this to pin a specific
- * binary when PATH is trimmed or a different install should be used.
+ * Empty = the newest of the bundled @openai/codex dependency and Operator's own
+ * auto-updated copy (lib/agents/codex/cli.ts). Set this to pin a specific
+ * binary; a pinned binary is never auto-updated.
  */
 export const CODEX_CLI_PATH = process.env.CODEX_CLI_PATH || "";
+
+/**
+ * Keep the Codex CLI current by installing the latest @openai/codex into
+ * DB_DIR/codex-cli (checked at most every 6h). OpenAI only lists new models to
+ * new CLIs, so without this the model picker goes stale. "0" disables.
+ */
+export const CODEX_AUTO_UPDATE = process.env.ORCH_CODEX_AUTO_UPDATE !== "0";
 
 /**
  * The `approval_policy` the Codex driver passes to the CLI for turns and

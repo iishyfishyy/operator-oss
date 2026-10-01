@@ -1,9 +1,7 @@
 import { spawn } from "node:child_process";
-import { createRequire } from "node:module";
 import { createInterface } from "node:readline";
-import path from "node:path";
 import os from "node:os";
-import { CODEX_CLI_PATH } from "../../config";
+import { codexCommand } from "./cli";
 import { CODEX_CAPABILITIES } from "./capabilities";
 import { codexModels } from "../modelDiscovery";
 import type { DiscoveredModels } from "../modelCatalog";
@@ -11,9 +9,8 @@ import type { DiscoveredModels } from "../modelCatalog";
 /** A short-lived metadata-only app-server connection. Never starts a thread. */
 export function discoverCodexModels(): Promise<DiscoveredModels> {
   return new Promise((resolve, reject) => {
-    const req = createRequire(path.join(process.cwd(), "package.json"));
-    const args = CODEX_CLI_PATH ? ["app-server"] : [req.resolve("@openai/codex/bin/codex.js"), "app-server"];
-    const child = spawn(CODEX_CLI_PATH || process.execPath, args, { cwd: os.homedir(), stdio: ["pipe", "pipe", "ignore"] });
+    const { command, args } = codexCommand();
+    const child = spawn(command, [...args, "app-server"], { cwd: os.homedir(), stdio: ["pipe", "pipe", "ignore"] });
     const lines = createInterface({ input: child.stdout });
     const rows: unknown[] = [];
     let nextId = 2;

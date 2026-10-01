@@ -48,6 +48,12 @@ CLI's default instead of failing. The list is cached for an hour and refreshes w
 CLI, its config or the login changes. A built-in list is used only until the first
 successful discovery.
 
+OpenAI only lists new Codex models to recent CLI versions, so Operator keeps its Codex CLI
+current: unless `CODEX_CLI_PATH` pins a binary, it checks npm for the latest
+`@openai/codex` at most every 6 hours, installs it under `$ORCH_DB_DIR/codex-cli`, and runs
+whichever is newer, that copy or the bundled one, for turns, model discovery and login.
+Set `ORCH_CODEX_AUTO_UPDATE=0` to turn this off.
+
 ### Amazon Bedrock
 
 Claude can instead run entirely through **Amazon Bedrock**. Configure the normal AWS
