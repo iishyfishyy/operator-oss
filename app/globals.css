@@ -1168,7 +1168,12 @@ button.tpeek-more:hover{color:var(--accent-ink);}
 .comp-box{border:1px solid var(--line-strong);border-radius:var(--r-lg);background:var(--raise);box-shadow:var(--sh-1);transition:border-color .12s,box-shadow .12s;overflow:hidden;}
 .comp-box:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft);}
 .comp-area{display:flex;align-items:flex-end;gap:10px;padding:11px 12px 11px 15px;}
-.comp-area textarea{flex:1;border:none;background:none;resize:none;outline:none;font-family:var(--sans);font-size:14px;line-height:1.5;color:var(--ink);max-height:160px;min-height:22px;}
+.comp-area textarea{flex:1;min-width:0;border:none;background:none;resize:none;outline:none;font-family:var(--sans);font-size:14px;line-height:1.5;color:var(--ink);max-height:160px;min-height:22px;}
+.composer.expanded .comp-area textarea{height:min(360px,40dvh);max-height:none;}
+.comp-expand{flex:0 0 auto;width:28px;height:34px;display:grid;place-items:center;border-radius:7px;color:var(--ink-3);}
+.comp-expand:hover{background:var(--surface-2);color:var(--ink);}
+.comp-expand:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+.comp-expand svg{width:17px;height:17px;}
 .comp-area textarea::placeholder{color:var(--ink-4);}
 .send{width:34px;height:34px;flex:0 0 auto;border-radius:9px;background:var(--accent);color:var(--on-accent);display:grid;place-items:center;box-shadow:var(--sh-1);transition:filter .12s,opacity .12s;}
 .send:hover{filter:brightness(1.07);}

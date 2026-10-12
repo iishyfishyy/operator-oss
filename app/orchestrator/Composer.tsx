@@ -45,6 +45,7 @@ type Attachment = {
 
 export function Composer({ commandDraft, onCommandDraftUsed, task, agentLabel, disabled, running, onSend, onStop, onClear }: { commandDraft?: CommandDraft | null; onCommandDraftUsed?: () => void; task: TaskRow; agentLabel: string; disabled: boolean; running: boolean; onSend: (t: string) => void; onStop: () => void; onClear: () => void }) {
   const [val, setVal] = useState(() => loadDraft(task.id));
+  const [expanded, setExpanded] = useState(false);
   const { commands, loading: commandsLoading, error: commandsError } = useCommands(task.project_id);
   const [manage, setManage] = useState(false);
   const [active, setActive] = useState(0);
@@ -63,7 +64,11 @@ export function Composer({ commandDraft, onCommandDraftUsed, task, agentLabel, d
   // Mirror the draft to localStorage so it survives remounts/navigation.
   useEffect(() => { saveDraft(task.id, val); }, [task.id, val]);
   const ref = useRef<HTMLTextAreaElement>(null);
-  const autosize = (el: HTMLTextAreaElement) => { el.style.height = "auto"; el.style.height = Math.min(el.scrollHeight, 160) + "px"; };
+  const autosize = (el: HTMLTextAreaElement) => {
+    if (expanded) { el.style.removeProperty("height"); return; }
+    el.style.height = "auto";
+    el.style.height = Math.min(el.scrollHeight, 160) + "px";
+  };
   // Grow the box to fit a restored draft and reflect the slash menu state.
   useEffect(() => {
     if (ref.current) autosize(ref.current);
@@ -80,7 +85,7 @@ export function Composer({ commandDraft, onCommandDraftUsed, task, agentLabel, d
     ref.current?.focus();
     onCommandDraftUsed?.();
   }, [commandDraft, task.id, onCommandDraftUsed]);
-  useEffect(() => { if (ref.current) autosize(ref.current); }, [val]);
+  useEffect(() => { if (ref.current) autosize(ref.current); }, [val, expanded]);
 
   const addFiles = (files: File[]) => {
     if (disabled) return;
@@ -127,7 +132,7 @@ export function Composer({ commandDraft, onCommandDraftUsed, task, agentLabel, d
     if ((!v && ready.length === 0) || disabled || uploading) return;
     // /clear can't run mid-turn (it would collide with the live session) — while
     // running, everything you type is queued as a follow-up instead.
-    if (v === "/clear" && !running && ready.length === 0) { onClear(); setVal(""); setSlash(false); if (ref.current) ref.current.style.height = "auto"; return; }
+    if (v === "/clear" && !running && ready.length === 0) { onClear(); setVal(""); setSlash(false); return; }
     if (v.startsWith("/") && (commandsLoading || commandsError)) { setSendError(commandsError || "Commands are loading. Try again shortly."); return; }
     const expanded = expandCommand(v, commands, task);
     if (!expanded.trim() && ready.length === 0) { setSendError("This command expands to an empty prompt. Add arguments or edit its template."); return; }
@@ -137,13 +142,12 @@ export function Composer({ commandDraft, onCommandDraftUsed, task, agentLabel, d
     onSend([expanded, ...ready.map((a) => (a.kind === "image" ? attachmentMarker(a.path) : fileAttachmentMarker(a.path)))].filter(Boolean).join("\n\n"));
     atts.forEach((a) => { if (a.preview) URL.revokeObjectURL(a.preview); });
     setAtts([]); setVal(""); setSlash(false);
-    if (ref.current) ref.current.style.height = "auto";
   };
   const canSend = (!!val.trim() || ready.length > 0) && !uploading;
   const filtered = [...cmds.filter((c) => c.cmd.startsWith(val.trim())), { cmd: "Manage commands…", desc: "create · edit · delete", run: () => { setManage(true); setSlash(false); } }];
   const menuOpen = slash && !disabled && (filtered.length > 1 || val.trim() === "/") && /^\/[^\s]*$/.test(val.trimStart());
   return (
-    <div className="composer">
+    <div className={`composer${expanded ? " expanded" : ""}`}>
       {manage && <CommandsModal projectId={task.project_id} onClose={() => setManage(false)} />}
       {sendError && <ErrNote style={{ margin: "0 0 8px" }}>{sendError}</ErrNote>}
       <div className="composer-inner">
@@ -187,7 +191,12 @@ export function Composer({ commandDraft, onCommandDraftUsed, task, agentLabel, d
               onChange={(e) => { setVal(e.target.value); setActive(0); setSendError(""); autosize(e.target); setSlash(e.target.value.trim().startsWith("/")); }}
               onKeyDown={(e) => {
                 if (e.nativeEvent.isComposing) return;
-                if (e.key === "Escape") { if (menuOpen) e.stopPropagation(); setSlash(false); return; }
+                if (e.key === "Escape") {
+                  if (menuOpen || expanded) { e.preventDefault(); e.stopPropagation(); }
+                  if (menuOpen) setSlash(false);
+                  else setExpanded(false);
+                  return;
+                }
                 if (menuOpen && (e.key === "ArrowDown" || e.key === "ArrowUp")) { e.preventDefault(); setActive((a) => (a + (e.key === "ArrowDown" ? 1 : filtered.length - 1)) % filtered.length); return; }
                 if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (menuOpen) filtered[Math.min(active, filtered.length - 1)].run(); else submit(); }
               }}
@@ -204,6 +213,14 @@ export function Composer({ commandDraft, onCommandDraftUsed, task, agentLabel, d
                 }
               }}
             />
+            <button
+              type="button" className="comp-expand" aria-expanded={expanded}
+              aria-label={expanded ? "Collapse prompt area" : "Expand prompt area"}
+              title={expanded ? "Collapse prompt area (Esc)" : "Expand prompt area"}
+              onClick={() => { setExpanded((current) => !current); ref.current?.focus(); }}
+            >
+              {expanded ? Icon.chevDown() : Icon.chevUp()}
+            </button>
             {running ? (
               // Mid-turn: queue the typed follow-up (when there's text), and keep
               // Stop available to interrupt the current turn.
