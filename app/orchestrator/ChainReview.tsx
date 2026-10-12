@@ -302,7 +302,7 @@ export function ChainReview({ chainId, tasks, running, onClose, onOpenTask, onRu
           <div className="chr-send-row">
             <label className="chr-send-about">
               About
-              <select value={about} onChange={(e) => setAbout(e.target.value)}>
+              <select className="sx-sel" value={about} onChange={(e) => setAbout(e.target.value)}>
                 <option value="">the whole chain</option>
                 {steps.filter((x) => !x.merged).map((x) => <option key={x.id} value={x.id}>step {x.chain_pos + 1}: {x.title}</option>)}
               </select>
