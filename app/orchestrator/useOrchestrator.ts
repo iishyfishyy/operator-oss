@@ -7,7 +7,7 @@ import { jget, jsend } from "./api";
 import { isAwaiting, blockerTitles } from "./format";
 import { formatAnswersReply } from "@/lib/askFormat";
 import { loadPersist, readUrlSel } from "./persist";
-import { DEFAULT_SETTINGS, EMPTY_AGENTS, type AgentsBundle, type OnboardingT, type ProjectRow, type TaskRow } from "./types";
+import { DEFAULT_SETTINGS, EMPTY_AGENTS, type AgentsBundle, type OnboardingT, type ProjectRow, type TaskRow, type NewTaskInput } from "./types";
 import { agentLabel } from "./agents";
 import { useTaskStream } from "./useTaskStream";
 import { useGlobalEvents } from "./useGlobalEvents";
@@ -21,7 +21,7 @@ const UNDO_MS = 6000;
 /** A tray dismissal inside its Undo window: hidden now, deleted when the window closes. */
 export interface PendingDismiss { ids: string[]; label: string; projectId: string }
 
-type Modal = null | "task" | "context" | "project" | "sessions";
+type Modal = null | "clone" | "task" | "context" | "project" | "sessions";
 
 // The orchestrator's single source of truth: all client state, the derived
 // views over it, the data-loading effects, and every action callback. Returns a
@@ -42,6 +42,8 @@ export function useOrchestrator() {
   const [tasksFor, setTasksFor] = useState<string | null>(null);
   const [running, setRunning] = useState<Set<string>>(new Set());
   const [modal, setModal] = useState<Modal>(null);
+  const [cloneSource, setCloneSource] = useState<TaskRow | null>(null);
+  const openClone = (source: TaskRow) => { setCloneSource(source); setEditId(null); setModal("clone"); };
   const [editId, setEditId] = useState<string | null>(null);
   const [appearanceOpen, setAppearanceOpen] = useState(false);
   const [termOpen, setTermOpen] = useState(false);
@@ -515,9 +517,9 @@ export function useOrchestrator() {
     setTasks((prev) => prev.map((x) => (x.id === task.id ? { ...x, ...fresh } : x)));
   };
 
-  const createTask = async (input: { title: string; desc: string; priority: Priority; agent: string; startNow: boolean; sendContext: boolean; depends_on: string[]; auto_start: boolean }) => {
+  const createTask = async (input: NewTaskInput) => {
     if (!project) return;
-    const t = await jsend<TaskRow>("/api/tasks", "POST", { project_id: project.id, title: input.title, description: input.desc, priority: input.priority, agent: input.agent, send_context: input.sendContext });
+    const t = await jsend<TaskRow>("/api/tasks", "POST", { project_id: project.id, title: input.title, description: input.desc, priority: input.priority, agent: input.agent, model: input.model, reasoning: input.reasoning, permission_mode: input.permission_mode, send_context: input.sendContext });
     // Dependencies (and the auto-start opt-in that rides on them) are an
     // edit-after-create step (the task id doesn't exist until now).
     if (input.depends_on.length) await jsend(`/api/tasks/${t.id}`, "PATCH", { depends_on: input.depends_on, auto_start: input.auto_start ? 1 : 0 });
@@ -763,7 +765,7 @@ export function useOrchestrator() {
     projects, activeProjects, deprecatedProjects, selProj, setSelProj, project,
     tasks, realTasks, suggested, selTask, task, messages, running,
     blockedBy, liveAwaiting, needsYouTotal,
-    modal, setModal, editId, setEditId, view, setView, taskView, setTaskView,
+    modal, setModal, cloneSource, openClone, editId, setEditId, view, setView, taskView, setTaskView,
     appearance, setAppearance, appearanceOpen, setAppearanceOpen,
     settings, setSetting, appDefaults, setAppDefault, agents, refreshAgents, refreshModels, brokenAgents,
     onboarding, wizardOpen, finishWizard, rerunOnboarding, nudge, setNudge, onMerged, onPrCreated,

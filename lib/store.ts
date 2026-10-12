@@ -394,6 +394,9 @@ export function createTask(input: {
   priority?: Priority;
   suggested?: boolean;
   agent?: string;
+  model?: string | null;
+  reasoning?: string | null;
+  permission_mode?: string | null;
   send_context?: boolean;
   // Provenance for tray suggestions: the task (and its /clear generation) whose
   // session called suggest_task. Callers pass an id that exists — the column is
@@ -416,11 +419,11 @@ export function createTask(input: {
   ).n;
   getDb()
     .prepare(
-      `INSERT INTO tasks (id, project_id, title, description, priority, status, suggested, agent, send_context, position,
+      `INSERT INTO tasks (id, project_id, title, description, priority, status, suggested, agent, send_context, position, model, reasoning, permission_mode,
                           suggested_by_task_id, suggested_by_generation, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, 'not_started', ?, ?, ?, ?, ?, ?, ?, ?)`
+       VALUES (?, ?, ?, ?, ?, 'not_started', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
-    .run(id, input.project_id, input.title, input.description ?? "", input.priority ?? "med", input.suggested ? 1 : 0, agent, sendContext ? 1 : 0, position, input.suggested_by_task_id ?? null, input.suggested_by_generation ?? null, now, now);
+    .run(id, input.project_id, input.title, input.description ?? "", input.priority ?? "med", input.suggested ? 1 : 0, agent, sendContext ? 1 : 0, position, input.model ?? null, input.reasoning ?? null, input.permission_mode ?? null, input.suggested_by_task_id ?? null, input.suggested_by_generation ?? null, now, now);
   return getTask(id)!;
 }
 

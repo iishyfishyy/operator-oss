@@ -227,6 +227,20 @@ export interface AgentPickerOption { value: string; label: string; sub: string }
 // reasoningEfforts: the model's own levels as its CLI names them (undefined =
 // unknown, use the agent-wide list; [] = no reasoning control for this model).
 export interface AgentModelOption { value: string; label: string; sub: string; contextWindow: number; group?: string; reasoningEfforts?: AgentPickerOption[]; defaultReasoning?: string }
+
+export interface NewTaskInput {
+  title: string;
+  desc: string;
+  priority: Priority;
+  agent: string;
+  model: string | null;
+  reasoning: string | null;
+  permission_mode: string | null;
+  startNow: boolean;
+  sendContext: boolean;
+  depends_on: string[];
+  auto_start: boolean;
+}
 export interface AgentCapabilities {
   models: AgentModelOption[];
   reasoningOptions: AgentPickerOption[];

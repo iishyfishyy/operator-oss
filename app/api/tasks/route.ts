@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createTask, getProject, listAllTasksLite } from "@/lib/store";
 import { track } from "@/lib/analytics";
+import { isAgentId } from "@/lib/agents/capabilities";
 
 export const dynamic = "force-dynamic";
 
@@ -15,6 +16,15 @@ export async function POST(req: Request) {
   if (!body?.project_id || !getProject(body.project_id))
     return NextResponse.json({ error: "valid project_id required" }, { status: 400 });
   if (!body?.title?.trim()) return NextResponse.json({ error: "title required" }, { status: 400 });
+  if (body.agent !== undefined && (typeof body.agent !== "string" || !isAgentId(body.agent)))
+    return NextResponse.json({ error: "valid agent required" }, { status: 400 });
+  for (const field of ["model", "reasoning", "permission_mode"] as const) {
+    const value = body[field];
+    if (value === undefined || value === null) continue;
+    if (typeof value !== "string" || value.length > 2048 || /[\0-\x1f\x7f]/.test(value))
+      return NextResponse.json({ error: `invalid ${field}` }, { status: 400 });
+    body[field] = value.trim() || null;
+  }
   const task = createTask({
     project_id: body.project_id,
     title: body.title.trim(),
@@ -24,6 +34,9 @@ export async function POST(req: Request) {
     // Agent is chosen at creation and fixed for the task's life (sessions can't
     // migrate between CLIs); createTask falls back to the project default.
     agent: typeof body.agent === "string" ? body.agent : undefined,
+    model: body.model,
+    reasoning: body.reasoning,
+    permission_mode: body.permission_mode,
     // Whether sessions get the saved project context; falls back to the
     // project's send_context setting when omitted.
     send_context: typeof body.send_context === "boolean" ? body.send_context : undefined,
