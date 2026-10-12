@@ -94,6 +94,8 @@ token and usage insights.
 
 Reusable [custom slash commands](docs/COMMANDS.md) let you save app-wide or project prompts, insert them from the composer or command palette, and expand task details and arguments before sending.
 
+Use the arrow beside Send to expand the prompt area for long drafts, on desktop or mobile. Click it again or press Escape to collapse it; your draft stays intact.
+
 [Explore all features](docs/FEATURES.md) · [Compare agent support](docs/AGENTS.md) · [Read the architecture](docs/ARCHITECTURE.md)
 
 ## Community
