@@ -271,7 +271,7 @@ export default function Orchestrator() {
             onSend={(text) => o.runTurn(task.id, text, false)}
             onStart={() => o.runTurn(task.id, "", true)}
             onStop={() => o.stopTurn(task.id)}
-            onClear={() => requestClear(task.id)} clearConfirming={clearRequest === task.id} onConfirmClear={confirmClear} onCancelClear={() => setClearRequest(null)} onEdit={() => o.setEditId(task.id)}
+            onClear={() => requestClear(task.id)} clearConfirming={clearRequest === task.id} onConfirmClear={confirmClear} onCancelClear={() => setClearRequest(null)} onEdit={() => o.setEditId(task.id)} onClone={() => o.openClone(task)}
             onReconnect={() => openSettings("agents")}
             onSetStatus={o.setStatus} onSetPriority={o.setPriority} onSetModel={o.setModel} onRefreshModels={o.refreshModels}
             onSetReasoning={o.setReasoning} onSetPermission={o.setPermission} onSetSendContext={o.setSendContext}
@@ -363,7 +363,7 @@ export default function Orchestrator() {
                 onSend={(text) => o.runTurn(task.id, text, false)}
                 onStart={() => o.runTurn(task.id, "", true)}
                 onStop={() => o.stopTurn(task.id)}
-                onClear={() => requestClear(task.id)} clearConfirming={clearRequest === task.id} onConfirmClear={confirmClear} onCancelClear={() => setClearRequest(null)} onEdit={() => o.setEditId(task.id)}
+                onClear={() => requestClear(task.id)} clearConfirming={clearRequest === task.id} onConfirmClear={confirmClear} onCancelClear={() => setClearRequest(null)} onEdit={() => o.setEditId(task.id)} onClone={() => o.openClone(task)}
                 onReconnect={() => openSettings("agents")}
                 onSetStatus={o.setStatus} onSetPriority={o.setPriority} onSetModel={o.setModel} onRefreshModels={o.refreshModels}
                 onSetReasoning={o.setReasoning} onSetPermission={o.setPermission} onSetSendContext={o.setSendContext}
@@ -609,9 +609,9 @@ export default function Orchestrator() {
         )}
       </div>
 
-      {o.modal === "task" && project && <NewTaskModal project={project} agents={o.agents} tasks={o.realTasks} onClose={() => o.setModal(null)} onCreate={o.createTask} onOpenSetup={o.rerunOnboarding} />}
+      {(o.modal === "task" || o.modal === "clone") && project && <NewTaskModal key={o.modal === "clone" ? o.cloneSource?.id : "new"} source={o.modal === "clone" ? o.cloneSource ?? undefined : undefined} project={project} agents={o.agents} tasks={o.realTasks} onClose={() => o.setModal(null)} onCreate={o.createTask} onOpenSetup={o.rerunOnboarding} />}
       {o.editId && o.tasks.find((t) => t.id === o.editId) && (
-        <EditTaskModal task={o.tasks.find((t) => t.id === o.editId)!} tasks={o.realTasks} agents={o.agents} onClose={() => o.setEditId(null)} onSave={o.saveTask} onDelete={o.removeTask} onOpenSetup={o.rerunOnboarding} onOpenParent={(id) => { o.setEditId(null); o.goToTask(o.selProj!, id); }} />
+        <EditTaskModal task={o.tasks.find((t) => t.id === o.editId)!} tasks={o.realTasks} agents={o.agents} onClose={() => o.setEditId(null)} onSave={o.saveTask} onDelete={o.removeTask} onClone={() => o.openClone(o.tasks.find((t) => t.id === o.editId)!)} onOpenSetup={o.rerunOnboarding} onOpenParent={(id) => { o.setEditId(null); o.goToTask(o.selProj!, id); }} />
       )}
       {o.modal === "context" && project && <ContextModal project={project} agents={o.agents} onSetDefaultAgent={o.setProjectDefaultAgent} onClose={() => o.setModal(null)} onSave={o.saveContext} onDelete={() => o.removeProject(project.id)} onDeprecate={() => o.setDeprecated(project.id, true)} />}
       {o.modal === "project" && <NewProjectModal onClose={() => o.setModal(null)} onCreate={o.createProject} />}

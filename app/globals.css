@@ -1251,7 +1251,7 @@ button.tpeek-more:hover{color:var(--accent-ink);}
 .field .lab{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--ink-3);margin-bottom:8px;}
 .field .lab svg{width:13px;height:13px;}
 .field .lab .opt{font-weight:500;text-transform:none;letter-spacing:0;color:var(--ink-4);}
-.field input[type=text],.field input[type=number],.field textarea{
+.field input[type=text],.field input[type=number],.field textarea,.field select{
   width:100%;border:1px solid var(--line-strong);border-radius:var(--r);background:var(--raise);
   padding:11px 13px;font-family:var(--sans);font-size:14px;color:var(--ink);outline:none;transition:border-color .12s,box-shadow .12s;
 }
@@ -1269,7 +1269,7 @@ button.tpeek-more:hover{color:var(--accent-ink);}
 /* No native spinners — the rest of the app has none, so they read as out of place. */
 .field input[type=number]{-moz-appearance:textfield;appearance:textfield;}
 .field input[type=number]::-webkit-outer-spin-button,.field input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;margin:0;}
-.field input:focus,.field textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft);}
+.field input:focus,.field textarea:focus,.field select:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft);}
 .field .ctx-mono{font-family:var(--mono);font-size:12.5px;}
 .field .hlp{font-size:11.5px;color:var(--ink-3);margin-top:7px;line-height:1.45;}
 .field .hlp .ctx-mono{font-size:11.5px;color:var(--ink-2);}

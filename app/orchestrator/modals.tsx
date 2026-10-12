@@ -5,8 +5,8 @@ import type { Priority } from "@/lib/types";
 import { Icon } from "../icons";
 import { jget, jsend } from "./api";
 import { relTime, duration, fmtJobCost } from "./format";
-import { SLABEL, type ProjectRow, type ProjectSession, type TaskRow, type AgentsBundle, type InternalUsageEstimate } from "./types";
-import { agentLabel, defaultAgentFor, findAgent } from "./agents";
+import { SLABEL, type ProjectRow, type ProjectSession, type TaskRow, type AgentsBundle, type InternalUsageEstimate, type NewTaskInput, modelOptions, reasoningOptions, permissionOptions } from "./types";
+import { agentLabel, defaultAgentFor, findAgent, capsFor } from "./agents";
 import { StatusDot, Skel, ErrNote } from "./shared";
 import { Modal, BrowseDirButton, PrioritySeg, DepPicker } from "./Modal";
 import { GitHubClonePicker } from "./github";
@@ -45,22 +45,33 @@ export function AgentPicker({ agents, value, onChange, onConnect, help, label = 
   );
 }
 
-export function NewTaskModal({ project, agents, tasks, onClose, onCreate, onOpenSetup }: { project: ProjectRow; agents: AgentsBundle; tasks: TaskRow[]; onClose: () => void; onCreate: (i: { title: string; desc: string; priority: Priority; agent: string; startNow: boolean; sendContext: boolean; depends_on: string[]; auto_start: boolean }) => void; onOpenSetup?: () => void }) {
-  const [title, setTitle] = useState("");
-  const [desc, setDesc] = useState("");
-  const [priority, setPriority] = useState<Priority>("med");
-  const [agent, setAgent] = useState(() => defaultAgentFor(agents, project.default_agent));
-  const [startNow, setStartNow] = useState(false);
-  const [sendContext, setSendContext] = useState(project.send_context !== 0);
+export function NewTaskModal({ project, agents, tasks, source, onClose, onCreate, onOpenSetup }: { project: ProjectRow; agents: AgentsBundle; tasks: TaskRow[]; source?: TaskRow; onClose: () => void; onCreate: (i: NewTaskInput) => Promise<void>; onOpenSetup?: () => void }) {
+  const [title, setTitle] = useState(source?.title ?? "");
+  const [desc, setDesc] = useState(source?.description ?? "");
+  const [priority, setPriority] = useState<Priority>(source?.priority ?? "med");
+  const [agent, setAgent] = useState(() => source?.agent ?? defaultAgentFor(agents, project.default_agent));
+  const [model, setModel] = useState<string | null>(source?.model ?? null);
+  const [useCustomModel, setUseCustomModel] = useState(!!source?.model && !modelOptions(capsFor(agents, source.agent)).some((m) => m.value === source.model));
+  const [reasoning, setReasoning] = useState<string | null>(source?.reasoning ?? null);
+  const [permission, setPermission] = useState<string | null>(source?.permission_mode ?? null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const submitting = useRef(false);
+  const [startNow, setStartNow] = useState(!!source);
+  const [sendContext, setSendContext] = useState((source?.send_context ?? project.send_context) !== 0);
   const [deps, setDeps] = useState<string[]>([]);
   const [autoStart, setAutoStart] = useState(false);
   const ref = useRef<HTMLInputElement>(null);
   useEffect(() => { ref.current?.focus(); }, []);
   // The bundle can arrive after mount; adopt the resolved default until the user picks.
-  const touched = useRef(false);
+  const touched = useRef(!!source);
   useEffect(() => { if (!touched.current) setAgent(defaultAgentFor(agents, project.default_agent)); }, [agents, project.default_agent]);
-  const pickAgent = (id: string) => { touched.current = true; setAgent(id); };
-  const can = title.trim().length > 0;
+  const pickAgent = (id: string) => {
+    touched.current = true;
+    if (id !== agent) { setModel(null); setUseCustomModel(false); setReasoning(null); setPermission(null); }
+    setAgent(id);
+  };
+  const can = title.trim().length > 0 && (!useCustomModel || !!model?.trim()) && !busy;
   // A task with unfinished blockers can't start now, so the two options are exclusive.
   const blocked = deps.some((id) => tasks.find((t) => t.id === id)?.status !== "done");
   // Can't launch a session on an agent that isn't signed in — but the task can
@@ -68,18 +79,37 @@ export function NewTaskModal({ project, agents, tasks, onClose, onCreate, onOpen
   const selAgent = findAgent(agents, agent);
   const agentReady = selAgent ? selAgent.authenticated : true;
   const canStart = !blocked && agentReady;
-  const create = () => can && onCreate({ title: title.trim(), desc: desc.trim(), priority, agent, startNow: startNow && canStart, sendContext, depends_on: deps, auto_start: autoStart && deps.length > 0 });
+  const caps = capsFor(agents, agent);
+  const models = modelOptions(caps);
+  const customModel = useCustomModel || (!!model && !models.some((m) => m.value === model));
+  const efforts = reasoningOptions(caps, model ?? selAgent?.modelCatalog?.defaultModel);
+  const permissions = permissionOptions(caps);
+  const create = async () => {
+    if (!can || submitting.current) return;
+    submitting.current = true;
+    setBusy(true);
+    setError("");
+    try {
+      await onCreate({ title: title.trim(), desc: desc.trim(), priority, agent, model, reasoning, permission_mode: permission, startNow: startNow && canStart, sendContext, depends_on: deps, auto_start: autoStart && deps.length > 0 });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not create task");
+    } finally {
+      submitting.current = false;
+      setBusy(false);
+    }
+  };
   return (
-    <Modal title="New task" sub={`${project.name} · title + description define ${agentLabel(agents, agent)}'s task context`} onClose={onClose}
+    <Modal title={source ? "Clone task" : "New task"} sub={source ? "Run the same task in a fresh session and worktree from the project base branch." : `${project.name} · title + description define ${agentLabel(agents, agent)}'s task context`} onClose={busy ? () => {} : onClose}
       footer={<>
         <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, color: !canStart ? "var(--ink-4)" : "var(--ink-2)", cursor: !canStart ? "not-allowed" : "pointer" }}
           title={blocked ? "Can't start now — this task is blocked by unfinished tasks" : !agentReady ? `Connect ${selAgent?.label} to start a session` : undefined}>
           <input type="checkbox" checked={startNow && canStart} disabled={!canStart} onChange={(e) => setStartNow(e.target.checked)} /> Start session immediately
         </label>
         <span className="spacer" />
-        <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
-        <button className="btn btn-accent" disabled={!can} onClick={create}>{Icon.plus()} Create task</button>
+        <button className="btn btn-ghost" disabled={busy} onClick={onClose}>Cancel</button>
+        <button className="btn btn-accent" disabled={!can} onClick={create}>{Icon.plus()} {busy ? "Creating…" : source ? (startNow && canStart ? "Clone & start" : "Clone task") : "Create task"}</button>
       </>}>
+      {error && <ErrNote>{error}</ErrNote>}
       <div className="field">
         <div className="lab">Title</div>
         <input ref={ref} type="text" value={title} placeholder="e.g. Add rate-limiting to auth endpoints"
@@ -97,6 +127,27 @@ export function NewTaskModal({ project, agents, tasks, onClose, onCreate, onOpen
       </div>
       <AgentPicker agents={agents} value={agent} onChange={pickAgent} onConnect={onOpenSetup} />
       <div className="field">
+        <label className="lab" htmlFor="new-task-model">Model</label>
+        <select id="new-task-model" value={customModel ? "custom" : model ?? ""} onChange={(e) => { setUseCustomModel(e.target.value === "custom"); setModel(e.target.value === "custom" ? "" : e.target.value || null); setReasoning(null); }}>
+          {models.map((m) => <option key={m.value ?? "default"} value={m.value ?? ""}>{m.label}</option>)}
+          <option value="custom">Custom model ID</option>
+        </select>
+        {customModel && <input type="text" aria-label="Custom model ID" value={model ?? ""} placeholder="Enter model ID" onChange={(e) => { setModel(e.target.value); setReasoning(null); }} />}
+      </div>
+      {efforts.length > 0 && <div className="field">
+        <label className="lab" htmlFor="new-task-reasoning">Reasoning effort</label>
+        <select id="new-task-reasoning" value={reasoning ?? ""} onChange={(e) => setReasoning(e.target.value || null)}>
+          {reasoning && !efforts.some((r) => r.value === reasoning) && <option value={reasoning}>{reasoning}</option>}
+          {efforts.map((r) => <option key={r.value ?? "default"} value={r.value ?? ""}>{r.label}</option>)}
+        </select>
+      </div>}
+      {permissions.length > 1 && <div className="field">
+        <label className="lab" htmlFor="new-task-permission">Permissions</label>
+        <select id="new-task-permission" value={permission ?? ""} onChange={(e) => setPermission(e.target.value || null)}>
+          {permissions.map((p) => <option key={p.value ?? "default"} value={p.value ?? ""}>{p.label}</option>)}
+        </select>
+      </div>}
+      <div className="field">
         <div className="lab">Priority</div>
         <PrioritySeg value={priority} onChange={setPriority} />
       </div>
@@ -105,7 +156,7 @@ export function NewTaskModal({ project, agents, tasks, onClose, onCreate, onOpen
   );
 }
 
-export function EditTaskModal({ task, tasks, agents, onClose, onSave, onDelete, onOpenSetup, onOpenParent }: { task: TaskRow; tasks: TaskRow[]; agents: AgentsBundle; onClose: () => void; onSave: (id: string, patch: { title: string; description: string; priority: Priority; agent?: string; depends_on: string[]; auto_start: boolean }) => void; onDelete: (id: string) => void; onOpenSetup?: () => void; onOpenParent?: (id: string) => void }) {
+export function EditTaskModal({ task, tasks, agents, onClose, onSave, onDelete, onClone, onOpenSetup, onOpenParent }: { task: TaskRow; tasks: TaskRow[]; agents: AgentsBundle; onClose: () => void; onSave: (id: string, patch: { title: string; description: string; priority: Priority; agent?: string; depends_on: string[]; auto_start: boolean }) => void; onDelete: (id: string) => void; onClone: () => void; onOpenSetup?: () => void; onOpenParent?: (id: string) => void }) {
   const [title, setTitle] = useState(task.title);
   const [desc, setDesc] = useState(task.description);
   const [priority, setPriority] = useState<Priority>(task.priority);
@@ -131,6 +182,7 @@ export function EditTaskModal({ task, tasks, agents, onClose, onSave, onDelete, 
         ) : (
           <button className="btn-danger" onClick={() => setConfirmDel(true)}>{Icon.x()} Delete task</button>
         )}
+        <button className="btn btn-line" onClick={onClone}>{Icon.copy()} Clone task</button>
         <span className="spacer" />
         <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
         <button className="btn btn-accent" disabled={!can} onClick={save}>{Icon.check()} Save changes</button>

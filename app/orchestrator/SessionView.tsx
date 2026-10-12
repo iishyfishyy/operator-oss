@@ -155,10 +155,10 @@ function useStableHandler<A extends unknown[]>(fn?: (...args: A) => void): (...a
   return useCallback((...args: A) => { ref.current?.(...args); }, []);
 }
 
-export function SessionView({ commandDraft, onCommandDraftUsed, project, task, agents, messages, running, blockedBy, transcriptLoading, onSend, onStart, onStop, onClear, clearConfirming, onConfirmClear, onCancelClear, onEdit, onReconnect, onSetStatus, onSetPriority, onSetModel, onRefreshModels, onSetReasoning, onSetPermission, onSetSendContext, onResolveWithAI, onMerged, onPrCreated, onAnswer, onCancelQueued, onBack, mobile, railW, onRailWidth, onRailReset, railCollapsed, onRailCollapse, onRailExpand }: {
+export function SessionView({ commandDraft, onCommandDraftUsed, project, task, agents, messages, running, blockedBy, transcriptLoading, onSend, onStart, onStop, onClear, clearConfirming, onConfirmClear, onCancelClear, onEdit, onClone, onReconnect, onSetStatus, onSetPriority, onSetModel, onRefreshModels, onSetReasoning, onSetPermission, onSetSendContext, onResolveWithAI, onMerged, onPrCreated, onAnswer, onCancelQueued, onBack, mobile, railW, onRailWidth, onRailReset, railCollapsed, onRailCollapse, onRailExpand }: {
   project: ProjectRow; task: TaskRow; agents: AgentsBundle; messages: Msg[]; running: boolean; blockedBy?: string[]; transcriptLoading?: boolean;
   commandDraft?: import("./useCommands").CommandDraft | null; onCommandDraftUsed?: () => void;
-  onSend: (t: string) => void; onStart: () => void; onStop: () => void; onClear: () => void; onEdit: () => void;
+  onSend: (t: string) => void; onStart: () => void; onStop: () => void; onClear: () => void; onEdit: () => void; onClone: () => void;
   clearConfirming?: boolean; onConfirmClear?: () => void; onCancelClear?: () => void;
   // Deep-link to Settings → Agents, for the transcript's "your login died" recovery button.
   onReconnect?: () => void;
@@ -399,6 +399,7 @@ export function SessionView({ commandDraft, onCommandDraftUsed, project, task, a
             <div className="sh-title">
               <span className="sht-text" title={task.title}>{task.title}</span>
               <button className="icon-btn sh-edit" title="View & edit task details" aria-label="View & edit task details" onClick={onEdit}>{Icon.edit()}</button>
+              <button className="icon-btn" title="Clone task" aria-label="Clone task" onClick={onClone}>{Icon.copy()}</button>
             </div>
           </div>
           <div className="sh-tools">
